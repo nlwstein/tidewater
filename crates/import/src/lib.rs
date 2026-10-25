@@ -22,10 +22,10 @@ mod testutil;
 
 use std::path::{Path, PathBuf};
 
-pub use copy::{Progress, import};
+pub use copy::{Progress, Step, import, no_progress};
 pub use inno::InstallerReader;
 pub use manifest::Manifest;
-pub use source::{Source, SourceKind, classify};
+pub use source::{Source, SourceKind, classify, classify_with};
 pub use validate::{Issue, IssueKind, Report, Severity, validate};
 
 /// The name of the folder under the data directory that holds the imported game files.

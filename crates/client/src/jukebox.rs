@@ -2,10 +2,18 @@
 //! core's mixer (`audio`), and [`play_music`], which runs it every frame. Every screen starts and stops music through the
 //! methods here; the music files are read from the install's `Music` folder through the front end's [`Front`].
 //!
+//! A chained track's next track is read and decoded on a thread of its own while the open one plays ([`Prefetch`]):
+//! a battle track is some 15 MB in `Install.mpq`, and reading it on the frame that starts it held that frame for
+//! about 190 ms on a desktop, a visible stutter at every change of track in a game. Every other start reads its file
+//! at once, as before.
+//!
 //! The game menu's sound dialog changes the volume through [`Jukebox::set_volume`] (the same call for the countdown
 //! ending, the cancel and the menu closing: "Every time the music volume is applied").
 
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
+
+use tidewater_formats::install::Install;
 
 use crate::audio::{self, VoiceId};
 use crate::core::Core;
@@ -28,6 +36,42 @@ pub struct Jukebox {
     applied: Option<i32>,
     /// Frame time not yet handed to the music, below a millisecond.
     carry: Duration,
+    /// The open chained track's next track, being read.
+    prefetch: Option<Prefetch>,
+}
+
+/// A track's file read and decoded for the mixer.
+struct Prepared {
+    sound: audio::Sound,
+    /// Bytes of audio in the file.
+    length: u32,
+}
+
+/// Reads and decodes a track's file; `None` if the install lacks it or it isn't PCM WAV.
+fn prepare(install: &mut Install, track: u8) -> Option<Prepared> {
+    let bytes = install.read(&music::path(track)).ok()?;
+    Some(Prepared {
+        sound: audio::Sound::from_wav(&bytes)?,
+        length: music::wav_data_len(&bytes).unwrap_or(0),
+    })
+}
+
+/// A track being read on its own thread, from a handle on the install of its own.
+struct Prefetch {
+    track: u8,
+    read: JoinHandle<Option<Prepared>>,
+}
+
+impl Prefetch {
+    /// Starts reading `track`; `None` if the install can't be opened a second time.
+    fn start(install: &Install, track: u8) -> Option<Prefetch> {
+        let mut install = install.reopen().ok()?;
+        let read = thread::Builder::new()
+            .name("music read".into())
+            .spawn(move || prepare(&mut install, track))
+            .ok()?;
+        Some(Prefetch { track, read })
+    }
 }
 
 #[allow(dead_code)] // not every screen calls every method yet
@@ -185,14 +229,19 @@ fn apply(jb: &mut Jukebox, front: &mut Front, core: &mut audio::Audio, actions: 
                 }
                 jb.atten = attenuation;
                 jb.length = 0;
-                // Our choice: the whole file is read at once; a file the install lacks leaves the music silent.
-                let Some(bytes) = front.install.read(&music::path(track)).ok() else {
+                // Our choice: the whole file is read at once, by the prefetch if it read this track (waiting for it
+                // if it hasn't finished), or now; a file the install lacks leaves the music silent.
+                let prefetched = match jb.prefetch.take() {
+                    Some(p) if p.track == track => p.read.join().ok().flatten(),
+                    _ => None,
+                };
+                if let music::End::Chain { next } = music::TRACKS[track as usize].end {
+                    jb.prefetch = Prefetch::start(&front.install, next);
+                }
+                let Some(Prepared { sound, length }) = prefetched.or_else(|| prepare(&mut front.install, track)) else {
                     continue;
                 };
-                let Some(sound) = audio::Sound::from_wav(&bytes) else {
-                    continue;
-                };
-                jb.length = music::wav_data_len(&bytes).unwrap_or(0);
+                jb.length = length;
                 let loop_from = match music::TRACKS[track as usize].end {
                     music::End::Loop { point } if looped => Some(point as usize),
                     _ => None,
@@ -213,12 +262,140 @@ fn apply(jb: &mut Jukebox, front: &mut Front, core: &mut audio::Audio, actions: 
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+    use std::sync::{Arc, Mutex};
+    use std::thread::ThreadId;
+
     use clap::Parser;
+    use tidewater_formats::mpq::{HashType, ReadSeek, encrypt, hash_string};
+
+    use super::*;
 
     use crate::args::Args;
     use crate::audio::Group;
     use crate::frontend::AppState;
     use crate::host;
+
+    /// An install held in memory: an empty archive and the music files `music` names, each a short WAV of its own
+    /// length. It notes which thread opened each file.
+    struct Files {
+        music: Vec<(String, Vec<u8>)>,
+        archive: Vec<u8>,
+        opened: Arc<Mutex<Vec<(String, ThreadId)>>>,
+    }
+
+    impl tidewater_formats::install::Files for Files {
+        fn open(&self, name: &str) -> std::io::Result<Option<Box<dyn ReadSeek>>> {
+            self.opened
+                .lock()
+                .unwrap()
+                .push((name.to_string(), thread::current().id()));
+            let bytes = if name.eq_ignore_ascii_case("Install.mpq") {
+                Some(self.archive.clone())
+            } else {
+                self.music
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case(name))
+                    .map(|(_, b)| b.clone())
+            };
+            Ok(bytes.map(|b| Box::new(Cursor::new(b)) as Box<dyn ReadSeek>))
+        }
+    }
+
+    /// An archive with no files: the header and empty, encrypted hash and block tables ("The MoPaQ Archive Format").
+    fn empty_archive() -> Vec<u8> {
+        let mut hashes = vec![0xFFu8; 4 * 16];
+        encrypt(&mut hashes, hash_string("(hash table)", HashType::FileKey));
+        let mut out = b"MPQ\x1A".to_vec();
+        for w in [32u32, 32 + hashes.len() as u32] {
+            out.extend_from_slice(&w.to_le_bytes());
+        }
+        out.extend_from_slice(&[0, 0, 3, 0]); // format version 0, 4096-byte sectors
+        for w in [32u32, 32 + hashes.len() as u32, 4, 0] {
+            out.extend_from_slice(&w.to_le_bytes());
+        }
+        out.extend_from_slice(&hashes);
+        out
+    }
+
+    /// A 16-bit stereo WAV at the mixer's rate holding `frames` silent sample frames.
+    fn wav(frames: usize) -> Vec<u8> {
+        let data = vec![0u8; frames * 4];
+        let mut w = b"RIFF\0\0\0\0WAVEfmt ".to_vec();
+        for (v, n) in [
+            (16, 4),
+            (1, 2),
+            (2, 2),
+            (audio::SAMPLE_RATE, 4),
+            (audio::SAMPLE_RATE * 4, 4),
+            (4, 2),
+            (16, 2),
+        ] {
+            w.extend_from_slice(&u32::to_le_bytes(v)[..n]);
+        }
+        w.extend_from_slice(b"data");
+        w.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        w.extend_from_slice(&data);
+        w
+    }
+
+    fn load(track: u8) -> Action {
+        Action::Load {
+            track,
+            file: music::TRACKS[track as usize].file,
+            looped: false,
+            attenuation: 0,
+        }
+    }
+
+    /// A chained track's next track is read on another thread while it plays, and starting it reads nothing on the
+    /// frame; a start the prefetch didn't guess reads its file at once.
+    #[test]
+    fn the_next_track_of_a_chain_is_read_ahead_off_the_frame() {
+        let opened = Arc::new(Mutex::new(Vec::new()));
+        let files = Files {
+            music: [("HUMAN1.WAV", 100), ("HUMAN2.WAV", 200), ("HDEFEAT.WAV", 300)]
+                .map(|(n, f)| (format!("Music\\{n}"), wav(f)))
+                .into(),
+            archive: empty_archive(),
+            opened: opened.clone(),
+        };
+        let mut front = Front::none();
+        front.install = Install::from_files(Box::new(files)).expect("the install opens");
+        let (mut jb, mut core) = (Jukebox::default(), audio::Audio::default());
+        let main = thread::current().id();
+        let reads = |name: &str| -> Vec<bool> {
+            let opened = opened.lock().unwrap();
+            opened
+                .iter()
+                .filter(|(n, _)| n.ends_with(name))
+                .map(|(_, t)| *t == main)
+                .collect()
+        };
+
+        // HUMAN1 chains to HUMAN2.
+        apply(&mut jb, &mut front, &mut core, vec![load(0)]);
+        assert_eq!(reads("HUMAN1.WAV"), [true], "the first track is read at once");
+        assert_eq!(jb.length, 400);
+        assert_eq!(jb.prefetch.as_ref().map(|p| p.track), Some(1));
+
+        apply(&mut jb, &mut front, &mut core, vec![load(1)]);
+        assert_eq!(
+            reads("HUMAN2.WAV"),
+            [false],
+            "the chain's next track was read once, off the frame"
+        );
+        assert_eq!(jb.length, 800, "and it is the one that plays");
+        assert_eq!(core.playing_in(audio::Group::Music), 1);
+        assert_eq!(jb.prefetch.as_ref().map(|p| p.track), Some(2));
+
+        // A defeat track, not the guess: read at once, and it chains nowhere.
+        apply(&mut jb, &mut front, &mut core, vec![load(12)]);
+        assert_eq!(reads("HDEFEAT.WAV"), [true]);
+        assert_eq!(jb.length, 1200);
+        assert!(jb.prefetch.is_none());
+        assert_eq!(core.playing_in(audio::Group::Music), 1);
+    }
 
     /// A screen the run showed: the open music track on its first and last frames, and the tracks started from their
     /// start while it showed, in order.

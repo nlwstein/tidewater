@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::ImportError;
+use crate::copy::Progress;
 use crate::inno::{self, InstallerReader, Staging};
 
 /// How deep below the given folder to look for the game files.
@@ -75,9 +76,18 @@ pub struct Source {
 
 /// Classifies `path`, or says why the game files can't be taken from it.
 pub fn classify(path: &Path) -> Result<Source, ImportError> {
+    classify_with(path, &mut crate::copy::no_progress)
+}
+
+/// [`classify`], telling `progress` how a CD image is read or an installer unpacked into a temporary folder
+/// ([`Step::ReadingDisc`], [`Step::Unpacking`]); a game folder or an archive needs neither and reports nothing.
+///
+/// [`Step::ReadingDisc`]: crate::Step::ReadingDisc
+/// [`Step::Unpacking`]: crate::Step::Unpacking
+pub fn classify_with(path: &Path, progress: &mut dyn FnMut(&Progress)) -> Result<Source, ImportError> {
     let meta = fs::metadata(path).map_err(|_| ImportError::NotFound(path.to_path_buf()))?;
     if meta.is_file() {
-        return classify_file(path);
+        return classify_file(path, progress);
     }
     let found = search(path);
     if let Some(root) = found.game {
@@ -88,12 +98,12 @@ pub fn classify(path: &Path) -> Result<Source, ImportError> {
     }
     // A folder with the installer in it (the download folder) gets the installer message.
     if let Some(exe) = installer_in(path) {
-        return open_installer(&exe);
+        return open_installer(&exe, progress);
     }
     Err(ImportError::NoGameFiles(path.to_path_buf()))
 }
 
-fn classify_file(path: &Path) -> Result<Source, ImportError> {
+fn classify_file(path: &Path, progress: &mut dyn FnMut(&Progress)) -> Result<Source, ImportError> {
     let name = file_name(path);
     if has_ext(&name, "mpq") {
         let root = path.parent().map_or_else(|| PathBuf::from("."), Path::to_path_buf);
@@ -107,18 +117,18 @@ fn classify_file(path: &Path) -> Result<Source, ImportError> {
         });
     }
     if has_ext(&name, "exe") && inno::is_inno_installer(path) {
-        return open_installer(path);
+        return open_installer(path, progress);
     }
     if is_installer_name(&name) {
         if has_ext(&name, "bin")
             && let Some(exe) = inno::exe_for_part(path)
         {
-            return open_installer(&exe);
+            return open_installer(&exe, progress);
         }
         return Err(ImportError::InstallerUnsupported(path.to_path_buf()));
     }
     if is_disc_image(path, &name) {
-        return crate::disc::open_source(path);
+        return crate::disc::open_source(path, progress);
     }
     if has_ext(&name, "war") {
         return Err(ImportError::DosEdition);
@@ -126,8 +136,8 @@ fn classify_file(path: &Path) -> Result<Source, ImportError> {
     Err(ImportError::NoGameFiles(path.to_path_buf()))
 }
 
-fn open_installer(exe: &Path) -> Result<Source, ImportError> {
-    InstallerReader::open(exe).map(InstallerReader::into_source)
+fn open_installer(exe: &Path, progress: &mut dyn FnMut(&Progress)) -> Result<Source, ImportError> {
+    InstallerReader::open_with_progress(exe, progress).map(InstallerReader::into_source)
 }
 
 /// A CD image: a `.cue` sheet, `.img`, `.mdf`, `.mds` or `.nrg` by extension, or any other file (an `.iso`, a `.bin`)

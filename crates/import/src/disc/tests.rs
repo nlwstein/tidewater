@@ -626,3 +626,88 @@ fn a_sheet_with_a_missing_file_or_only_audio_says_so() {
     assert!(err.to_string().contains("no data track"), "{err}");
     assert!(err.to_string().contains("only audio"), "{err}");
 }
+
+/// Classifies `path` and returns what its progress callback heard, as (step, file, done, total) for each call.
+fn classify_heard(path: &Path) -> (Source, Vec<(crate::Step, String, u64, u64)>) {
+    let mut heard = Vec::new();
+    let source = crate::source::classify_with(path, &mut |p| {
+        heard.push((p.step, p.file.to_string(), p.done, p.total));
+    })
+    .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    (source, heard)
+}
+
+/// The bytes of the files under `dir`.
+fn bytes_under(dir: &Path) -> u64 {
+    fs::read_dir(dir)
+        .unwrap()
+        .flatten()
+        .map(|e| {
+            if e.file_type().unwrap().is_dir() {
+                bytes_under(&e.path())
+            } else {
+                e.metadata().unwrap().len()
+            }
+        })
+        .sum()
+}
+
+/// The checks every staged disc's progress passes: one step, a steady total that is what was staged, bytes that only
+/// go up from 0 to that total, and every staged file named.
+fn check_staging_progress(source: &Source, heard: &[(crate::Step, String, u64, u64)], files: &[&str]) {
+    assert!(!heard.is_empty());
+    let staged = bytes_under(source.staged.as_ref().unwrap().dir());
+    assert!(heard.iter().all(|h| h.0 == crate::Step::ReadingDisc), "{heard:?}");
+    assert!(
+        heard.iter().all(|h| h.3 == staged),
+        "the total is what gets staged ({staged})"
+    );
+    assert_eq!(heard[0].2, 0, "the first report is before any bytes");
+    assert_eq!(heard.last().unwrap().2, staged, "the last report is the whole");
+    assert!(heard.windows(2).all(|w| w[0].2 <= w[1].2), "the bytes never go back");
+    for f in files {
+        assert!(heard.iter().any(|h| h.1 == *f), "{f} is named");
+    }
+}
+
+#[test]
+fn reading_a_cd_image_reports_its_progress_chunk_by_chunk() {
+    let t = tempfile::tempdir().unwrap();
+    // The Battle.net Edition layout (the game inside the installer archive), as a raw bin with a cue sheet: the case
+    // whose bar used to stand still for the whole read.
+    let (files, _, _) = installer_disc();
+    let iso = image_of(&files, IsoOptions::default());
+    write(t.path(), "raw2.bin", &raw_sectors(&iso, Framing::Mode2Form1));
+    let cue = write(
+        t.path(),
+        "raw2.cue",
+        b"FILE \"raw2.bin\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n",
+    );
+    let (source, heard) = classify_heard(&cue);
+    check_staging_progress(
+        &source,
+        &heard,
+        &["Install.mpq", "Maps/Dark Paths BNE.pud", "War2Dat.mpq"],
+    );
+    // The 1.2 MB installer file moves the bar many times on its way, not once at its end.
+    let install = heard.iter().filter(|h| h.1 == "Install.mpq").count();
+    assert!(install >= 10, "Install.mpq reported {install} times");
+
+    // Loose files on a plain ISO report the same way.
+    let iso = write(t.path(), "plain.iso", &image_of(&game_files(), IsoOptions::default()));
+    let (source, heard) = classify_heard(&iso);
+    check_staging_progress(
+        &source,
+        &heard,
+        &["War2Dat.mpq", "Install.mpq", "Maps/a.pud", "Maps/Sub/b.pud"],
+    );
+}
+
+#[test]
+fn a_game_folder_needs_no_reading_step() {
+    let t = tempfile::tempdir().unwrap();
+    fs::write(t.path().join("War2Dat.mpq"), mpq_bytes(&[("rez\\marker.txt", b"one")])).unwrap();
+    let mut heard = 0;
+    crate::source::classify_with(t.path(), &mut |_| heard += 1).unwrap();
+    assert_eq!(heard, 0);
+}

@@ -1387,8 +1387,11 @@ pub(crate) fn touch_smart_tap(c: &Core, at: (f32, f32), radius: f32) -> bool {
         return false;
     };
     let r = (radius * mv.zoom).round() as i32;
+    let p = px(Vec2::new(x, y));
+    let tile = TILE_PX;
+    let wall = sim.world.wall_tile((p.0.div_euclid(tile), p.1.div_euclid(tile)));
     with_board(&sim.world, sim.human, c.art.as_ref(), mv.tiles(), |b| {
-        mouse::smart_tap(b, px(Vec2::new(x, y)), r, &sel.units)
+        mouse::smart_tap(b, p, r, &sel.units, wall)
     })
 }
 

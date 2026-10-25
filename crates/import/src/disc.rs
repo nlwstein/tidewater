@@ -32,11 +32,12 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::ImportError;
+use crate::copy::{Progress, Step};
 use crate::inno::Staging;
 use crate::source::{Source, SourceFile, SourceFiles, SourceKind};
 
@@ -52,6 +53,8 @@ const MAX_DIR_BYTES: u64 = 16 * 1024 * 1024;
 const GAME_DEPTH: usize = 6;
 /// Sectors read at once when streaming a file.
 const CHUNK_SECTORS: u64 = 32;
+/// The buffer staging copies through.
+const STAGE_CHUNK: usize = 1 << 20;
 
 fn bad(msg: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, msg.into())
@@ -830,25 +833,53 @@ impl DiscFiles {
     }
 
     /// Copies the game files into a staging folder and returns them as an ordinary source, so `validate` can open the
-    /// archives by path. The staging folder goes away with the last copy of the source.
-    pub fn stage(&self, given: &Path) -> Result<Source, ImportError> {
+    /// archives by path. The staging folder goes away with the last copy of the source. `progress` hears each file as
+    /// it starts and each chunk as it is written ([`Step::ReadingDisc`]), against the listed sizes' total.
+    pub fn stage(&self, given: &Path, progress: &mut dyn FnMut(&Progress)) -> Result<Source, ImportError> {
         let staging = Staging::create().map_err(|e| ImportError::io("creating the staging folder", e))?;
+        let total: u64 = self.listing.iter().map(|f| f.size).sum();
+        let mut done = 0u64;
+        let mut buf = vec![0u8; STAGE_CHUNK];
         for f in &self.listing {
             let dest = staging.dir().join(&f.rel);
             if let Some(parent) = dest.parent() {
                 std::fs::create_dir_all(parent).map_err(|e| ImportError::io("creating a staging folder", e))?;
             }
-            let mut input = self
-                .open(&f.rel)
-                .map_err(|e| ImportError::io(format!("reading {} from the disc", f.rel), e))?;
-            let mut out = File::create(&dest).map_err(|e| ImportError::io(format!("writing {}", f.rel), e))?;
-            io::copy(&mut input, &mut out).map_err(|e| match e.kind() {
+            let unreadable = |e: io::Error| match e.kind() {
                 io::ErrorKind::UnexpectedEof | io::ErrorKind::InvalidData => ImportError::DiscImageUnreadable {
                     path: given.to_path_buf(),
                     detail: format!("{}: {e}", f.rel),
                 },
                 _ => ImportError::io(format!("copying {}", f.rel), e),
-            })?;
+            };
+            // Reported before the file is opened: a file in the installer archive is unpacked whole when it opens.
+            progress(&Progress {
+                step: Step::ReadingDisc,
+                file: &f.rel,
+                done,
+                total,
+            });
+            let mut input = self
+                .open(&f.rel)
+                .map_err(|e| ImportError::io(format!("reading {} from the disc", f.rel), e))?;
+            let mut out = File::create(&dest).map_err(|e| ImportError::io(format!("writing {}", f.rel), e))?;
+            loop {
+                let n = match input.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => n,
+                    Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                    Err(e) => return Err(unreadable(e)),
+                };
+                out.write_all(&buf[..n])
+                    .map_err(|e| ImportError::io(format!("copying {}", f.rel), e))?;
+                done += n as u64;
+                progress(&Progress {
+                    step: Step::ReadingDisc,
+                    file: &f.rel,
+                    done,
+                    total,
+                });
+            }
         }
         let mut source = crate::source::source_at(given, staging.dir());
         source.kind = SourceKind::CdImage;
@@ -885,8 +916,8 @@ impl SourceFiles for DiscFiles {
 }
 
 /// Opens a disc image as a [`Source`] (the game files staged in a temporary folder).
-pub fn open_source(path: &Path) -> Result<Source, ImportError> {
-    DiscFiles::open(path)?.stage(path)
+pub fn open_source(path: &Path, progress: &mut dyn FnMut(&Progress)) -> Result<Source, ImportError> {
+    DiscFiles::open(path)?.stage(path, progress)
 }
 
 mod installer;

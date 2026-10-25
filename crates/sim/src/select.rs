@@ -147,7 +147,7 @@ impl World {
     }
 
     /// Whether the target tile has a wall flag (0x04 or 0x08 of the movement word).
-    pub(crate) fn wall_tile(&self, t: (i32, i32)) -> bool {
+    pub fn wall_tile(&self, t: (i32, i32)) -> bool {
         use terrain::bits::{COMPUTER_WALL, HUMAN_WALL};
         self.terrain.contains(t.0, t.1) && self.terrain.word(t.0, t.1) & (HUMAN_WALL | COMPUTER_WALL) != 0
     }

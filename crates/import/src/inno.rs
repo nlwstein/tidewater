@@ -17,17 +17,21 @@
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Duration;
 
 use crate::ImportError;
+use crate::copy::{Progress, Step, no_progress};
 use crate::source::{FolderFiles, Source, SourceFile, SourceFiles};
 
 /// The marker the Inno Setup loader carries.
 const MARKER: &[u8] = b"Inno Setup Setup Data (";
 /// How much of the start of the file is searched for the marker (the loader stub is well inside this).
 const SCAN_LIMIT: u64 = 8 * 1024 * 1024;
+/// How often the staging folder is measured while the tool unpacks.
+const POLL: Duration = Duration::from_millis(200);
 /// The environment variable that names the `innoextract` program, for when it isn't on the `PATH`.
 pub const TOOL_ENV: &str = "TIDEWATER_INNOEXTRACT";
 
@@ -127,11 +131,27 @@ impl InstallerReader {
             return Err(ImportError::InstallerUnsupported(exe.to_path_buf()));
         }
         let tool = find_tool().ok_or_else(|| ImportError::InnoextractMissing(exe.to_path_buf()))?;
-        Self::open_with(exe, &tool)
+        Self::open_with_tool(exe, &tool, &mut no_progress)
+    }
+
+    /// [`InstallerReader::open`], telling `progress` how the unpacking goes ([`Step::Unpacking`]).
+    pub fn open_with_progress(exe: &Path, progress: &mut dyn FnMut(&Progress)) -> Result<Self, ImportError> {
+        if !is_inno_installer(exe) {
+            return Err(ImportError::InstallerUnsupported(exe.to_path_buf()));
+        }
+        let tool = find_tool().ok_or_else(|| ImportError::InnoextractMissing(exe.to_path_buf()))?;
+        Self::open_with_tool(exe, &tool, progress)
     }
 
     /// Opens the installer at `exe` with a given `innoextract` program.
     pub fn open_with(exe: &Path, tool: &Path) -> Result<Self, ImportError> {
+        Self::open_with_tool(exe, tool, &mut no_progress)
+    }
+
+    /// [`InstallerReader::open_with`], telling `progress` how the unpacking goes. The tool reports nothing while it
+    /// works, so the bytes done are the staging folder's size, measured every [`POLL`], against the sizes the listing
+    /// gives (rounded by the tool, so the last report is exact only at the end).
+    pub fn open_with_tool(exe: &Path, tool: &Path, progress: &mut dyn FnMut(&Progress)) -> Result<Self, ImportError> {
         if !is_inno_installer(exe) {
             return Err(ImportError::InstallerUnsupported(exe.to_path_buf()));
         }
@@ -149,7 +169,8 @@ impl InstallerReader {
         if !out.status.success() {
             return Err(fail(tool_message(&out.stderr)));
         }
-        let mut wanted: Vec<String> = parse_list(&String::from_utf8_lossy(&out.stdout))
+        let listing = String::from_utf8_lossy(&out.stdout);
+        let mut wanted: Vec<String> = parse_list(&listing)
             .into_iter()
             .filter(|n| !n.contains('/') && n.to_ascii_lowercase().ends_with(".mpq"))
             .collect();
@@ -159,26 +180,66 @@ impl InstallerReader {
             return Err(ImportError::NoGameFiles(exe.to_path_buf()));
         }
 
-        // 2. Extract only those and the maps folder.
+        let total: u64 = parse_sizes(&listing)
+            .into_iter()
+            .filter(|(n, _)| wanted.contains(n) || n.to_ascii_lowercase().starts_with("maps/"))
+            .map(|(_, size)| size)
+            .sum();
+
+        // 2. Extract only those and the maps folder, measuring the staging folder as it fills.
         let staging = Staging::create().map_err(|e| ImportError::io("creating the staging folder", e))?;
         let mut cmd = Command::new(tool);
         cmd.arg("--silent");
         for n in wanted.iter().map(String::as_str).chain(["Maps"]) {
             cmd.args(["--include", n]);
         }
-        let out = cmd
+        let mut child = cmd
             .arg("--output-dir")
             .arg(staging.dir())
             .arg(exe)
-            .output()
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
             .map_err(|e| spawn_error(e, exe))?;
-        if !out.status.success() {
-            let text = tool_message(&out.stderr);
+        // The error output is read on its own thread, so a full pipe can never stall the tool.
+        let mut pipe = child.stderr.take();
+        let errors = std::thread::spawn(move || {
+            let mut v = Vec::new();
+            if let Some(p) = pipe.as_mut() {
+                let _ = p.read_to_end(&mut v);
+            }
+            v
+        });
+        let report = |progress: &mut dyn FnMut(&Progress), done: u64| {
+            progress(&Progress {
+                step: Step::Unpacking,
+                file: "",
+                done: if total == 0 { 0 } else { done.min(total) },
+                total,
+            });
+        };
+        report(progress, 0);
+        let status = loop {
+            if let Some(status) = child
+                .try_wait()
+                .map_err(|e| ImportError::io("running innoextract", e))?
+            {
+                break status;
+            }
+            report(progress, dir_size(staging.dir()));
+            std::thread::sleep(POLL);
+        };
+        let stderr = errors.join().unwrap_or_default();
+        if !status.success() {
+            let text = tool_message(&stderr);
             if text.to_ascii_lowercase().contains("space") {
                 return Err(ImportError::NotEnoughSpace { needed: 0 });
             }
             return Err(fail(text));
         }
+
+        report(progress, total);
 
         // 3. The staged folder is a game folder like any other.
         let mut source = crate::source::source_at(exe, staging.dir());
@@ -222,6 +283,58 @@ fn parse_list(text: &str) -> Vec<String> {
             (!name.ends_with('/')).then(|| name.to_string())
         })
         .collect()
+}
+
+/// Each entry's first name and size from an `innoextract --list` output (folders excluded). The size is the last
+/// bracketed group of the line, such as `(4 B)`, `(13.8 KiB)` or `(467 MiB)` (binary units); an entry whose size can't be
+/// read counts as 0.
+fn parse_sizes(text: &str) -> Vec<(String, u64)> {
+    text.lines()
+        .filter_map(|l| {
+            let rest = l.trim_start().strip_prefix("- \"")?;
+            let end = rest.find('"')?;
+            let name = &rest[..end];
+            if name.ends_with('/') {
+                return None;
+            }
+            let size = l
+                .trim_end()
+                .strip_suffix(')')
+                .and_then(|t| t.rfind('(').map(|i| &t[i + 1..]))
+                .and_then(parse_size)
+                .unwrap_or(0);
+            Some((name.to_string(), size))
+        })
+        .collect()
+}
+
+/// A size as `innoextract` prints it: a number, a space and `B`, `bytes`, `KiB`, `MiB` or `GiB`.
+fn parse_size(text: &str) -> Option<u64> {
+    let (number, unit) = text.trim().split_once(' ')?;
+    let scale: f64 = match unit {
+        "B" | "bytes" => 1.0,
+        "KiB" => 1024.0,
+        "MiB" => 1024.0 * 1024.0,
+        "GiB" => 1024.0 * 1024.0 * 1024.0,
+        _ => return None,
+    };
+    let n: f64 = number.parse().ok()?;
+    (n.is_finite() && n >= 0.0).then(|| (n * scale).round() as u64)
+}
+
+/// The bytes of the files under `dir` (what can be read of it; a file being written counts as far as it has got).
+fn dir_size(dir: &Path) -> u64 {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .map(|e| match e.file_type() {
+            Ok(t) if t.is_dir() => dir_size(&e.path()),
+            Ok(_) => e.metadata().map_or(0, |m| m.len()),
+            Err(_) => 0,
+        })
+        .sum()
 }
 
 fn spawn_error(e: std::io::Error, exe: &Path) -> ImportError {
@@ -308,6 +421,24 @@ mod tests {
     }
 
     #[test]
+    fn the_listing_gives_each_entry_its_size() {
+        let text = "Listing \"Game\" - setup data version 5.6.2 (unicode)\n - \"app/Save/\"\n - \"War2Dat.mpq\" [en-US] (25.2 MiB)\n - \"Maps/a (1).pud\" (13.8 KiB)\n - \"tmp/x.jpg\" [temp], \"tmp/y.jpg\" [temp] (3 B)\n - \"big.mpq\" (1.5 GiB)\n - \"odd.mpq\" (lots)\n";
+        assert_eq!(
+            parse_sizes(text),
+            [
+                ("War2Dat.mpq".to_string(), 26_424_115),
+                ("Maps/a (1).pud".to_string(), 14_131),
+                ("tmp/x.jpg".to_string(), 3),
+                ("big.mpq".to_string(), 1_610_612_736),
+                ("odd.mpq".to_string(), 0),
+            ]
+        );
+        assert_eq!(parse_size("12 bytes"), Some(12));
+        assert_eq!(parse_size("-1 KiB"), None);
+        assert_eq!(parse_size("1 TiB"), None);
+    }
+
+    #[test]
     fn a_missing_tool_and_a_non_inno_exe_are_clear_errors() {
         let t = tempfile::tempdir().unwrap();
         let exe = fake_installer(t.path(), "setup_x.exe");
@@ -348,6 +479,7 @@ while [ $# -gt 0 ]; do
 done
 mkdir -p "$out/Maps"
 printf 'dat1' > "$out/War2Dat.mpq"
+sleep 1
 printf 'ins1' > "$out/Install.mpq"
 printf 'pud' > "$out/Maps/one.pud"
 "#
@@ -378,6 +510,23 @@ printf 'pud' > "$out/Maps/one.pud"
         assert!(staged.is_dir());
         drop(source);
         assert!(!staged.exists(), "the staging folder goes with the last reference");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unpacking_reports_the_staging_folder_filling_against_the_listed_sizes() {
+        let t = tempfile::tempdir().unwrap();
+        let exe = fake_installer(t.path(), "setup_x.exe");
+        let tool = fake_tool(t.path(), false);
+        let mut heard: Vec<(Step, u64, u64)> = Vec::new();
+        InstallerReader::open_with_tool(&exe, &tool, &mut |p| heard.push((p.step, p.done, p.total))).unwrap();
+        // The two archives and the map (4 + 4 + 3 bytes), not the program the listing also names.
+        assert!(heard.iter().all(|h| h.0 == Step::Unpacking && h.2 == 11), "{heard:?}");
+        assert_eq!(heard.first().unwrap().1, 0);
+        assert_eq!(heard.last().unwrap().1, 11);
+        assert!(heard.windows(2).all(|w| w[0].1 <= w[1].1), "{heard:?}");
+        // The tool pauses after the first archive: the folder was measured part-full on the way.
+        assert!(heard.iter().any(|h| h.1 > 0 && h.1 < 11), "{heard:?}");
     }
 
     #[cfg(unix)]

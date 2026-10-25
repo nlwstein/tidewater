@@ -30,19 +30,30 @@ pub struct Launch {
 pub fn import_command(path: &std::path::Path, data_dir: Option<&std::path::Path>) -> i32 {
     let data = storage::data_dir(data_dir);
     let run = || -> Result<(), tidewater_import::ImportError> {
-        let source = tidewater_import::classify(path)?;
+        // A progress line when a step starts and about every 10% of it.
+        let mut shown: Option<(tidewater_import::Step, u64)> = None;
+        let mut show = |p: &tidewater_import::Progress| {
+            let tenth = p.done * 10 / p.total.max(1);
+            if shown.is_none_or(|(step, at)| step != p.step || (p.total > 0 && tenth > at)) {
+                shown = Some((p.step, tenth));
+                let what = match p.step {
+                    tidewater_import::Step::ReadingDisc => "reading the CD image",
+                    tidewater_import::Step::Unpacking => "unpacking the installer",
+                    tidewater_import::Step::Checking => "checking",
+                    tidewater_import::Step::Copying => "copying",
+                };
+                if p.total == 0 {
+                    eprintln!("  {what}...");
+                } else {
+                    eprintln!("  {what}... {}%", tenth * 10);
+                }
+            }
+        };
+        let source = tidewater_import::classify_with(path, &mut show)?;
         let report = tidewater_import::validate(&source);
         print!("{}", tidewater_import::render_report(&source, &report));
         let report = report.into_result()?;
-        let mut shown = 0u64;
-        let manifest = tidewater_import::import(&source, &report, &data, &mut |p| {
-            // A progress line about every 10%.
-            let pct = p.done * 10 / p.total.max(1);
-            if pct > shown {
-                shown = pct;
-                eprintln!("  copying... {}%", pct * 10);
-            }
-        })?;
+        let manifest = tidewater_import::import(&source, &report, &data, &mut show)?;
         print!(
             "{}",
             tidewater_import::render_summary(&manifest, &report, &tidewater_import::game_dir(&data))

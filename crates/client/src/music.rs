@@ -16,7 +16,7 @@
 //! `update` after the one that saw the end (the spec's "first check after the end"); a track that reached its end
 //! stays open and "started" until something closes it; the music draw is made by the caller right after game setup
 //! (open question "Order of the music draw"); the whole file is read into memory at load (the "streaming" is the
-//! decoder's); fades of all sound only ask the caller to cut the effects ([`Action::CutEffects`]); the music volume
+//! decoder's), a chain's next track ahead of time on a thread of its own (`jukebox`); fades of all sound only ask the caller to cut the effects ([`Action::CutEffects`]); the music volume
 //! starts at 75, the first-run default of `ui/game-menu.md`, as nothing stores settings yet.
 //!
 //! Not yet here: the fade when the program exits, the attract demo start, a custom game starting from the

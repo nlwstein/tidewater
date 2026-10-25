@@ -9,6 +9,7 @@
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::mpq::{Archive, ArchiveSet, MpqError, ReadSeek};
 use crate::pud::Era;
@@ -59,7 +60,7 @@ impl Files for Folder {
 }
 
 pub struct Install {
-    files: Box<dyn Files>,
+    files: Arc<dyn Files>,
     archives: ArchiveSet,
 }
 
@@ -78,6 +79,15 @@ impl Install {
 
     /// The installation whose files `files` gives.
     pub fn from_files(files: Box<dyn Files>) -> Result<Self, InstallError> {
+        Self::from_shared(files.into())
+    }
+
+    /// A second handle on the same files, with archives of its own, for reading on another thread.
+    pub fn reopen(&self) -> Result<Self, InstallError> {
+        Self::from_shared(self.files.clone())
+    }
+
+    fn from_shared(files: Arc<dyn Files>) -> Result<Self, InstallError> {
         let mut list = Vec::new();
         for name in ARCHIVES {
             if let Some(f) = files.open(name)? {
@@ -103,7 +113,7 @@ impl Install {
             }
         }
         Self {
-            files: Box::new(Nothing),
+            files: Arc::new(Nothing),
             archives: ArchiveSet::new(Vec::new()),
         }
     }

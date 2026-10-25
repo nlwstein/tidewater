@@ -13,7 +13,9 @@
 //! On a phone ([`Intake::SharedFolder`]) the screen reads the app's shared folder instead (files copied in with the
 //! Files app or a computer; on Android, the app's external files folder), says a GOG installer can't be used there, offers "Scan again" and has no "Quit".
 //!
-//! The copy runs on a worker thread; its progress comes back over a channel and fills the progress bar. A finished
+//! The import runs on a worker thread; its progress comes back over a channel. The importing page names the step
+//! ("Step 1 of 3: Reading the CD image", [`tidewater_import::Step`]), fills a bar for that step with the megabytes
+//! done, and moves a block along the bar for a step with no size to measure (the check), so it never looks stopped. A finished
 //! import shows its result line for a moment and the program goes on into the normal start-up; a failed one shows the
 //! import crate's message (written for the player) with a way back to the list. Mouse and keyboard both work: Up,
 //! Down and Tab move, Enter chooses, Esc goes back or quits.
@@ -33,6 +35,7 @@ use crate::frontend::AppState;
 use crate::input::{FileEvent, Key};
 use crate::layers::{Layer, PictureId, Plane, Role};
 use crate::scene::Picture;
+use tidewater_import::{Progress, Step};
 
 const W: i32 = 640;
 const H: i32 = 480;
@@ -71,9 +74,9 @@ impl Candidate {
 pub trait Backend: Send + Sync + 'static {
     /// The installs found in the usual places that can be imported.
     fn search(&self) -> Vec<Candidate>;
-    /// Imports from `path` (a folder, an installer, a CD image or an archive): `progress(done, total, file)` is called
-    /// as the copy goes. The error is the message for the player.
-    fn import(&self, path: &Path, progress: &mut dyn FnMut(u64, u64, &str)) -> Result<Candidate, String>;
+    /// Imports from `path` (a folder, an installer, a CD image or an archive): `progress` hears each step as it goes
+    /// (reading a CD image or unpacking an installer, checking, copying). The error is the message for the player.
+    fn import(&self, path: &Path, progress: &mut dyn FnMut(&Progress)) -> Result<Candidate, String>;
 }
 
 /// The real backend: `tidewater_import`, copying into `<data_dir>/game`.
@@ -111,15 +114,19 @@ impl Backend for DesktopBackend {
         found
     }
 
-    fn import(&self, path: &Path, progress: &mut dyn FnMut(u64, u64, &str)) -> Result<Candidate, String> {
-        let source = tidewater_import::classify(path).map_err(|e| describe(&e))?;
+    fn import(&self, path: &Path, progress: &mut dyn FnMut(&Progress)) -> Result<Candidate, String> {
+        let source = tidewater_import::classify_with(path, progress).map_err(|e| describe(&e))?;
+        progress(&Progress {
+            step: Step::Checking,
+            file: "",
+            done: 0,
+            total: 0,
+        });
         let report = tidewater_import::validate(&source)
             .into_result()
             .map_err(|e| describe(&e))?;
-        let manifest = tidewater_import::import(&source, &report, &self.data_dir, &mut |p| {
-            progress(p.done, p.total, p.file)
-        })
-        .map_err(|e| describe(&e))?;
+        let manifest =
+            tidewater_import::import(&source, &report, &self.data_dir, progress).map_err(|e| describe(&e))?;
         Ok(Candidate {
             path: path.to_path_buf(),
             edition: manifest.edition,
@@ -178,7 +185,7 @@ impl Backend for DemoBackend {
         Self::candidates()
     }
 
-    fn import(&self, path: &Path, progress: &mut dyn FnMut(u64, u64, &str)) -> Result<Candidate, String> {
+    fn import(&self, path: &Path, progress: &mut dyn FnMut(&Progress)) -> Result<Candidate, String> {
         if path.to_string_lossy().contains("bad") {
             return Err(
                 "Found Install.mpq but not War2Dat.mpq. If this is the CD, choose the folder where the game was \
@@ -186,7 +193,12 @@ impl Backend for DemoBackend {
                     .into(),
             );
         }
-        progress(1, 1, "War2Dat.mpq");
+        progress(&Progress {
+            step: Step::Copying,
+            file: "War2Dat.mpq",
+            done: 1,
+            total: 1,
+        });
         Ok(Self::candidates().remove(0))
     }
 }
@@ -275,6 +287,13 @@ const BUTTON_GAP: i32 = 6;
 const BUTTONS_Y: i32 = 300;
 /// Frames the result line stays up before the program goes on (about 1.5 s).
 const RESULT_FRAMES: u32 = 90;
+/// Frames between redraws of the importing page's animation.
+const ANIMATION_FRAMES: u32 = 2;
+/// Frames each count of the working dots stays up.
+const DOT_FRAMES: u32 = 20;
+/// The width of the block that slides along the bar for a step with no size, and how far it moves each redraw.
+const SLIDER_W: i32 = 80;
+const SLIDER_STEP: i32 = 8;
 
 const DESKTOP_INTRO: &str = "Tidewater needs the game files from your own copy of Warcraft II: Battle.net Edition. \
                     Pick the install below, or choose where it is. Tidewater copies the files once.";
@@ -301,6 +320,11 @@ enum Page {
     List,
     Importing {
         name: String,
+        /// The step the import is on; none before its first report.
+        step: Option<Step>,
+        /// The import began by reading a CD image or unpacking an installer, so it has three steps, not two.
+        unpacked: bool,
+        /// The step's bytes done of its total (0 for a step with no size).
         done: u64,
         total: u64,
         file: String,
@@ -312,7 +336,12 @@ enum Page {
 /// What a worker thread sends back.
 enum Msg {
     Found(Vec<Candidate>),
-    Progress { done: u64, total: u64, file: String },
+    Progress {
+        step: Step,
+        done: u64,
+        total: u64,
+        file: String,
+    },
     Imported(Result<Candidate, String>),
 }
 
@@ -347,6 +376,8 @@ pub struct FirstRun {
     intake: Intake,
     /// Frames the result has been up.
     result_frames: u32,
+    /// Frames the importing page has been up, for its animation.
+    tick: u32,
     dirty: bool,
     picture: Option<PictureId>,
     /// Opened from the Settings screen on a running program rather than at start-up: "Quit" and Esc go back to the main
@@ -413,6 +444,7 @@ impl FirstRun {
             rx: None,
             last_pointer: None,
             result_frames: 0,
+            tick: 0,
             dirty: true,
             picture: None,
             returning: false,
@@ -645,6 +677,8 @@ impl FirstRun {
             .map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
         self.page = Page::Importing {
             name,
+            step: None,
+            unpacked: false,
             done: 0,
             total: 0,
             file: String::new(),
@@ -654,16 +688,20 @@ impl FirstRun {
         self.rx = Some(rx);
         let backend = self.backend.clone();
         let work = move || {
-            let mut last = (u64::MAX, String::new());
-            let result = backend.import(&path, &mut |done, total, file| {
-                // About a message per tenth of a percent, and one for each new file.
-                let step = done.saturating_mul(1000) / total.max(1);
-                if step != last.0 || file != last.1 {
-                    last = (step, file.to_string());
+            let mut last: Option<(Step, u64, String)> = None;
+            let result = backend.import(&path, &mut |p| {
+                // About a message per tenth of a percent, and one for each new step or file.
+                let permille = p.done.saturating_mul(1000) / p.total.max(1);
+                if last
+                    .as_ref()
+                    .is_none_or(|(step, at, file)| *step != p.step || *at != permille || file != p.file)
+                {
+                    last = Some((p.step, permille, p.file.to_string()));
                     let _ = tx.send(Msg::Progress {
-                        done,
-                        total,
-                        file: file.to_string(),
+                        step: p.step,
+                        done: p.done,
+                        total: p.total,
+                        file: p.file.to_string(),
                     });
                 }
             });
@@ -686,15 +724,23 @@ impl FirstRun {
                     self.focus = self.default_focus();
                     self.dirty = true;
                 }
-                Ok(Msg::Progress { done, total, file }) => {
+                Ok(Msg::Progress {
+                    step,
+                    done,
+                    total,
+                    file,
+                }) => {
                     if let Page::Importing {
+                        step: s,
+                        unpacked,
                         done: d,
                         total: t,
                         file: f,
                         ..
                     } = &mut self.page
                     {
-                        (*d, *t, *f) = (done, total, file);
+                        *unpacked |= matches!(step, Step::ReadingDisc | Step::Unpacking);
+                        (*s, *d, *t, *f) = (Some(step), done, total, file);
                         self.dirty = true;
                     }
                 }
@@ -722,6 +768,13 @@ impl FirstRun {
                     }
                     break;
                 }
+            }
+        }
+        if matches!(self.page, Page::Importing { .. }) {
+            // The working dots and the block of a step with no size move on whether or not a report came.
+            self.tick = self.tick.wrapping_add(1);
+            if self.tick.is_multiple_of(ANIMATION_FRAMES) {
+                self.dirty = true;
             }
         }
         if matches!(self.page, Page::Done(_)) {
@@ -767,12 +820,17 @@ impl FirstRun {
             Page::List => self.draw_list(&mut c),
             Page::Importing {
                 name,
+                step,
+                unpacked,
                 done,
                 total,
                 file,
             } => {
-                c.text_centred(150, 2, TEXT, "Importing the game files");
-                c.text_centred(184, 1, DIM, &fit_middle(name, 76));
+                c.text_centred(130, 2, TEXT, "Importing the game files");
+                c.text_centred(160, 1, DIM, &fit_middle(name, 76));
+                // The dots are padded to a fixed width, so the centred line doesn't shift as they change.
+                let dots = ".".repeat((self.tick / DOT_FRAMES % 4) as usize);
+                c.text_centred(196, 2, TEXT, &format!("{}{dots:<3}", step_line(*step, *unpacked)));
                 let bar = Rect {
                     x: 120,
                     y: 230,
@@ -781,29 +839,46 @@ impl FirstRun {
                 };
                 c.fill(bar, PANEL);
                 c.outline(bar, BORDER);
-                let frac = if *total == 0 {
-                    0.0
+                let inner = bar.w - 4;
+                if *total == 0 {
+                    // No size to measure: a block slides to and fro.
+                    let room = inner - SLIDER_W;
+                    let t = (self.tick / ANIMATION_FRAMES) as i32 * SLIDER_STEP % (2 * room);
+                    let x = if t < room { t } else { 2 * room - t };
+                    c.fill(
+                        Rect {
+                            x: bar.x + 2 + x,
+                            y: bar.y + 2,
+                            w: SLIDER_W,
+                            h: bar.h - 4,
+                        },
+                        BAR,
+                    );
                 } else {
-                    (*done as f64 / *total as f64).min(1.0)
-                };
-                let filled = ((bar.w - 4) as f64 * frac) as i32;
-                c.fill(
-                    Rect {
-                        x: bar.x + 2,
-                        y: bar.y + 2,
-                        w: filled,
-                        h: bar.h - 4,
-                    },
-                    BAR,
-                );
-                c.text_centred(238, 2, TEXT, &format!("{}%", (frac * 100.0) as u32));
-                c.text_centred(274, 1, DIM, &fit_middle(file, 76));
-                c.text_centred(
-                    330,
-                    1,
-                    DIM,
-                    "Copying once, into Tidewater's own folder. Your install is not changed.",
-                );
+                    let frac = (*done as f64 / *total as f64).min(1.0);
+                    c.fill(
+                        Rect {
+                            x: bar.x + 2,
+                            y: bar.y + 2,
+                            w: (inner as f64 * frac) as i32,
+                            h: bar.h - 4,
+                        },
+                        BAR,
+                    );
+                    c.text_centred(238, 2, TEXT, &format!("{}%", (frac * 100.0) as u32));
+                    c.text_centred(
+                        274,
+                        1,
+                        DIM,
+                        &format!(
+                            "{} of {}",
+                            tidewater_import::size_text((*done).max(1)),
+                            tidewater_import::size_text(*total)
+                        ),
+                    );
+                }
+                c.text_centred(292, 1, DIM, &fit_middle(file, 76));
+                c.text_centred(330, 1, DIM, step_note(*step));
             }
             Page::Done(line) => {
                 c.text_centred(130, 2, OK, "Done");
@@ -1119,6 +1194,35 @@ pub(crate) fn wrap(s: &str, cols: usize) -> Vec<String> {
         lines.push(line);
     }
     lines
+}
+
+/// The importing page's step line: "Step 1 of 3: Reading the CD image". An import that reads a CD image or unpacks
+/// an installer (`unpacked`) has three steps, any other two; before the first report it is getting ready.
+pub(crate) fn step_line(step: Option<Step>, unpacked: bool) -> String {
+    let (n, what) = match step {
+        None => return "Getting ready".to_string(),
+        Some(Step::ReadingDisc) => (1, "Reading the CD image"),
+        Some(Step::Unpacking) => (1, "Unpacking the installer"),
+        Some(Step::Checking) => (1, "Checking the files"),
+        Some(Step::Copying) => (2, "Copying the files"),
+    };
+    let first = matches!(step, Some(Step::ReadingDisc | Step::Unpacking));
+    if unpacked || first {
+        format!("Step {} of 3: {what}", if first { 1 } else { n + 1 })
+    } else {
+        format!("Step {n} of 2: {what}")
+    }
+}
+
+/// The line under the bar that says what the step does and how long it may take.
+pub(crate) fn step_note(step: Option<Step>) -> &'static str {
+    match step {
+        None => "Looking at what you chose.",
+        Some(Step::ReadingDisc) => "Reading the files out of the CD image. This can take a minute or two.",
+        Some(Step::Unpacking) => "Unpacking with innoextract. This can take a few minutes.",
+        Some(Step::Checking) => "Checking that the archives open and hold what the game needs.",
+        Some(Step::Copying) => "Copying once, into Tidewater's own folder. Your files are not changed.",
+    }
 }
 
 /// `s` cut to at most `cols` characters by replacing the middle with "...".

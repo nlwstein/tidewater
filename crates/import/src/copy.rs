@@ -18,12 +18,30 @@ use crate::source::{FolderFiles, Source, SourceFile, SourceFiles};
 use crate::validate::Report;
 use crate::{ImportError, game_dir};
 
-/// Progress for the callback: the file being copied and the bytes done of the total.
+/// What an import is doing when it reports progress (`docs/design/import.md`, "Progress").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Step {
+    /// Reading the game files out of a CD image into a temporary folder.
+    ReadingDisc,
+    /// Unpacking a GOG installer into a temporary folder (with `innoextract`).
+    Unpacking,
+    /// Opening the archives and checking the key files. It has no size to measure: `total` is 0.
+    Checking,
+    /// Copying the files into Tidewater's data folder, hashing them as it goes.
+    Copying,
+}
+
+/// Progress for the callback: the step, the file it is on (empty when it doesn't know), and the bytes done of that
+/// step's total. A `total` of 0 means the step has no size to measure.
 pub struct Progress<'a> {
+    pub step: Step,
     pub file: &'a str,
     pub done: u64,
     pub total: u64,
 }
+
+/// A callback that ignores progress, for the calls that don't show it.
+pub fn no_progress(_: &Progress) {}
 
 /// Whether a source file is one we keep.
 fn allowed(rel: &str) -> bool {
@@ -111,6 +129,7 @@ pub fn import_from(
             size += n as u64;
             done += n as u64;
             progress(&Progress {
+                step: Step::Copying,
                 file: &f.rel,
                 done,
                 total,
@@ -193,7 +212,11 @@ mod tests {
         let source = make_source(&src, b"one");
         let report = validate_with(&source, MARKER);
         let mut last = 0;
-        let m = import(&source, &report, &data, &mut |p| last = p.done).unwrap();
+        let m = import(&source, &report, &data, &mut |p| {
+            assert_eq!(p.step, Step::Copying);
+            last = p.done;
+        })
+        .unwrap();
         let game = data.join("game");
         let paths: Vec<_> = m.files.iter().map(|f| f.path.as_str()).collect();
         assert_eq!(paths, ["Maps/Sub/b.pud", "Maps/a.pud", "War2Dat.mpq"]);

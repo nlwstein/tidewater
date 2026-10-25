@@ -59,8 +59,8 @@ every screen of the original stays as it was.
   (`Input::picked`, `Input::dropped`) and go through the same import, so a GOG installer is read like any source and a CD
   image is read like any source. The core asks for a dialog with `Core::take_pick_requests`; the shell
   shows it. Nothing else of SDL is known to the core.
-- **Importing.** The copy runs on a worker thread through `Backend::import` (`DesktopBackend` calls `classify`,
-  `validate` and `import`); the screen shows the callback's progress as a bar, then the result line ("Imported
+- **Importing.** The import runs on a worker thread through `Backend::import` (`DesktopBackend` calls
+  `classify_with`, `validate` and `import`); the screen shows its progress (see [Progress](#progress)), then the result line ("Imported
   Warcraft II: Battle.net Edition (GOG). Videos and music: yes. Maps: 153.") for about a second and a half (Enter
   skips it), then loads the imported files and goes on into the normal start-up (or the map or `--goto` screen the
   command line asked for).
@@ -71,6 +71,33 @@ every screen of the original stays as it was.
   demo backend and a fake list of installs, so it needs no game data) has a frame snapshot in
   `tests/snapshots/firstrun.txt`.
 - **Phones.** iOS and Android use a shared folder and their own pickers instead of SDL's dialogs: [ios.md](ios.md), [android.md](android.md).
+
+## Progress
+
+**Bottom line.** Every step of an import reports its progress through one callback (`tidewater_import::Progress`), and
+the first-run screen and `--import` show the step by name, so a long read never looks stalled. It is the same code on
+every platform.
+
+| Step (`Step`) | When | What it measures |
+|---|---|---|
+| `ReadingDisc` | A CD image: its game files are copied out to a temporary folder (`DiscFiles::stage`) | Bytes written of the listed files' total, each chunk (and each file as it starts) |
+| `Unpacking` | A GOG installer: `innoextract` unpacks it to a temporary folder | The temporary folder's size, measured every 200 ms, against the sizes `innoextract --list` gives |
+| `Checking` | `validate` opens the archives and reads the key files | Nothing (`total` is 0) |
+| `Copying` | `import` copies into `<data>/game`, hashing as it goes | Bytes copied of the total |
+
+`classify_with` reports the first two (`classify` is it with no callback); the caller reports `Checking` before
+`validate`. A game folder or an archive has no first step.
+
+**The screen.** The importing page names the step ("Step 1 of 3: Reading the CD image", or "Step 1 of 2" when there is
+nothing to read or unpack first), with animated dots. The bar fills per step, with the percentage, the megabytes done
+of the step's total and the file it is on. A step with no size (`Checking`) slides a block along the bar instead. A
+line under the bar says what the step does (reading a CD image "can take a minute or two"). The animation runs from the
+frame count, so it moves even while no report comes (a file in a disc's installer archive is unpacked whole when it
+opens), and scripted scenes stay the same every run.
+
+**Why it was needed.** The CD image's files used to be staged with no progress, and the bar showed only the copy that
+followed. On a phone reading the image is the slow part, so the bar stood at 0% for about a minute and then filled in
+moments.
 
 ## GOG installer
 
@@ -84,7 +111,7 @@ through `TIDEWATER_INNOEXTRACT`, then the `PATH`, then `/opt/homebrew/bin`, `/us
 and `Maps` into a staging folder under the system temp folder (`tidewater-installer-<pid>-<n>`). That folder is then
 an ordinary game folder for `validate` and `copy`; `Source.staged` holds it and removes it when the last copy of the
 source is dropped. So `validate` runs on the staged files before anything is swapped into `<data>/game`, and the
-manifest's source kind is `gog-installer`. Extraction has no progress callback; the GOG installer takes about 3
+manifest's source kind is `gog-installer`. Extraction reports `Step::Unpacking` (see [Progress](#progress)); the GOG installer takes about 3
 seconds for its 500 MB (a whole import is about 4 seconds on a laptop). The temp folder needs room for the extracted
 archives (about 500 MB) on top of the copy.
 

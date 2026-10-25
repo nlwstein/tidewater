@@ -27,10 +27,22 @@ impl Backend for Fake {
         self.found.clone()
     }
 
-    fn import(&self, path: &Path, progress: &mut dyn FnMut(u64, u64, &str)) -> Result<Candidate, String> {
+    fn import(&self, path: &Path, progress: &mut dyn FnMut(&Progress)) -> Result<Candidate, String> {
         self.calls.lock().unwrap().push(path.to_path_buf());
-        progress(50, 100, "War2Dat.mpq");
-        progress(100, 100, "Install.mpq");
+        for (step, done, total, file) in [
+            (Step::ReadingDisc, 0, 200, "Install.mpq"),
+            (Step::ReadingDisc, 200, 200, "War2Dat.mpq"),
+            (Step::Checking, 0, 0, ""),
+            (Step::Copying, 50, 100, "War2Dat.mpq"),
+            (Step::Copying, 100, 100, "Install.mpq"),
+        ] {
+            progress(&Progress {
+                step,
+                file,
+                done,
+                total,
+            });
+        }
         if path.to_string_lossy().contains("bad") {
             Err("This looks like the 1995 DOS edition (it has .WAR files).".to_string())
         } else {
@@ -226,6 +238,8 @@ fn the_progress_bar_follows_the_copy() {
     };
     s.page = Page::Importing {
         name: "x".into(),
+        step: Some(Step::Copying),
+        unpacked: false,
         done: 0,
         total: 100,
         file: String::new(),
@@ -233,6 +247,8 @@ fn the_progress_bar_follows_the_copy() {
     let empty = bar(&mut s);
     s.page = Page::Importing {
         name: "x".into(),
+        step: Some(Step::Copying),
+        unpacked: false,
         done: 50,
         total: 100,
         file: "War2Dat.mpq".into(),
@@ -240,6 +256,8 @@ fn the_progress_bar_follows_the_copy() {
     let half = bar(&mut s);
     s.page = Page::Importing {
         name: "x".into(),
+        step: Some(Step::Copying),
+        unpacked: false,
         done: 100,
         total: 100,
         file: String::new(),
@@ -249,6 +267,8 @@ fn the_progress_bar_follows_the_copy() {
     // The importing screen shows the copy's progress on the core's frame too.
     r.core.first_run.as_mut().unwrap().page = Page::Importing {
         name: "x".into(),
+        step: Some(Step::Copying),
+        unpacked: false,
         done: 40,
         total: 100,
         file: String::new(),
@@ -707,4 +727,147 @@ fn a_phone_that_came_from_the_settings_screen_has_a_way_back() {
     assert_eq!(items.last(), Some(&Item::Quit), "a Back button after the rescan");
     let fr = r.core.first_run.as_mut().unwrap();
     assert_eq!(fr.key(Key::Escape, false), Some(Outcome::Back));
+}
+
+#[test]
+fn the_step_line_counts_three_steps_when_the_import_unpacks_first() {
+    assert_eq!(step_line(None, false), "Getting ready");
+    // A CD image or an installer: read or unpack, check, copy.
+    assert_eq!(
+        step_line(Some(Step::ReadingDisc), false),
+        "Step 1 of 3: Reading the CD image"
+    );
+    assert_eq!(
+        step_line(Some(Step::Unpacking), false),
+        "Step 1 of 3: Unpacking the installer"
+    );
+    assert_eq!(step_line(Some(Step::Checking), true), "Step 2 of 3: Checking the files");
+    assert_eq!(step_line(Some(Step::Copying), true), "Step 3 of 3: Copying the files");
+    // A game folder: check, copy.
+    assert_eq!(
+        step_line(Some(Step::Checking), false),
+        "Step 1 of 2: Checking the files"
+    );
+    assert_eq!(step_line(Some(Step::Copying), false), "Step 2 of 2: Copying the files");
+    // Every line fits the screen at the size it is drawn (with the three dots).
+    for step in [
+        None,
+        Some(Step::ReadingDisc),
+        Some(Step::Unpacking),
+        Some(Step::Checking),
+        Some(Step::Copying),
+    ] {
+        for unpacked in [false, true] {
+            let w = (step_line(step, unpacked).chars().count() + 3) as i32 * font::SIZE as i32 * 2;
+            assert!(w <= W, "{step:?}");
+        }
+        assert!(step_note(step).chars().count() <= 76, "{step:?}");
+    }
+}
+
+/// The importing page's step, whether it unpacked, bytes and file.
+fn importing(s: &FirstRun) -> (Option<Step>, bool, u64, u64, String) {
+    match &s.page {
+        Page::Importing {
+            step,
+            unpacked,
+            done,
+            total,
+            file,
+            ..
+        } => (*step, *unpacked, *done, *total, file.clone()),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn each_report_moves_the_page_to_its_step() {
+    let r = rig();
+    let mut s = FirstRun::with_candidates(r.fake.clone(), Vec::new(), true);
+    s.page = Page::Importing {
+        name: "Game.cue".into(),
+        step: None,
+        unpacked: false,
+        done: 0,
+        total: 0,
+        file: String::new(),
+    };
+    let (tx, rx) = channel();
+    s.rx = Some(rx);
+    let send = |step, done, total, file: &str| {
+        tx.send(Msg::Progress {
+            step,
+            done,
+            total,
+            file: file.into(),
+        })
+        .unwrap();
+    };
+    send(Step::ReadingDisc, 120, 490, "Install.mpq");
+    s.poll();
+    assert_eq!(
+        importing(&s),
+        (Some(Step::ReadingDisc), true, 120, 490, "Install.mpq".into())
+    );
+    send(Step::Checking, 0, 0, "");
+    s.poll();
+    assert_eq!(importing(&s), (Some(Step::Checking), true, 0, 0, String::new()));
+    send(Step::Copying, 7, 490, "Install.mpq");
+    s.poll();
+    let (step, unpacked, ..) = importing(&s);
+    assert_eq!(step_line(step, unpacked), "Step 3 of 3: Copying the files");
+}
+
+#[test]
+fn the_worker_passes_on_every_step_change() {
+    let r = rig();
+    let mut s = FirstRun::with_candidates(r.fake.clone(), Vec::new(), false);
+    s.start_import(PathBuf::from("/downloads/Game.cue"));
+    // Without threads the import ran inside the call; its messages wait in the channel, in order.
+    let mut steps = Vec::new();
+    while let Ok(m) = s.rx.as_ref().unwrap().try_recv() {
+        if let Msg::Progress { step, done, total, .. } = m {
+            steps.push((step, done, total));
+        }
+    }
+    assert_eq!(
+        steps,
+        [
+            (Step::ReadingDisc, 0, 200),
+            (Step::ReadingDisc, 200, 200),
+            (Step::Checking, 0, 0),
+            (Step::Copying, 50, 100),
+            (Step::Copying, 100, 100),
+        ]
+    );
+}
+
+#[test]
+fn a_step_with_no_size_moves_a_block_along_the_bar() {
+    let r = rig();
+    let mut s = FirstRun::with_candidates(r.fake.clone(), Vec::new(), true);
+    s.page = Page::Importing {
+        name: "x".into(),
+        step: Some(Step::Checking),
+        unpacked: false,
+        done: 0,
+        total: 0,
+        file: String::new(),
+    };
+    // The leftmost lit column of the bar's middle row.
+    let block = |s: &mut FirstRun| {
+        let mut pic = crate::frontend::blank();
+        assert!(s.draw(&mut pic), "the page redrew");
+        let y = 244usize;
+        (120..520).find(|&x| pic.rgba[(y * 640 + x) * 4..][..3] == BAR)
+    };
+    let first = block(&mut s);
+    assert!(first.is_some(), "a block is drawn");
+    // With no report at all, the page asks to be drawn again within a few frames, and the block has moved.
+    for _ in 0..ANIMATION_FRAMES {
+        s.poll();
+    }
+    let later = block(&mut s);
+    assert_ne!(first, later);
+    assert!(later.is_some());
 }
