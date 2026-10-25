@@ -205,6 +205,13 @@ jobs:
         run: |
           rustup toolchain install
           rustup target add aarch64-linux-android x86_64-linux-android
+      - name: Install the pinned Android NDK (platform/android/ndk-version)
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          ndk=$(cat platform/android/ndk-version)
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" > /dev/null
+          grep -qx "Pkg.Revision = $ndk" "$ANDROID_HOME/ndk/$ndk/source.properties"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$ndk" >> "$GITHUB_ENV"
       - uses: taiki-e/install-action@v2
         if: steps.gate.outputs.skip != 'true'
         with:

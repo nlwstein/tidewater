@@ -99,7 +99,7 @@ what to do.
 
 ## Android APK
 
-The `android` job builds the APK with the runner's NDK, `cargo-ndk` and JDK 21, then checks the signature with `apksigner`
+The `android` job builds the APK with the pinned NDK (`platform/android/ndk-version`, installed with `sdkmanager`), `cargo-ndk` and JDK 21, then checks the signature with `apksigner`
 and prints the certificate's SHA-256 in the run summary (it must be the same on every release).
 
 **versionName and versionCode.** `versionName` is the release version. `versionCode` is `major * 10000 + minor * 100 +

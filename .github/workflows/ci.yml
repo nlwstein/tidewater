@@ -18,8 +18,8 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
 
-# Runner images are named, not `-latest`, so the preinstalled NDK, Xcode and the Linux build's glibc change only when
-# we bump them (with rust-toolchain.toml). `--locked` fails the build if Cargo.lock is out of date instead of updating it.
+# Runner images are named, not `-latest`, so Xcode and the Linux build's glibc change only when we bump them (with
+# rust-toolchain.toml); the Android NDK is installed by version (platform/android/ndk-version). `--locked` fails the build if Cargo.lock is out of date instead of updating it.
 jobs:
   check:
     name: check
@@ -137,7 +137,7 @@ jobs:
           if-no-files-found: error
 
   # The Android app's native library for one ABI (docs/design/android.md): compiles SDL 3 and the shell with the
-  # runner's own NDK, builds no APK and signs nothing. Kept to one ABI so it stays cheap.
+  # pinned NDK, builds no APK and signs nothing. Kept to one ABI so it stays cheap.
   android:
     name: android (arm64 library)
     needs: check
@@ -148,6 +148,12 @@ jobs:
         run: |
           rustup toolchain install
           rustup target add aarch64-linux-android
+      - name: Install the pinned Android NDK (platform/android/ndk-version)
+        run: |
+          ndk=$(cat platform/android/ndk-version)
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" > /dev/null
+          grep -qx "Pkg.Revision = $ndk" "$ANDROID_HOME/ndk/$ndk/source.properties"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$ndk" >> "$GITHUB_ENV"
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-ndk@4.1.2

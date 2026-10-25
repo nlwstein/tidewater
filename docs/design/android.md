@@ -41,9 +41,12 @@ two files, `crates/client/src/shell/app.rs` (the loop) and `sdl.rs` (the safe SD
 ## Build
 
 You need rustup, [cargo-ndk](https://github.com/bbqsrc/cargo-ndk), CMake, a JDK (17 to 24, for Gradle 8.14) and the
-Android SDK with an NDK (28.2 was used) and `platforms;android-35`. The script finds the SDK in `ANDROID_HOME`,
-`ANDROID_SDK_ROOT`, `~/Library/Android/sdk` or `~/Android/Sdk`, the NDK in `ANDROID_NDK_HOME` or the newest one in the
-SDK, and the JDK in `JAVA_HOME` or Homebrew.
+Android SDK with the pinned NDK and `platforms;android-35`. The NDK version is in `platform/android/ndk-version`
+(28.2.13676358, r28c); CI installs that one with `sdkmanager`, so install the same with
+`sdkmanager "ndk;28.2.13676358"`. The script finds the SDK in `ANDROID_HOME`, `ANDROID_SDK_ROOT`,
+`~/Library/Android/sdk` or `~/Android/Sdk`, the NDK in `ANDROID_NDK_HOME` (it warns if that is another version) or the
+pinned version in the SDK, and the JDK in `JAVA_HOME` or Homebrew. To move to a newer NDK, change `ndk-version` and
+the version here in one commit.
 
 ```sh
 platform/android/build.sh                  # both ABIs and the APK

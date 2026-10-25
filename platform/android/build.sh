@@ -18,7 +18,7 @@
 # Needs rustup (the Android targets are added by the script), cargo-ndk, CMake, a JDK that Gradle 8.14 runs on (17 to
 # 24; set JAVA_HOME, or the script looks in Homebrew's openjdk folders) and the Android SDK with an NDK and
 # platforms;android-35 (ANDROID_HOME, or ~/Library/Android/sdk and ~/Android/Sdk). The NDK is ANDROID_NDK_HOME or the
-# newest one in the SDK.
+# version in ndk-version, from the SDK.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -89,11 +89,18 @@ if [ -z "${ANDROID_HOME:-}" ]; then
 fi
 [ -n "${ANDROID_HOME:-}" ] || { echo "no Android SDK: set ANDROID_HOME" >&2; exit 1; }
 export ANDROID_HOME
+# The NDK is pinned in ndk-version, the one file CI reads too.
+ndk=$(cat "$here/ndk-version")
 if [ -z "${ANDROID_NDK_HOME:-}" ]; then
-    ANDROID_NDK_HOME=$(ls -d "$ANDROID_HOME"/ndk/*/ 2>/dev/null | sort -V | tail -n 1)
-    ANDROID_NDK_HOME=${ANDROID_NDK_HOME%/}
+    ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$ndk"
+    [ -d "$ANDROID_NDK_HOME" ] || {
+        echo "no Android NDK $ndk: install it with sdkmanager \"ndk;$ndk\", or set ANDROID_NDK_HOME" >&2
+        exit 1
+    }
 fi
-[ -d "${ANDROID_NDK_HOME:-}" ] || { echo "no Android NDK: install one or set ANDROID_NDK_HOME" >&2; exit 1; }
+[ -d "$ANDROID_NDK_HOME" ] || { echo "no Android NDK at ANDROID_NDK_HOME ($ANDROID_NDK_HOME)" >&2; exit 1; }
+found=$(sed -n 's/^Pkg.Revision *= *//p' "$ANDROID_NDK_HOME/source.properties" 2>/dev/null || true)
+[ "$found" = "$ndk" ] || echo "warning: ANDROID_NDK_HOME is NDK ${found:-of unknown version}, not the pinned $ndk" >&2
 export ANDROID_NDK_HOME
 
 # SDL's CMake build must use the NDK's toolchain file; with only the NDK's location it picks the wrong processor name.
