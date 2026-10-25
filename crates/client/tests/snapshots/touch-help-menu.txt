@@ -1,0 +1,27 @@
+# frame and sound fingerprints of the scripted scene `touch-help-menu` (hashes only)
+frames	1-1	156ed4086987e325
+frames	2-2	1441019148d7593b
+frames	3-3	584a40b5f6e700b0
+frames	4-4	0296f7ea0d62fb70
+frames	5-5	16681813b15494bf
+frames	6-6	d8e558fcedb56b72
+frames	7-7	97fca11a3ff36b77
+frames	8-8	0e907c6717da634a
+frames	9-9	70840faa2f4f2984
+frames	10-10	0c564bf75225e8a5
+frames	11-11	1c74e8b7a0380beb
+frames	12-12	38a5ca800b2a4f9b
+sound	14	d0e6afe865a35291	0.7516	Loop
+shot	28	menu	ac7337a45275d79d
+frames	13-28	ac7337a45275d79d
+frames	29-29	1d91c679828eec63
+frames	30-31	7243f44be11062e2
+shot	33	page	b60a5a2f6933c98b
+frames	32-34	b60a5a2f6933c98b
+frames	35-35	17e5b80ae0b974bc
+frames	36-36	0ece2a9bb9c2b044
+shot	38	page-2	ea658eb9503e39eb
+frames	37-39	ea658eb9503e39eb
+frames	40-41	b718e38ea5901cac
+shot	43	closed	1d91c679828eec63
+frames	42-43	1d91c679828eec63

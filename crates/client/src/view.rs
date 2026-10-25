@@ -116,6 +116,20 @@ pub fn sheet_frame(building: bool, facing: u8, frame: u8, frames: usize) -> Opti
     (f < frames).then_some((f, mirrored))
 }
 
+/// The animation frame a unit is drawn with. The sim keeps the construction site's look in `script.frame` (frame 0
+/// below 64/255, frame 1 from there, `economy/build-train.md`, "The construction pass", step 6), but that numbers the
+/// *site picture*'s frames, and the spec doesn't say which sprite file that picture is. Until it does, a building
+/// under construction draws frame 1 of its own sheet (the under-construction frame of building sheets, see
+/// `tidewater_formats::sprites`) for the whole construction, so the finished frame 0 is never shown first.
+pub fn drawn_frame(u: &Unit) -> u8 {
+    frame_with_construction(u.building, u.construction.is_some(), u.script.frame)
+}
+
+/// `drawn_frame` on its parts: a building under construction always draws frame 1, whatever the sim's look is.
+fn frame_with_construction(building: bool, under_construction: bool, frame: u8) -> u8 {
+    if building && under_construction { 1 } else { frame }
+}
+
 /// Where a frame's top-left corner is drawn ("Placement"), for a sprite file of `size` W × H and a frame at offset
 /// (fx, fy) of fw × fh, around centre point `centre`, raised by `lift`.
 pub fn frame_origin(
@@ -872,7 +886,7 @@ pub fn frame(world: &World, art: &Art, view: &Canvas, local: &Local) -> (ViewFra
         } else {
             Some(tidewater_sim::minimap::Picture {
                 kind: u.picture(),
-                frame: u.script.frame,
+                frame: drawn_frame(u),
                 facing: u.facing,
             })
         };
@@ -919,7 +933,7 @@ pub fn frame(world: &World, art: &Art, view: &Canvas, local: &Local) -> (ViewFra
         let sheet = unit_sheet(art, local.carried.file(world, u), u.picture());
         let bob = u.bob.value as i32;
         let sprite =
-            sheet_frame(u.building, u.facing, u.script.frame, art.frames(sheet)).map(|(frame, mirrored)| Op::Sprite {
+            sheet_frame(u.building, u.facing, drawn_frame(u), art.frames(sheet)).map(|(frame, mirrored)| Op::Sprite {
                 sheet,
                 frame,
                 mirrored,
@@ -1074,6 +1088,21 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    #[test]
+    fn a_building_under_construction_never_draws_the_finished_frame() {
+        // Regression: the sim's construction look is 0 at placement, which indexed the finished frame 0 of the
+        // building's own sheet, so a new site flashed its final form before the construction frames.
+        for look in [0, 1] {
+            assert_eq!(frame_with_construction(true, true, look), 1);
+        }
+        assert_eq!(
+            frame_with_construction(true, false, 0),
+            0,
+            "a completed building keeps its frame"
+        );
+        assert_eq!(frame_with_construction(false, true, 3), 3, "units are untouched");
     }
 
     #[test]

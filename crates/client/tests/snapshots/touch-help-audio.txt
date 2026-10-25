@@ -1,0 +1,2 @@
+# mixed sound fingerprints of the scripted scene `touch-help` (hashes only): 22050 Hz stereo 16-bit, one-second blocks
+tail	13597	7b1928e345129152

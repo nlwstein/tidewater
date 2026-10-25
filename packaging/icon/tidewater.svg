@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Tidewater's app icon: a square-sailed ship riding the waves at dusk. Our own artwork (MPL-2.0, like the rest of
+       the repository), drawn by hand from plain shapes.
+
+       The sky and the sea run 512 units past every edge of the 1024 square on purpose: Android's adaptive icon draws
+       the picture zoomed out (render.sh, its scale option) and needs the scene to carry on beyond the square. Every
+       other platform sees only the square.
+
+       After changing this file run packaging/icon/render.sh, which redraws every platform's icon from it. -->
+  <defs>
+    <linearGradient id="sky" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="800">
+      <stop offset="0" stop-color="#1c2a48"/>
+      <stop offset="1" stop-color="#c0663f"/>
+    </linearGradient>
+  </defs>
+  <!-- sky and the setting sun -->
+  <rect x="-512" y="-512" width="2048" height="2048" fill="url(#sky)"/>
+  <circle cx="512" cy="440" r="290" fill="#f2b85a"/>
+  <!-- mast and a square sail with a broad red stripe -->
+  <rect x="490" y="120" width="44" height="580" fill="#3a2414"/>
+  <path d="M262 200 Q512 160 762 200 Q796 400 762 590 Q512 550 262 590 Q228 400 262 200 Z" fill="#f7f0de"/>
+  <path d="M246 330 Q512 296 778 330 L784 470 Q512 438 240 470 Z" fill="#b3302a"/>
+  <!-- hull with raised ends -->
+  <path d="M120 580 h130 v44 H774 v-44 h130 L800 820 H224 Z" fill="#4e2e1a"/>
+  <!-- the sea: the foam crest, the wave under it and the deeper water in front -->
+  <path d="M-512 752 C-422 692 -342 692 -256 752 S-92 812 0 752 S164 692 256 752 S420 812 512 752 S676 692 768 752 S932 812 1024 752 S1188 692 1280 752 S1444 812 1536 752 V1536 H-512 Z" fill="#f2f8f7"/>
+  <path d="M-512 808 C-422 748 -342 748 -256 808 S-92 868 0 808 S164 748 256 808 S420 868 512 808 S676 748 768 808 S932 868 1024 808 S1188 748 1280 808 S1444 868 1536 808 V1536 H-512 Z" fill="#1f7898"/>
+  <path d="M-512 904 C-422 844 -342 844 -256 904 S-92 964 0 904 S164 844 256 904 S420 964 512 904 S676 844 768 904 S932 964 1024 904 S1188 844 1280 904 S1444 964 1536 904 V1536 H-512 Z" fill="#0f3c5a"/>
+</svg>

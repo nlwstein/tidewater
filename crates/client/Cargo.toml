@@ -31,6 +31,8 @@ tidewater-replay.workspace = true
 # SDL 3, built from source and linked in (the workspace says how). Only the shell (`src/shell/`) uses it.
 sdl3-sys.workspace = true
 serde_json.workspace = true
+# The touch chrome's icons (`chrome`), rasterised at the buttons' size.
+resvg.workspace = true
 
 
 [dev-dependencies]

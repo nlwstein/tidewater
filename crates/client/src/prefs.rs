@@ -89,6 +89,9 @@ pub struct Prefs {
     pub update_check: bool,
     /// The "move Tidewater to Applications" notice (`update`) has been shown once; the `move_notice_seen` line.
     pub move_notice_seen: bool,
+    /// The Touch Controls help (`touchhelp`) has shown by itself once, at the first game on a phone or tablet; the
+    /// `touch_help_seen` line.
+    pub touch_help_seen: bool,
     /// Whether the desktop window opens (and stays) full screen; the `fullscreen` line, off by default
     /// (`settings`, the Settings screen's Window row).
     pub fullscreen: bool,
@@ -122,6 +125,7 @@ impl Default for Prefs {
             mp_port: "6112".to_string(),
             update_check: true,
             move_notice_seen: false,
+            touch_help_seen: false,
             fullscreen: false,
             mouse_lock: true,
             music_before: None,
@@ -197,6 +201,7 @@ impl Prefs {
                 "mp_answer" => p.mp_answer = text == "1",
                 "update_check" => p.update_check = text != "0",
                 "move_notice_seen" => p.move_notice_seen = text == "1",
+                "touch_help_seen" => p.touch_help_seen = text == "1",
                 "fullscreen" => p.fullscreen = text == "1",
                 "mouse_lock" => p.mouse_lock = text != "0",
                 _ => {}
@@ -223,7 +228,7 @@ impl Prefs {
     /// The text form of everything stored, ending with the `[extras]` section.
     pub fn to_text(&self) -> String {
         format!(
-            "game_speed={}\nmouse_scroll={}\nkey_scroll={}\nmusic_volume={}\ndigital_volume={}\nnext_tip={}\nbits={}\nmp_name={}\nmp_method={}\nmp_answer={}\nmp_address={}\nmp_port={}\nupdate_check={}\nmove_notice_seen={}\nfullscreen={}\nmouse_lock={}\n{}{}",
+            "game_speed={}\nmouse_scroll={}\nkey_scroll={}\nmusic_volume={}\ndigital_volume={}\nnext_tip={}\nbits={}\nmp_name={}\nmp_method={}\nmp_answer={}\nmp_address={}\nmp_port={}\nupdate_check={}\nmove_notice_seen={}\ntouch_help_seen={}\nfullscreen={}\nmouse_lock={}\n{}{}",
             self.game_speed,
             self.mouse_scroll,
             self.key_scroll,
@@ -238,6 +243,7 @@ impl Prefs {
             self.mp_port,
             u8::from(self.update_check),
             u8::from(self.move_notice_seen),
+            u8::from(self.touch_help_seen),
             u8::from(self.fullscreen),
             u8::from(self.mouse_lock),
             self.extras.section_text(),
@@ -360,6 +366,17 @@ mod tests {
             ..Prefs::default()
         };
         assert!(Prefs::from_text(&seen.to_text()).move_notice_seen);
+    }
+
+    #[test]
+    fn the_touch_help_is_remembered() {
+        assert!(!Prefs::from_text("").touch_help_seen);
+        let seen = Prefs {
+            touch_help_seen: true,
+            ..Prefs::default()
+        };
+        assert!(seen.to_text().contains("touch_help_seen=1\n"));
+        assert!(Prefs::from_text(&seen.to_text()).touch_help_seen);
     }
 
     #[test]

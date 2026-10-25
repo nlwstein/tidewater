@@ -81,8 +81,14 @@ pub struct GameMenu {
     can_save_replay: bool,
     /// The player only watches this network game.
     observer: bool,
+    /// A phone or tablet: no Exit Program (the system closes apps; `docs/design/touch.md`).
+    no_exit: bool,
+    /// Touch is in use: the Help menu offers the Touch Controls page (`touchhelp`).
+    touch_help: bool,
     /// Text shown by the current screen (wrapped).
     lines: Vec<String>,
+    /// The Touch Controls pages' state (the `TouchHelp` screen).
+    help: crate::touchhelp::Pager,
     delay: menu::Delay,
     hot: Option<usize>,
     /// The focused button (the yellow ring): its index in the item list; `None` until the screen is next run, which
@@ -346,6 +352,9 @@ impl GameMenu {
             }
             Screen::Help => {
                 b.button(Act::Open(Screen::KeyHelp), "Keystroke Help");
+                if self.touch_help {
+                    b.button(Act::Open(Screen::TouchHelp), "Touch Controls");
+                }
                 b.button(Act::Open(Screen::Tips), "Tips");
                 b.button(Act::Back, "Previous");
                 ("Help", false)
@@ -432,6 +441,7 @@ impl GameMenu {
                 for e in menu::end_buttons(kind)
                     .into_iter()
                     .filter(|e| !(self.observer && *e == EndButton::Surrender))
+                    .filter(|e| !(self.no_exit && *e == EndButton::Exit))
                 {
                     let label = match e {
                         EndButton::Restart => "Restart Scenario (Ctrl+R)",
@@ -469,6 +479,8 @@ impl GameMenu {
                 b.button(Act::Back, "OK");
                 ("Keystroke Help", true)
             }
+            // The Touch Controls pages draw themselves (`touchhelp`).
+            Screen::TouchHelp => ("", false),
             Screen::Tips => {
                 b.lines(&self.lines);
                 b.button(Act::Back, "OK");
@@ -537,6 +549,7 @@ fn enter(m: &mut GameMenu, front: &mut Front, stored: &mut Stored, sim: &Sim, fl
             m.lines = wrap(front, text);
         }
         Screen::KeyHelp => m.lines = KEY_HELP.iter().map(|s| s.to_string()).collect(),
+        Screen::TouchHelp => m.help = Default::default(),
         Screen::Refused(host) => {
             // Network entry 28 with the host's name; ours when the install has no such table.
             let template = front.net(REFUSED_ENTRY);
@@ -574,6 +587,7 @@ fn default_act(screen: Screen) -> Option<Act> {
         | Screen::Objectives
         | Screen::End
         | Screen::KeyHelp
+        | Screen::TouchHelp
         | Screen::Tips
         | Screen::Refused(_) => Some(Act::Back),
         Screen::Saving(_) | Screen::Settings => None,
@@ -790,6 +804,7 @@ pub(crate) fn open_requests(c: &mut Core) {
         pictures,
         menu_input: MenuInput { demo_done, .. },
         input,
+        touch,
         ..
     } = c;
     let keys = &input.keys;
@@ -860,6 +875,8 @@ pub(crate) fn open_requests(c: &mut Core) {
             K::LoadGame => Screen::Saving(Saving::Load),
             K::Restart => Screen::Confirm(Confirm::Restart),
             K::Quit => Screen::Confirm(Confirm::QuitToMenu),
+            // A phone or tablet has no Exit Program, so Ctrl+X does nothing there.
+            K::QuitDialog if touch.touch_only => continue,
             K::QuitDialog => Screen::Confirm(Confirm::Exit),
             K::ToggleSounds => {
                 stored.0.toggle_digital();
@@ -868,6 +885,18 @@ pub(crate) fn open_requests(c: &mut Core) {
             _ => continue,
         };
         asked = Some(s);
+    }
+    // Ours: a phone or tablet shows the Touch Controls page by itself at the first game (`touchhelp`), once ever. Not in
+    // a network game, whose menus do not stop the game, nor in a replay.
+    if asked.is_none()
+        && touch.touch_only
+        && !stored.0.touch_help_seen
+        && sim.world.tick >= 2
+        && !sim.session.is_network()
+        && !sim.session.observing()
+    {
+        stored.0.touch_help_seen = true;
+        asked = Some(Screen::TouchHelp);
     }
     let Some(screen) = asked else { return };
     open_menu(
@@ -880,6 +909,7 @@ pub(crate) fn open_requests(c: &mut Core) {
         flow,
         &folder.folder(),
         false,
+        touch,
     );
 }
 
@@ -905,6 +935,7 @@ fn open_menu(
     flow: &Flow,
     folder: &SaveDir,
     from_outcome: bool,
+    touch: &crate::touch::TouchState,
 ) {
     let mut nav = Nav::default();
     nav.open(gate(screen, sim));
@@ -927,7 +958,10 @@ fn open_menu(
         extra_speeds: sim.world.rules.extras.extra_speeds,
         can_save_replay: sim.session.can_save_replay(),
         observer: sim.session.observing(),
+        no_exit: touch.touch_only,
+        touch_help: touch.touch_only || touch.emulate || touch.active,
         lines: Vec::new(),
+        help: Default::default(),
         delay: menu::Delay::default(),
         hot: None,
         focus: None,
@@ -955,6 +989,7 @@ pub(crate) fn open_from_outcome(c: &mut Core) {
         flow,
         store: folder,
         pictures,
+        touch,
         ..
     } = c
     else {
@@ -977,6 +1012,7 @@ pub(crate) fn open_from_outcome(c: &mut Core) {
         flow,
         &folder.folder(),
         true,
+        touch,
     );
 }
 
@@ -1023,6 +1059,22 @@ pub(crate) fn close_on_exit(c: &mut Core) {
     c.commands.queue(|c| c.menu = None);
 }
 
+/// The key the Touch Controls pages take this frame (`touchhelp::PageKey`).
+pub(crate) fn help_key(keys: &crate::input::Buttons<Key>) -> Option<crate::touchhelp::PageKey> {
+    use crate::touchhelp::PageKey;
+    if keys.just_pressed(Key::Escape) {
+        Some(PageKey::Close)
+    } else if keys.any_just_pressed([Key::Enter, Key::NumpadEnter]) {
+        Some(PageKey::Enter)
+    } else if keys.just_pressed(Key::Right) {
+        Some(PageKey::Next)
+    } else if keys.just_pressed(Key::Left) {
+        Some(PageKey::Back)
+    } else {
+        None
+    }
+}
+
 fn close(commands: &mut Commands) {
     remove_layers(commands, |e| e.role == Role::Menu);
     commands.queue(|c| c.menu = None);
@@ -1055,6 +1107,34 @@ pub(crate) fn run_menu(c: &mut Core) {
     let mouse_in = &input.mouse;
     // The save and load dialogs run in `run_saving`, the Settings screen in `run_settings`.
     if matches!(m.screen(), Screen::Saving(_) | Screen::Settings) {
+        return;
+    }
+    // The Touch Controls pages take their own input and draw themselves; OK or Esc goes back as the other dialogs do.
+    if m.screen() == Screen::TouchHelp {
+        let at = frontend::pointer(input, cam).map(|p| (p.x as i32, p.y as i32));
+        let feed = crate::touchhelp::Feed {
+            at,
+            down: mouse_in.just_pressed(Button::Left),
+            up: mouse_in.just_released(Button::Left),
+            key: help_key(keys),
+        };
+        match m.help.step(feed) {
+            crate::touchhelp::Outcome::Close => {
+                if m.nav.back() {
+                    close(commands);
+                } else {
+                    enter(m, front, stored, sim, flow, &folder.folder());
+                }
+            }
+            crate::touchhelp::Outcome::Redraw => m.dirty = true,
+            crate::touchhelp::Outcome::Same => {}
+        }
+        if m.dirty && m.screen() == Screen::TouchHelp {
+            m.dirty = false;
+            let mut p = frontend::blank();
+            m.help.draw(&mut p, &front.big, &front.font);
+            frontend::set_image(pictures, &m.image, p);
+        }
         return;
     }
     let kind = Kind::of(flow.game);
@@ -1374,6 +1454,7 @@ pub(crate) fn run_settings(c: &mut Core) {
         return;
     }
     let (touch_only, no_intro, no_check) = (c.touch.touch_only, c.opts.no_intro, c.opts.no_update_check);
+    let touch_input = c.touch.emulate || c.touch.active;
     let data = frontend::game_files_line(&c.opts);
     let Core {
         commands,
@@ -1394,6 +1475,7 @@ pub(crate) fn run_settings(c: &mut Core) {
         let (_, palette) = frontend::menu_art(&mut front.install);
         let env = settings::Env {
             touch: touch_only,
+            touch_input,
             updates: crate::update::build_version().is_some(),
             data,
             in_game: true,
@@ -1569,7 +1651,10 @@ mod tests {
             extra_speeds: 0,
             can_save_replay: false,
             observer: false,
+            no_exit: false,
+            touch_help: false,
             lines: vec!["text".into()],
+            help: Default::default(),
             delay: menu::Delay::default(),
             hot: None,
             focus: None,
@@ -1657,6 +1742,26 @@ mod tests {
                 k => panic!("{k:?} takes no focus"),
             })
             .collect()
+    }
+
+    #[test]
+    fn a_phone_or_tablet_has_no_exit_program_in_end_scenario() {
+        let labels = |m: &GameMenu| -> Vec<String> {
+            m.build(20, 16, Kind::Custom)
+                .items
+                .iter()
+                .filter_map(|it| match &it.kind {
+                    Kinds::Button(_, l) => Some(l.clone()),
+                    _ => None,
+                })
+                .collect()
+        };
+        let mut m = menu_at(Screen::End);
+        assert!(labels(&m).iter().any(|l| l.starts_with("Exit Program")));
+        m.no_exit = true;
+        let on_phone = labels(&m);
+        assert!(on_phone.iter().all(|l| !l.starts_with("Exit Program")), "{on_phone:?}");
+        assert!(on_phone.iter().any(|l| l == "Quit to Main Menu"));
     }
 
     #[test]

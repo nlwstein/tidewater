@@ -20,6 +20,7 @@ Download the file for your system from the [latest release](../../releases/lates
 | **macOS** (Apple silicon and Intel) | `tidewater-<version>-macos.dmg` | Open it and **drag Tidewater to Applications**, then eject the disk image. The app is not signed, so the first time **right-click it, choose Open and confirm**. If macOS offers no Open button, open System Settings, Privacy & Security and click **Open Anyway**. After that it opens normally. |
 | **Linux** (x64) | `tidewater-<version>-linux-x64.tar.gz` | Unpack it and run `tidewater`. The archive has a `tidewater.desktop` menu entry to adapt and a `README.txt`. |
 | **Android** (7.0 or newer, early) | `tidewater-<version>-android.apk` | Download it on the device and open it; Android asks to allow installs from that browser or file manager, so allow it for that app. It is not on Google Play and does not update itself: to update, download the newer APK and install it over the old one (your game files and settings stay). Then [get your game files onto it](#android-early). A release may lack the APK until its signing key is set up. |
+| **iPhone and iPad** (iOS 15 or newer, early) | `tidewater-<version>-ios.ipa` | Not signed and not on the App Store: sideload it with your own Apple ID using AltStore, SideStore or Sideloadly (a free Apple ID needs a re-sign every 7 days). Steps: [Install the unsigned IPA](docs/design/ios.md#install-the-unsigned-ipa). |
 
 ## Import your game files
 
@@ -61,7 +62,7 @@ Tidewater looks for a newer release in the background when it starts (one reques
 | **Windows** | Downloads the installer, runs it silently and restarts the game. |
 | **macOS** | Replaces the app and restarts it. This needs the app in a folder you can write to, such as Applications: run from the disk image or straight from Downloads, the main menu says "Move Tidewater to Applications to enable updates." once, and Update now opens the release page. |
 | **Linux** | Opens the release page; download the new archive and unpack it over the old one. |
-| **Android, iOS** | Opens the release page; download the new APK and install it over the old one (your game files and saves stay). |
+| **Android, iOS** | Opens the release page; download the new APK or IPA and install it over the old one (your game files and saves stay). |
 
 Downloads are checked against the size the release lists; they are not signed. A failed check is ignored without a message, and development builds never check. Turn the check off with `update_check=0` in `settings.txt` or `--no-update-check` for one run. The main menu's version line and `tidewater --version` show the release you have. Branches, versioning and cutting a release: [docs/release.md](docs/release.md).
 
@@ -123,15 +124,44 @@ copy your own maps there. When the game ends, the score screen leads back to the
 
 The pointer is locked to the window during a game, as in full screen, so pushing it against an edge scrolls the map. The game menus free it, and so does holding Cmd (the Windows key elsewhere) or switching to another app. The Settings screen's **Mouse lock** row turns this off for good; `--no-mouse-lock` turns it off for one run. The full key list is in the specs under [`docs/specs/ui`](docs/specs/ui/).
 
-### Touch
+### Touch controls
 
-Tidewater has an input layer for touchscreens, our own addition (the original has no touch). It is on from the start on iOS and Android, and on a desktop when you touch a touchscreen or use `--touch-emulation`. A tap is a left click, a
-long press a right click, a drag a box select, two fingers pan the map, a pinch zooms it (up to four times) and a
-three-finger tap opens the game menu. The controls a touchscreen lacks (Shift, Ctrl, Alt, right-click mode, pause and
-the keyboard) are buttons in the bars beside the picture. You can try all of it on a desktop with `--touch-emulation`:
-the mouse is one finger, and holding Alt as you press adds a second finger (Alt+Shift: beside the first, Alt+Ctrl: a
-third). The iOS and Android apps (next sections) use it on a real touchscreen. How it works, and the measurements it uses, is
-in [`docs/design/touch.md`](docs/design/touch.md).
+Touchscreens are our own addition (the original has no touch): fingers become the clicks and keys the game already
+knows, so the rules don't change. Touch is on from the start on iOS and Android, and on a desktop when you touch a
+touchscreen or use `--touch-emulation`.
+
+| Do this | To |
+|---|---|
+| Drag a finger on the map | Scroll the map (a flick glides on) |
+| Hold a finger still a moment (a ring shows), then drag | Draw a selection box |
+| Tap a unit | Select it (a near miss still counts) |
+| Tap the ground, an enemy or a resource, with your units selected | Order them there, as a right click does |
+| Tap twice | Select all of that type on screen |
+| Hold a finger still until a pulse shows, then lift | Right click (nothing happens while the finger stays down, so you can still drag a box) |
+| Tap or drag the minimap; hold it | Move the view; order the selected units there |
+| Place a building or choose a target | Drag the outline (or tap where it should go), then tap it to confirm, as the status bar says; a finger at the map's edge scrolls |
+| Two fingers: drag; pinch | Scroll the map; zoom (on phones; a setting on tablets) |
+| Three fingers: tap | Open the game menu |
+
+**The side bars.** The left bar holds, from the top: Menu (three lines), Pause (two bars; a play triangle while
+paused), the Shift (⇧), Ctrl (⌃) and Alt (⌥) latches (held for your next click), a plain-click latch (a pointer
+with a click mark: the next tap selects, never orders) and the keyboard. The right bar holds the control groups,
+numbered 1 to 9: a tap recalls a group, two taps centre on it, and holding one makes the selection that group. With
+the `idle-worker` option on, a pickaxe button selects the next idle worker. A latch waiting for its click is outlined
+in yellow; a button that is on is filled yellow.
+
+**Pick units one by one:** double-tap Shift to lock it (a lock shows in its corner), then tap units to add or remove
+them; tap Shift again to let go. Ctrl and Alt lock the same way.
+
+**Settings and help.** The Settings screen's Touch page changes how a drag, a tap, two fingers, the pinch and the
+holds work, the button size and which bar is which. The Touch Controls help sums all this up on two pages: the
+gestures, then each button as the bars draw it (Next, Back and OK turn the pages). A phone or tablet shows it at your
+first game, and it is under Help in the game menu and the Touch controls link on the main menu. On a phone or tablet
+there is no Exit Program (the system closes apps), and Android's Back button is Esc.
+
+**Try it on a desktop** with `--touch-emulation`: the mouse is one finger, and holding Alt as you press adds a second
+finger (Alt+Shift: beside the first, Alt+Ctrl: a third). How it works, and the measurements it uses, is in
+[`docs/design/touch.md`](docs/design/touch.md).
 
 ### iPhone and iPad (early)
 
@@ -145,7 +175,7 @@ xcrun simctl install booted platform/ios/DerivedData/Build/Products/Debug-iphone
 xcrun simctl launch booted dev.tidewater.client
 ```
 
-For a device, run `platform/ios/build.sh device`, copy `platform/ios/Config/Signing.example.xcconfig` to `Signing.xcconfig`, fill in your team ID and open `platform/ios/Tidewater.xcodeproj`.
+To install a release on a device without Xcode, use the unsigned IPA ([steps](docs/design/ios.md#install-the-unsigned-ipa)). To build for a device yourself, run `platform/ios/build.sh device`, copy `platform/ios/Config/Signing.example.xcconfig` to `Signing.xcconfig`, fill in your team ID and open `platform/ios/Tidewater.xcodeproj`.
 
 **Get the game files onto it.** Copy a game folder (a GOG install, or the folder holding `War2Dat.mpq`) or a CD image (`.iso`, `.bin`/`.cue`, `.mdf`, `.nrg`) into Tidewater's folder: in Finder (device, Files tab), in the Files app (On My iPhone, Tidewater), or for the Simulator into the app's `Documents` folder. Open the app and the first-run screen lists what it finds; tap one, or tap Scan again after copying. "Choose game folder..." opens the system picker instead. **A GOG installer (`.exe`) does not work on iOS**, because unpacking it needs `innoextract`, which cannot run there: unpack it on a computer, or install the game and copy the folder.
 
@@ -240,7 +270,15 @@ The idle-worker key is F6; keys can be rebound on the Settings screen's Keys pag
 | `shift-queue` | `--extra-shift-queue` | on, off | off | Hold Shift while giving a move, attack, attack-move, patrol, repair, harvest or build order to add it to the unit's order queue (up to 8) instead of replacing its order (S) |
 | `auto-replay` | `--extra-auto-replay VALUE` | off, menu, always | off | Record every game: `menu` keeps the recording so the game menu can save it, `always` also writes each game's replay to the replays folder of the data directory as it is played |
 | `widescreen` | `--extra-widescreen VALUE` | off, 16:10, 16:9, auto | off | A wider game screen, the extra width being map: 16:10, 16:9, or auto to match the window (ignored on touch devices; menus and videos stay 4:3) (C+L) |
-| `map-zoom` | `--extra-map-zoom VALUE` | off, wheel | off | `wheel`: the mouse wheel over the map view magnifies it up to 4 times around the pointer and back to the normal view, never showing more map than the original does (a pinch does the same on touch devices) (C) |
+| `map-zoom` | `--extra-map-zoom VALUE` | off, wheel | off | `wheel`: the mouse wheel over the map view magnifies it up to 4 times around the pointer and back to the normal view, never showing more map than the original does (on touch devices the pinch is `touch-pinch`) (C) |
+| `touch-drag` | `--extra-touch-drag VALUE` | pan, pan-no-glide, box | pan | Touch only. A finger dragged on the map scrolls it (`pan` glides on after a flick, `pan-no-glide` stops where the finger lifts); hold it still a moment first to draw a selection box instead. `box`: a drag draws the box at once, as the mouse does |
+| `touch-smart-tap` | `--extra-touch-smart-tap VALUE` | on, off | on | Touch only. With your units selected, a tap on the ground, an enemy or a resource orders them there, as a right click does; a tap on your own unit or building selects it. `off`: every tap is a left click |
+| `touch-two-finger` | `--extra-touch-two-finger VALUE` | pan, box, off | pan | Touch only. Two fingers dragged together scroll the map (`pan`), are the corners of a selection box (`box`), or do nothing (`off`; a pinch still zooms if it is on) |
+| `touch-pinch` | `--extra-touch-pinch VALUE` | auto, on, off | auto | Touch only. Spreading two fingers magnifies the map view up to 4 times. `auto`: on for phones (a screen whose short side is under 90 mm), off for tablets |
+| `touch-hold` | `--extra-touch-hold VALUE` | normal, long, longer | normal | Touch only. How long a finger is held still before a drag draws a box, and before it right-clicks: `normal` 0.3 and 0.45 seconds, `long` 0.4 and 0.6, `longer` 0.5 and 0.75 |
+| `touch-buttons` | `--extra-touch-buttons VALUE` | medium, small, large | medium | Touch only. The size of the side bars' buttons: `medium` 9 mm, `small` 7 mm, `large` 11 mm (smaller when a bar is too narrow) |
+| `touch-swap-bars` | `--extra-touch-swap-bars` | on, off | off | Touch only. The control-group buttons go on the left and the menu, pause and modifier buttons on the right |
+| `touch-menu-tap` | `--extra-touch-menu-tap VALUE` | on, off | on | Touch only. A tap of three fingers at once opens the game menu (the Menu button always does) |
 
 **C+L** marks an option that gives you an edge (health bars, smart attack-move, widescreen). In a game with other players the host chooses it in the lobby's "Extras" box (from the command line, `--lobby extras=health-bars=always/widescreen=16:9`; the host's own settings stand for the ones not named) and every player, observers included, plays with the host's choice, whatever their own setting. In single-player games and replays you get your own. **S** marks an option that changes the simulation (rally points, the production queue, shift-queued orders,
 the selection limit and the extra speed levels): the flag or the setting starts a single-player game with it, and in a
@@ -279,7 +317,7 @@ Run `tidewater --help` for the same list. The optional positional argument is a 
 
 | Flag | What it does |
 |---|---|
-| `--touch-emulation` | The mouse is one finger (Alt, Alt+Shift, Alt+Ctrl at the press add more), and the touch controls show beside the picture. See [Touch](#touch). |
+| `--touch-emulation` | The mouse is one finger (Alt, Alt+Shift, Alt+Ctrl at the press add more), and the touch controls show beside the picture. See [Touch controls](#touch-controls). |
 | `--touch-dpi <PPI>` | The screen's density in physical pixels per inch, for touch sizes (taps, slop, buttons). Default: 140 points to the inch. |
 | `--free-zoom` | Development aid: the mouse wheel zooms the map view anywhere (1/4 to 8 map pixels per screen pixel). The `map-zoom` option is the player's magnifying zoom. |
 | `--zoom <N>` | Starting zoom; implies `--free-zoom`. |
@@ -387,7 +425,7 @@ cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
 
 **Multiplayer end to end.** `TIDEWATER_INSTALL=<data>/game cargo test --release -p tidewater-client --test mp_e2e` starts two or three `tidewater` programs on this machine and plays seven games through the menus (Local Network, Direct IP, Classic, an observer, three players where the host leaves first, you alone against a Computer, two players and a Computer), then checks that every side saw the same game. It takes about 30 seconds in a release build and uses port 6112; details in [docs/design/network.md](docs/design/network.md#running-the-end-to-end-check).
 
-**CI.** [GitHub Actions](.github/workflows/ci.yml) runs on pull requests and on pushes to `develop` and `main`. It checks format, clippy and the tests on Linux (the game-data tests skip there), then builds release binaries of `tidewater` and `twtool` on Linux, macOS and Windows, plus the iOS Simulator and Android arm64 libraries.
+**CI.** [GitHub Actions](.github/workflows/ci.yml) runs on pull requests and on pushes to `develop` and `main`. It checks format, clippy and the tests on Linux (the game-data tests skip there), then builds release binaries of `tidewater` and `twtool` on Linux, macOS and Windows, plus the iOS Simulator library, an unsigned iOS `.ipa` (uploaded as a workflow artifact) and the Android arm64 library.
 
 **Branches and releases.** Work lands on `develop`; merging `develop` into `main` cuts a release, with the version worked out from the commit messages. Details: [docs/release.md](docs/release.md).
 

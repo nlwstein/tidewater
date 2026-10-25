@@ -493,6 +493,30 @@ pub fn tap_snap(board: &Board, p: (i32, i32), radius: i32) -> (i32, i32) {
     best.map_or(p, |(_, centre)| centre)
 }
 
+/// The smart tap of a touchscreen (ours, the `touch-smart-tap` option, `docs/design/touch.md`): whether a tap at map
+/// pixel `p` should be a right click rather than a left one. It is when the selection holds a unit of the local
+/// player's that can move and the tap lands on no unit of the local player's, within `radius` map pixels of its box (the
+/// tap tolerance, [`tap_snap`]): ground, an enemy or a resource then takes the order, and a tap on one of your own units
+/// still selects it.
+pub fn smart_tap(board: &Board, p: (i32, i32), radius: i32, sel: &[UnitId]) -> bool {
+    let local = board.view.local;
+    let commanding = board
+        .units
+        .iter()
+        .any(|c| c.owner == local && c.mobile && !c.dying && sel.contains(&c.id));
+    let near = |c: &Cand| {
+        let b = c.sel_box();
+        let dx = i64::from((b.l - p.0).max(p.0 - b.r).max(0));
+        let dy = i64::from((b.t - p.1).max(p.1 - b.b).max(0));
+        dx * dx + dy * dy <= i64::from(radius.max(0)).pow(2)
+    };
+    let on_own = board
+        .units
+        .iter()
+        .any(|c| c.owner == local && board.can_pick(c) && near(c));
+    commanding && !on_own
+}
+
 /// The click rules (Enhanced only); `None` hands the click to the box rules.
 fn click_rules(board: &Board, p: (i32, i32), m: Mods, sel: &[UnitId], rem: &mut Remembered) -> Option<Pick> {
     // 1. Find the unit.
@@ -1508,6 +1532,33 @@ mod tests {
         // The first of two equally near wins.
         let b = board(true, vec![unit(1, FOOTMAN, 0, (2, 5)), unit(2, FOOTMAN, 0, (4, 5))]);
         assert_eq!(tap_snap(&b, (3 * 32 + 16, 5 * 32 + 16), 64), at((2, 5)));
+    }
+
+    #[test]
+    fn a_smart_tap_orders_with_your_units_selected_and_selects_your_own() {
+        let b = board(
+            true,
+            vec![
+                unit(1, FOOTMAN, 0, (5, 5)),
+                unit(2, GRUNT, 1, (9, 5)),
+                unit(3, FARM, 0, (2, 2)),
+            ],
+        );
+        let ground = at((5, 9));
+        // Nothing of yours selected: a tap is a left click everywhere.
+        assert!(!smart_tap(&b, ground, 24, &[]));
+        // An enemy selected (to look at it) does not take orders either; nor does your farm.
+        assert!(!smart_tap(&b, ground, 24, &ids([2])));
+        assert!(!smart_tap(&b, ground, 24, &ids([3])));
+        // Your footman selected: ground and the enemy take the order.
+        assert!(smart_tap(&b, ground, 24, &ids([1])));
+        assert!(smart_tap(&b, at((9, 5)), 24, &ids([1])));
+        // A tap on, or within the tolerance of, your own unit or building still selects.
+        let beside = (at((5, 5)).0 + 15 + 20, at((5, 5)).1);
+        assert!(!smart_tap(&b, at((5, 5)), 24, &ids([1])));
+        assert!(!smart_tap(&b, beside, 24, &ids([1])));
+        assert!(smart_tap(&b, beside, 18, &ids([1])));
+        assert!(!smart_tap(&b, at((2, 2)), 24, &ids([1])));
     }
 
     #[test]

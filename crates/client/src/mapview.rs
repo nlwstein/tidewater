@@ -142,6 +142,14 @@ impl MapView {
         let (cx, cy) = r.centre();
         Some((mx + (p.0 - cx) * zoom, my + (p.1 - cy) * zoom))
     }
+
+    /// The screen pixel over map pixel `m`, by the view the last frame drew: the inverse of [`MapView::pointer_map`].
+    pub fn screen_of_map(&self, m: (f32, f32)) -> Option<(f32, f32)> {
+        let (r, (mx, my), zoom) = self.drawn()?;
+        let (cx, cy) = r.centre();
+        let z = zoom.max(0.001);
+        Some((cx + (m.0 - mx) / z, cy + (m.1 - my) / z))
+    }
 }
 
 /// A view centre on one axis that keeps a view of half-width `half` inside a map `len` long; a map narrower than

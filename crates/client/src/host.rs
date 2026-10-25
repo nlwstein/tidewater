@@ -320,6 +320,20 @@ pub fn scripted_elapsed(first: bool) -> Duration {
     }
 }
 
+/// The desktop window's icon (`assets/icon/window.png`, drawn by `packaging/icon/render.sh` from our own
+/// `packaging/icon/tidewater.svg`): width, height and RGBA bytes. `None` if it doesn't decode.
+pub fn window_icon() -> Option<(u32, u32, Vec<u8>)> {
+    const PNG: &[u8] = include_bytes!("../assets/icon/window.png");
+    let mut reader = png::Decoder::new(std::io::Cursor::new(PNG)).read_info().ok()?;
+    let mut buf = vec![0; reader.output_buffer_size()?];
+    let info = reader.next_frame(&mut buf).ok()?;
+    if info.color_type != png::ColorType::Rgba || info.bit_depth != png::BitDepth::Eight {
+        return None;
+    }
+    buf.truncate(info.buffer_size());
+    Some((info.width, info.height, buf))
+}
+
 /// The window a run without one reports: 640 × 480 physical pixels at one per point, the scripted window's.
 struct NoWindow;
 
@@ -461,6 +475,14 @@ pub fn other_key(name: &str) -> Key {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn window_icon_decodes() {
+        let (w, h, rgba) = window_icon().expect("the embedded icon decodes");
+        assert_eq!((w, h), (256, 256));
+        assert_eq!(rgba.len(), 256 * 256 * 4);
+        assert_eq!(rgba[3], 0, "the corner is clear");
+    }
 
     #[test]
     fn the_locked_pointer_moves_by_the_motion_and_stays_on_the_screen() {

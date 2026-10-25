@@ -203,7 +203,7 @@ pub fn outline(dst: &mut Picture, r: Rect, c: [u8; 3]) {
 }
 
 /// Text colours by font shade (see `fnt`): a light face fading to grey, and a black shadow.
-const TEXT: [[u8; 3]; 8] = [
+pub(crate) const TEXT: [[u8; 3]; 8] = [
     [0, 0, 0],
     [252, 252, 236],
     [216, 212, 192],
@@ -216,7 +216,7 @@ const TEXT: [[u8; 3]; 8] = [
 
 /// The font's alternate colour (colour code 4), used for bonuses: a yellow face. Our own choice; the spec names the
 /// code, not its colours.
-const TEXT_ALT: [[u8; 3]; 8] = [
+pub(crate) const TEXT_ALT: [[u8; 3]; 8] = [
     [0, 0, 0],
     [252, 224, 64],
     [220, 188, 48],

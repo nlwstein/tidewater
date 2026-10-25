@@ -3,13 +3,24 @@ sound	2	3bb3724654d4194d	0.7516	Once
 frames	1-2	156ed4086987e325
 frames	3-3	a4417597aa5e5de0
 frames	4-7	b89c5024f0bfa434
-frames	8-9	3206b9d2145ebeff
-frames	10-10	ea538b63ada6c6ec
-frames	11-11	0f71f7e4a7868501
-frames	12-13	65e97c42a1923d21
-shot	16	box	629e1e3bef518a04
-sound	17	b18b87133dda1256	0.9882	Despawn
-frames	14-16	629e1e3bef518a04
-frames	17-17	9a17370b51fe7f61
-shot	21	boxed	2cc4bcfbaf4fb02e
-frames	18-21	2cc4bcfbaf4fb02e
+frames	8-10	3206b9d2145ebeff
+frames	11-25	c130c5ad080cc87e
+frames	26-26	af38cb7365e98b69
+frames	27-27	8f4412070002bd07
+shot	28	armed	b97278d7c3168595
+frames	28-28	b97278d7c3168595
+frames	29-29	38b504521669bb75
+frames	30-30	18bb3758c3ae6e73
+frames	31-31	60f99386eeef1537
+frames	32-32	bba3b8ab6590e638
+frames	33-33	088ebfc80de3724c
+frames	34-34	476d16cbd76fa5a0
+shot	35	box	ea9d5cc3d08ee7e2
+sound	36	b18b87133dda1256	0.9882	Despawn
+frames	35-35	ea9d5cc3d08ee7e2
+frames	36-36	2322fdeedba37f72
+frames	37-37	fae1f1bec31d7ed3
+frames	38-38	685c2db5f6054d97
+frames	39-39	5813a3c38c8cb668
+shot	40	boxed	9c0bf470a8d3ae13
+frames	40-40	9c0bf470a8d3ae13

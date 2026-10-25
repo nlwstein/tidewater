@@ -66,6 +66,7 @@ mod states;
 pub mod storage;
 pub mod touch;
 mod touchemu;
+mod touchhelp;
 pub mod update;
 mod video;
 mod view;

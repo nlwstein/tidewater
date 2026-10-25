@@ -21,6 +21,9 @@ glam = "0.33"
 socket2 = { version = "0.6", features = ["all"] }
 flate2 = "1.1.10"
 serde_json = "1.0.154"
+# The touch chrome's icons (`crates/client/assets/touch-icons/*.svg`), drawn at the buttons' size. Pure Rust; the
+# default text, font and raster-image support is not needed.
+resvg = { version = "0.49", default-features = false }
 # SDL 3 built from its source (CMake and a C compiler; no SDL install needed) and linked in, with only the audio,
 # video, render and dialog subsystems. Only the shell (`crates/client/src/shell/`) uses it.
 sdl3-sys = { version = "0.7", features = ["build-from-source", "link-static", "no-default-subsystems", "sdl-audio", "sdl-render", "sdl-dialog"] }

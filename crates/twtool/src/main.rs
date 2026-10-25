@@ -1,5 +1,6 @@
 //! `twtool`: inspect and convert data from a user-supplied installation.
 
+mod icon;
 mod oracle;
 mod replay;
 mod replays;
@@ -230,6 +231,23 @@ enum Cmd {
     },
     /// Summarise an archive's block table: how many blocks, how many in use.
     MpqInfo { archive: PathBuf },
+    /// Draw the app icon (our own SVG artwork, `packaging/icon/`) to `out`: a PNG at one `--size`, or an `.ico` or
+    /// `.icns` holding every `--size`. The layers are drawn in order; `--scale` shrinks the last one about the centre.
+    /// `packaging/icon/render.sh` runs this for every platform's asset.
+    AppIcon {
+        out: PathBuf,
+        #[arg(long = "layer", required = true)]
+        layers: Vec<PathBuf>,
+        #[arg(long = "size", required = true)]
+        sizes: Vec<u32>,
+        #[arg(long, default_value_t = 1.0)]
+        scale: f32,
+        #[arg(long, value_enum, default_value = "square")]
+        shape: icon::Shape,
+        /// Write the PNG without an alpha channel.
+        #[arg(long)]
+        opaque: bool,
+    },
     /// Compare our simulation cycle by cycle against a trace of the original game (`.jsonl` or `.jsonl.gz`, format
     /// `docs/specs/oracle/trace-format.md`) and report the first record that differs. The trace's header gives the
     /// seed (its clock), the rules and the expected players; the map and campaign entry are named here. A windowed
@@ -291,6 +309,23 @@ fn sniff(d: &[u8]) -> &'static str {
 
 fn main() -> Result<()> {
     match Cli::parse().cmd {
+        Cmd::AppIcon {
+            out,
+            layers,
+            sizes,
+            scale,
+            shape,
+            opaque,
+        } => icon::run(
+            &icon::Spec {
+                layers: &layers,
+                scale,
+                shape,
+                opaque,
+            },
+            &sizes,
+            &out,
+        )?,
         Cmd::ImportCheck { path } => {
             let source = match tidewater_import::classify(&path) {
                 Ok(s) => s,

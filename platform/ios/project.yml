@@ -67,7 +67,8 @@ targets:
           - -lc++
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Sources/Info.plist
-        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        # The app icon: Sources/Assets.xcassets, drawn by packaging/icon/render.sh from packaging/icon/tidewater.svg.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     dependencies:
       - sdk: UIKit.framework
       - sdk: Metal.framework

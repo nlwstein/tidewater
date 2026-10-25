@@ -8,6 +8,7 @@ license.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 png.workspace = true
+resvg.workspace = true
 flate2.workspace = true
 serde_json.workspace = true
 tidewater-formats.workspace = true

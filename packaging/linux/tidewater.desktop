@@ -3,7 +3,9 @@ Type=Application
 Name=Tidewater
 Comment=A reimplementation of the Warcraft II: Battle.net Edition engine (bring your own game files)
 # Edit Exec to the full path of the tidewater program (see README.txt), then copy this file to
-# ~/.local/share/applications/
+# ~/.local/share/applications/ and tidewater.png to ~/.local/share/icons/hicolor/256x256/apps/ (or set Icon to the
+# full path of tidewater.png).
 Exec=tidewater
+Icon=tidewater
 Terminal=false
 Categories=Game;StrategyGame;

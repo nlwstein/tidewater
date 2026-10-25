@@ -11,7 +11,9 @@ The gestures are in [touch.md](touch.md) and the import in [import.md](import.md
 | Area | State |
 |---|---|
 | Build for the Simulator and a device | Works. Simulator checked; the device library builds but is not run. |
-| Touch, chrome buttons, safe area | On from the first frame; the picture fits inside the safe area. |
+| Touch, chrome buttons, safe area | On from the first frame; the picture fits inside the safe area. One-finger pan, hold-then-drag box, smart tap and the control-group bar ([touch.md](touch.md)); checked with `--touch-emulation` and the Simulator build, not on a device. |
+| Touch Controls help | Shows by itself at the first game, then under Help and on the main menu. |
+| Exit Program | Not offered (greyed out on the main menu, not in End Scenario, Ctrl+X does nothing): iOS closes apps itself. |
 | Background and foreground | The game pauses, sound stops, settings are written. |
 | Import from the shared folder | Works (folder scan, game folders, CD images). |
 | Import with the document picker | Written, **not tried**: the Simulator run could not tap. |
@@ -29,6 +31,7 @@ One loop serves both platforms. The desktop's `tidewater` binary and the iOS sta
 | Entry point | `platform/ios/Sources/main.c`, `tidewater_ios_main` in `sdl.rs` | `main` calls `SDL_RunApp`, which starts UIKit and then calls the Rust program once the app has launched. |
 | Document picker | `platform/ios/Sources/picker.m` | `UIDocumentPickerViewController` for a folder or a file, opened in place. |
 | Project | `platform/ios/project.yml` | xcodegen input: frameworks, `Info.plist`, orientation, file sharing. |
+| App icon | `platform/ios/Sources/Assets.xcassets` | One 1024 × 1024 `AppIcon` (no alpha) that Xcode scales for every size; drawn by `packaging/icon/render.sh` from `packaging/icon/tidewater.svg` (see [`docs/release.md`](../release.md#the-app-icon)). |
 | Script | `platform/ios/build.sh` | Builds the library, then runs xcodegen (and optionally the Simulator app). |
 
 **Why not SDL's main callbacks?** The loop already blocks inside `SDL_RunApp`'s callback, which SDL supports on iOS. A
@@ -58,6 +61,25 @@ xcrun simctl launch booted dev.tidewater.client
 
 Command-line arguments after the bundle identifier reach the program, so `... dev.tidewater.client "Maps/Cramped BNE.pud"`
 starts a game and `--goto menu` opens the menu.
+
+## Install the unsigned IPA
+
+Every [release](../../../../releases/latest) has `tidewater-<version>-ios.ipa`, and every CI run uploads the same kind of
+file as the `tidewater-ios-unsigned` artifact. It is a Release build for a device (arm64, iOS 15 or newer) with **no
+signature**, so iOS will not run it until you re-sign it with your own Apple ID:
+
+1. Download the `.ipa` (and check it against `SHA256SUMS`).
+2. Install it with [AltStore](https://altstore.io), [SideStore](https://sidestore.io) or
+   [Sideloadly](https://sideloadly.io). They sign it with your Apple ID and put it on the device.
+3. Open Tidewater, then [get your game files onto it](#import-on-ios).
+
+A free Apple ID's signature lasts **7 days**: AltStore and SideStore refresh it in the background while they can reach
+your computer or a pairing file, and Sideloadly needs you to install again. A paid developer account lasts a year.
+The public build keeps the bundle identifier `dev.tidewater.client`; the sideloading tools change it to one of yours
+when they sign. Updating means installing the newer `.ipa` over the old one (game files and saves stay).
+
+To make the same file yourself, run `platform/ios/build.sh device`, then `platform/ios/package-ipa.sh [--version X.Y.Z]
+[--out FILE]`; to sign and run from Xcode instead, see Signing below.
 
 ## Signing
 
@@ -118,4 +140,3 @@ platforms always use. Touch is active from the first frame.
 - **The picker is untried.** The Simulator run had no way to tap (no UI automation tool was available).
 - **Memory.** Imported files are about 500 MB; the app needs that much free storage and the original is not removed.
 - **Network play** is untried on the phone.
-- **No app icon.** The project has no asset catalog yet.

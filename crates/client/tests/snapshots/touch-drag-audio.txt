@@ -1,2 +1,2 @@
 # mixed sound fingerprints of the scripted scene `touch-drag` (hashes only): 22050 Hz stereo 16-bit, one-second blocks
-tail	7717	57460a1d9b598b29
+tail	14700	0dee5358e52f1fa0

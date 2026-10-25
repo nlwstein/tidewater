@@ -45,6 +45,12 @@ impl Sdl {
             // SAFETY: as above.
             unsafe { sys::SDL_SetHint(sys::SDL_HINT_ORIENTATIONS, c"LandscapeLeft LandscapeRight".as_ptr()) };
         }
+        // Android's Back button is Esc (`docs/design/touch.md`): SDL sends it as a key and, trapped, it no longer
+        // finishes the activity.
+        if cfg!(target_os = "android") {
+            // SAFETY: as above.
+            unsafe { sys::SDL_SetHint(sys::SDL_HINT_ANDROID_TRAP_BACK_BUTTON, c"1".as_ptr()) };
+        }
         let mut flags = sys::SDL_INIT_VIDEO;
         if audio {
             flags |= sys::SDL_INIT_AUDIO;
@@ -180,6 +186,30 @@ impl<'s> Window<'s> {
         unsafe { sys::SDL_SetWindowMinimumSize(self.raw, w as c_int, h as c_int) };
     }
 
+    /// Sets the window's icon (title bar, taskbar, the Dock) from `w` × `h` RGBA pixels. False if SDL refused.
+    pub fn set_icon(&self, w: u32, h: u32, rgba: &[u8]) -> bool {
+        if rgba.len() != w as usize * h as usize * 4 {
+            return false;
+        }
+        // SAFETY: a live window; the surface only borrows `rgba` (SDL doesn't write to it) and is destroyed before
+        // the borrow ends, and SDL_SetWindowIcon keeps its own converted copy.
+        unsafe {
+            let surface = sys::SDL_CreateSurfaceFrom(
+                w as c_int,
+                h as c_int,
+                sys::SDL_PIXELFORMAT_RGBA32,
+                rgba.as_ptr().cast_mut().cast(),
+                (w * 4) as c_int,
+            );
+            if surface.is_null() {
+                return false;
+            }
+            let ok = sys::SDL_SetWindowIcon(self.raw, surface);
+            sys::SDL_DestroySurface(surface);
+            ok
+        }
+    }
+
     pub fn set_title(&self, title: &str) {
         let title = cstring(title);
         // SAFETY: a live window and a valid string; SDL copies it.
@@ -235,6 +265,13 @@ impl<'s> Window<'s> {
     pub fn start_text_input(&self) {
         // SAFETY: a live window.
         unsafe { sys::SDL_StartTextInput(self.raw) };
+    }
+
+    /// Whether the system's on-screen keyboard is showing now (SDL's view, kept by the [`Event::ScreenKeyboard`]
+    /// events).
+    pub fn screen_keyboard_shown(&self) -> bool {
+        // SAFETY: a live window.
+        unsafe { sys::SDL_ScreenKeyboardShown(self.raw) }
     }
 
     /// Closes the soft keyboard (and stops [`Event::Text`]).
@@ -811,6 +848,9 @@ pub enum Event {
     },
     /// A file or folder dropped on the window.
     Drop(PathBuf),
+    /// The system's on-screen keyboard was shown (`true`) or hidden (`false`), by us or by the user (its own hide key,
+    /// Android's Back); SDL sends these on iOS and Android.
+    ScreenKeyboard(bool),
     Other,
 }
 
@@ -878,6 +918,8 @@ pub fn poll() -> Option<Event> {
                     y: e.tfinger.y,
                 }
             }
+            sys::SDL_EVENT_SCREEN_KEYBOARD_SHOWN => Event::ScreenKeyboard(true),
+            sys::SDL_EVENT_SCREEN_KEYBOARD_HIDDEN => Event::ScreenKeyboard(false),
             sys::SDL_EVENT_DROP_FILE if !e.drop.data.is_null() => Event::Drop(PathBuf::from(
                 CStr::from_ptr(e.drop.data).to_string_lossy().into_owned(),
             )),

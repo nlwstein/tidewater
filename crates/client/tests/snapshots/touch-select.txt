@@ -9,6 +9,7 @@ sound	11	b18b87133dda1256	0.9882	Despawn
 frames	10-10	4fa3500245db7e0c
 frames	11-11	362af078068ebb80
 shot	14	tapped	c4a6deb38ed8f983
+sound	16	6eab1eb9376e8616	0.9882	Despawn
 frames	12-15	c4a6deb38ed8f983
 frames	16-17	42633c0fbe1bd45c
 shot	20	tapped-ground	c4a6deb38ed8f983

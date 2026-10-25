@@ -22,7 +22,8 @@ $XDG_DATA_HOME). Nothing is written next to the program or into your game instal
 A menu entry
 ------------
 Edit the Exec line of tidewater.desktop to the full path of ./tidewater, then copy the file to
-~/.local/share/applications/.
+~/.local/share/applications/. For its icon, copy tidewater.png to ~/.local/share/icons/hicolor/256x256/apps/ (or
+change the Icon line to the full path of tidewater.png).
 
 Updating
 --------

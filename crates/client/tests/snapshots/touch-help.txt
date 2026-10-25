@@ -1,0 +1,17 @@
+# frame and sound fingerprints of the scripted scene `touch-help` (hashes only)
+sound	2	3bb3724654d4194d	0.7516	Once
+frames	1-2	156ed4086987e325
+frames	3-3	a4417597aa5e5de0
+frames	4-5	b89c5024f0bfa434
+shot	13	help	58c950f1d8ddf484
+frames	6-13	58c950f1d8ddf484
+shot	19	help-2	27dc092a56481a78
+frames	14-19	27dc092a56481a78
+frames	20-20	3206b9d2145ebeff
+frames	21-22	b89c5024f0bfa434
+shot	25	closed	27792e25aca3149d
+frames	23-25	27792e25aca3149d
+shot	31	help-menu	2cc1442c43a2a527
+frames	26-31	2cc1442c43a2a527
+frames	32-32	c130c5ad080cc87e
+frames	33-37	27792e25aca3149d

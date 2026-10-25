@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launcher icon on Android 8 and later: the whole picture is the background layer (drawn zoomed out by
+     packaging/icon/render.sh so the launcher's mask keeps the whole ship), over nothing. Android 7 uses the
+     mipmap-*/ic_launcher.png files instead. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/ic_launcher_background" />
+    <foreground android:drawable="@android:color/transparent" />
+</adaptive-icon>

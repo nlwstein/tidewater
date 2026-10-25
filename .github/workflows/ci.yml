@@ -106,6 +106,36 @@ jobs:
           IPHONEOS_DEPLOYMENT_TARGET: "15.0"
         run: cargo build --locked --release --target aarch64-apple-ios-sim -p tidewater-ios
 
+  # The unsigned iOS app for a device, packed as an .ipa (docs/design/ios.md, "Install the unsigned IPA"): people
+  # sideload it with their own Apple ID. Nothing is signed here and no secret is used.
+  ios-ipa:
+    name: ios (unsigned ipa)
+    needs: check
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install xcodegen
+        run: brew install xcodegen
+      - name: Install the pinned toolchain and the iOS target
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-apple-ios
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the device library and the Xcode project
+        run: platform/ios/build.sh device
+      - name: Build and pack the unsigned app
+        run: platform/ios/package-ipa.sh --out dist/Tidewater.ipa
+      - name: Check the package
+        run: |
+          unzip -l dist/Tidewater.ipa | grep -F 'Payload/Tidewater.app/Info.plist'
+          unzip -q dist/Tidewater.ipa -d "$RUNNER_TEMP/ipa"
+          lipo -info "$RUNNER_TEMP/ipa/Payload/Tidewater.app/Tidewater"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tidewater-ios-unsigned
+          path: dist/Tidewater.ipa
+          if-no-files-found: error
+
   # The Android app's native library for one ABI (docs/design/android.md): compiles SDL 3 and the shell with the
   # runner's own NDK, builds no APK and signs nothing. Kept to one ABI so it stays cheap.
   android:

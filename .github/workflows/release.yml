@@ -1,5 +1,5 @@
 # Cuts a release when main moves: works out the next version from the conventional commits since the last v* tag
-# (.github/scripts/release.py), builds the downloads (desktop, and the Android APK when its signing secrets are set), then creates the tag and the GitHub release in this one workflow
+# (.github/scripts/release.py), builds the downloads (desktop, the unsigned iOS IPA, and the Android APK when its signing secrets are set), then creates the tag and the GitHub release in this one workflow
 # (a tag made with GITHUB_TOKEN would not start another one). How it works: docs/release.md. Tests run in ci.yml, not
 # here. Only the program is packaged: never any game data.
 name: Release
@@ -246,6 +246,40 @@ jobs:
           path: dist/*.apk
           if-no-files-found: error
 
+  # The unsigned iOS app (platform/ios/package-ipa.sh): no signing, so people sideload it with their own Apple ID
+  # (docs/design/ios.md). The release version goes into the app's CFBundleShortVersionString and CFBundleVersion.
+  ios:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    runs-on: macos-26
+    env:
+      TIDEWATER_VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install xcodegen
+        run: brew install xcodegen
+      - name: Install the pinned toolchain and the iOS target
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-apple-ios
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the device library and the Xcode project
+        run: platform/ios/build.sh device
+      - name: Build and pack the unsigned app
+        run: |
+          mkdir -p dist
+          platform/ios/package-ipa.sh --version "$TIDEWATER_VERSION" --out "dist/tidewater-${TIDEWATER_VERSION}-ios.ipa"
+      - name: Check the package
+        run: |
+          unzip -q "dist/tidewater-${TIDEWATER_VERSION}-ios.ipa" -d "$RUNNER_TEMP/ipa"
+          lipo -info "$RUNNER_TEMP/ipa/Payload/Tidewater.app/Tidewater"
+          plutil -p "$RUNNER_TEMP/ipa/Payload/Tidewater.app/Info.plist" | grep -E 'CFBundle(Short)?Version'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ios
+          path: dist/*.ipa
+          if-no-files-found: error
+
   # Installs the built setup program silently, checks the installed program starts and reports the build's version,
   # then uninstalls. Runs on dry runs too.
   windows-smoke:
@@ -280,7 +314,7 @@ jobs:
           echo "installed, ran and uninstalled"
 
   publish:
-    needs: [plan, linux, macos, windows, windows-smoke, android]
+    needs: [plan, linux, macos, windows, windows-smoke, android, ios]
     if: needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     permissions:

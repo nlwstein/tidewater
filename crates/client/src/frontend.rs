@@ -1388,6 +1388,8 @@ struct Menu {
     music_tested: bool,
     /// The update notice line drawn over the picture, while the main menu offers one (`update`).
     notice: Option<String>,
+    /// The Touch Controls pages show over the main menu (`touchhelp`) until their OK or Esc.
+    help: Option<crate::touchhelp::Pager>,
 }
 
 /// What a menu does once its close ends.
@@ -1493,6 +1495,7 @@ fn open_menu(c: &mut Core, headings: &[(Rect, &str)], items: Vec<MenuItem>, stat
         closing: None,
         ready_at: opening.fade_in_ms as f64,
         music_tested: false,
+        help: None,
         notice: None,
     };
     commands.queue(move |c| c.screens.menu = Some(menu));
@@ -1593,7 +1596,14 @@ fn menu_input(
         for (i, it) in menu.items.iter().enumerate() {
             if it.link {
                 if it.enabled {
-                    menuscreen::draw_settings_link(&mut p, &front.small, &menu.palette, menu.hot == Some(i));
+                    menuscreen::draw_link(
+                        &mut p,
+                        &front.small,
+                        &menu.palette,
+                        it.r,
+                        &it.label,
+                        menu.hot == Some(i),
+                    );
                 }
                 continue;
             }
@@ -1650,10 +1660,17 @@ fn menu_input(
     })
 }
 
-/// The main menu's five buttons and the Settings link after them (item 5); the update offer adds two more.
-const MAIN_BUTTONS: usize = 6;
+/// The main menu's five buttons, the Settings link (item 5) and the Touch controls link (item 6); the update offer
+/// adds two more.
+const MAIN_BUTTONS: usize = 7;
+/// Exit Program's place among the main menu's items.
+const EXIT_ITEM: usize = 4;
 /// The Settings link's place among the main menu's items.
 const SETTINGS_ITEM: usize = 5;
+/// The Touch controls link's place among the main menu's items.
+const TOUCH_ITEM: usize = 6;
+/// `Menu::drawn` while the Touch Controls page is drawn: no buttons' state matches it.
+const HELP_DRAWN: (Option<usize>, Option<usize>, usize) = (None, None, usize::MAX);
 /// Where the update notice line is: under the fifth button, above the update offer's buttons and clear of the
 /// Settings link (which is on the version line's row, y 448 to 476, at the right).
 const UPDATE_NOTICE: Rect = Rect::new(0, 427, 640, 18);
@@ -1704,8 +1721,11 @@ pub(crate) fn enter_menu(c: &mut Core) {
         ("Show Credits", Some('C')),
         ("Exit Program", Some('x')),
     ]);
-    // Multi Player Game opens the multiplayer menus (`enter_multiplayer`); all five buttons are always enabled.
+    // Multi Player Game opens the multiplayer menus (`enter_multiplayer`). All five buttons are enabled, but on a phone
+    // or tablet Exit Program is greyed out (ours: the system closes apps there, `docs/design/touch.md`), so neither a
+    // tap nor its x key quits.
     let mut items = items;
+    items[EXIT_ITEM].enabled = !c.touch.touch_only;
     // Not in the original: the link to Tidewater's own Settings screen on the version line's row (and the F2 key). The
     // main menu also stands in for the multiplayer lobby, which has no settings link.
     items.push(MenuItem {
@@ -1713,6 +1733,15 @@ pub(crate) fn enter_menu(c: &mut Core) {
         label: menuscreen::SETTINGS_LINK_TEXT.to_string(),
         key: None,
         enabled: !c.flow.in_lobby && !c.flow.in_join_screen,
+        link: true,
+    });
+    // Ours too: while touch is in use, a link to the Touch Controls page (`touchhelp`) above the Settings link.
+    let t = &c.touch;
+    items.push(MenuItem {
+        r: menuscreen::TOUCH_LINK,
+        label: menuscreen::TOUCH_LINK_TEXT.to_string(),
+        key: None,
+        enabled: (t.touch_only || t.emulate || t.active) && !c.flow.in_lobby && !c.flow.in_join_screen,
         link: true,
     });
     open_menu(c, &[], items, AppState::MainMenu);
@@ -1823,6 +1852,7 @@ fn run_menu(c: &mut Core) {
         updater,
         stored,
         open_requests,
+        touch,
         ..
     } = c
     else {
@@ -1830,6 +1860,15 @@ fn run_menu(c: &mut Core) {
     };
     let keys = &input.keys;
     let mouse = &input.mouse;
+    // The Touch controls link shows while touch is in use, which a computer's touchscreen can start at any time.
+    let touch_on = (touch.touch_only || touch.emulate || touch.active) && !flow.in_lobby && !flow.in_join_screen;
+    if let Some(it) = menu.items.get_mut(TOUCH_ITEM)
+        && it.link
+        && it.enabled != touch_on
+    {
+        it.enabled = touch_on;
+        menu.drawn = None;
+    }
     // Screen spec, "Pointer and fades": the buttons aren't drawn during the fade-in, which shows the picture and the
     // version line fading in together, and the menu takes no input until the fade ends. The
     // buttons and the pointer appear on the frame that ends it.
@@ -1852,6 +1891,38 @@ fn run_menu(c: &mut Core) {
     }
     if updater.finished() {
         *exit = true;
+        return;
+    }
+    // The Touch Controls pages, while they show, take the input (`touchhelp::Pager`).
+    if let Some(help) = &mut menu.help {
+        let feed = crate::touchhelp::Feed {
+            at: pointer(input, cam).map(|p| (p.x as i32, p.y as i32)),
+            down: mouse.just_pressed(Button::Left),
+            up: mouse.just_released(Button::Left),
+            key: crate::gamemenu::help_key(keys),
+        };
+        match help.step(feed) {
+            crate::touchhelp::Outcome::Close => {
+                menu.help = None;
+                menu.drawn = None;
+                menu.held = menuscreen::Hold::default();
+                return;
+            }
+            crate::touchhelp::Outcome::Redraw => menu.drawn = None,
+            crate::touchhelp::Outcome::Same => {}
+        }
+        if menu.drawn != Some(HELP_DRAWN) {
+            // The menu's picture darkened under the panel.
+            let mut p = dup(&menu.background);
+            for px in p.rgba.chunks_exact_mut(4) {
+                for ch in &mut px[..3] {
+                    *ch /= 3;
+                }
+            }
+            help.draw(&mut p, &front.big, &front.font);
+            set_image(pictures, &menu.image, p);
+            menu.drawn = Some(HELP_DRAWN);
+        }
         return;
     }
     let at = pointer(input, cam);
@@ -1887,8 +1958,13 @@ fn run_menu(c: &mut Core) {
         // Not in the original: Tidewater's Settings screen opens like the Custom Scenario screen, a fade out and in with
         // the music playing on.
         Some(SETTINGS_ITEM) => menu.closing = Some((cf::SoundThenBlack::new(fades::MENUS), MenuPick::Settings)),
+        // Ours: the Touch Controls page over the menu, drawn from the next frame.
+        Some(TOUCH_ITEM) => {
+            menu.help = Some(Default::default());
+            menu.drawn = None;
+        }
         // A phone can't start a browser itself: the shell opens the release page (`update`).
-        Some(6) => open_requests.extend(updater.install()),
+        Some(7) => open_requests.extend(updater.install()),
         Some(_) => updater.dismiss(),
         None => {}
     }
@@ -2357,6 +2433,7 @@ pub(crate) fn enter_settings(c: &mut Core) {
     screens.menu_picture = Some((dup(&bg), palette.clone()));
     let env = settings::Env {
         touch: touch.touch_only,
+        touch_input: touch.emulate || touch.active,
         updates: crate::update::build_version().is_some(),
         data: game_files_line(opts),
         in_game: false,
@@ -3819,9 +3896,19 @@ mod tests {
         }
         // The version line starts at x 60 in the small font and is a few words long; the link is far to its right.
         assert!(link.x > menuscreen::VERSION_CELL.0 + 300);
-        // The link is the item after the five buttons, and the update offer's buttons follow it.
+        // The link is the item after the five buttons, then the Touch controls link; the update offer's buttons
+        // follow them.
         assert_eq!(SETTINGS_ITEM, 5);
-        assert_eq!(MAIN_BUTTONS, SETTINGS_ITEM + 1);
+        assert_eq!(TOUCH_ITEM, SETTINGS_ITEM + 1);
+        assert_eq!(MAIN_BUTTONS, TOUCH_ITEM + 1);
+        // The Touch controls link is clear of everything too, the Settings link included.
+        let touch = menuscreen::TOUCH_LINK;
+        for r in UPDATE_BUTTONS.into_iter().chain([UPDATE_NOTICE, link]) {
+            assert!(apart(touch, r), "{r:?}");
+        }
+        for r in menuscreen::button_rects(5) {
+            assert!(apart(touch, r), "the main menu's button {r:?}");
+        }
     }
 
     #[test]

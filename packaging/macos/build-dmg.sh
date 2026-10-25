@@ -11,10 +11,12 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 app="$work/dmg/Tidewater.app"
-mkdir -p "$app/Contents/MacOS"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$binary" "$app/Contents/MacOS/tidewater"
 chmod 755 "$app/Contents/MacOS/tidewater"
 sed "s/@VERSION@/$version/g" "$here/Info.plist" > "$app/Contents/Info.plist"
+# The app icon (Info.plist's CFBundleIconFile), drawn by packaging/icon/render.sh.
+cp "$here/tidewater.icns" "$app/Contents/Resources/tidewater.icns"
 # An ad-hoc signature (no certificate): not trusted by Gatekeeper, but Apple-silicon Macs refuse to run unsigned code.
 codesign --force --deep -s - "$app"
 ln -s /Applications "$work/dmg/Applications"

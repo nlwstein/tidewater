@@ -1337,6 +1337,61 @@ pub(crate) fn draw_placement(c: &mut Core) {
     layer.visible = true;
 }
 
+/// What the touch step needs to know of the game screen (`touch`, `gesture::Config::hover`): whether a building is
+/// being placed or a command's target chosen, so a finger moves the pointer rather than clicking, and the placed
+/// building's outline in screen pixels (left, top, right, bottom), which a tap confirms on.
+pub(crate) fn touch_aim(c: &Core) -> (bool, Option<(f32, f32, f32, f32)>) {
+    let Some(ui) = c.panel_ui.as_ref() else {
+        return (false, None);
+    };
+    match ui.mode {
+        panel::Mode::Target(_) => (true, None),
+        panel::Mode::Place(kind) => {
+            let ghost = (|| {
+                let (sim, view, tile) = (c.sim.as_ref()?, c.view.as_ref()?, ui.site?);
+                let size = panel::WorldState {
+                    world: &sim.world,
+                    local: sim.human,
+                }
+                .footprint(kind);
+                let site = sim.world.site_at(kind, tile);
+                let t = TILE_PX as f32;
+                let a = view.screen_of_map((site.0 as f32 * t, site.1 as f32 * t))?;
+                let b = view.screen_of_map((
+                    (site.0 + i32::from(size.0)) as f32 * t,
+                    (site.1 + i32::from(size.1)) as f32 * t,
+                ))?;
+                Some((a.0, a.1, b.0, b.1))
+            })();
+            (true, ghost)
+        }
+        _ => (false, None),
+    }
+}
+
+/// The smart tap (`mouse::smart_tap`) for a tap at `at`, in screen pixels, with a tolerance of `radius` screen pixels:
+/// whether it should be a right click. Never while placing or targeting.
+pub(crate) fn touch_smart_tap(c: &Core, at: (f32, f32), radius: f32) -> bool {
+    let (Some(ui), Some(sel), Some(sim), Some(mv)) = (
+        c.panel_ui.as_ref(),
+        c.selection.as_ref(),
+        c.sim.as_ref(),
+        c.view.as_ref(),
+    ) else {
+        return false;
+    };
+    if matches!(ui.mode, panel::Mode::Target(_) | panel::Mode::Place(_)) || sel.units.is_empty() {
+        return false;
+    }
+    let Some((x, y)) = mv.pointer_map(at) else {
+        return false;
+    };
+    let r = (radius * mv.zoom).round() as i32;
+    with_board(&sim.world, sim.human, c.art.as_ref(), mv.tiles(), |b| {
+        mouse::smart_tap(b, px(Vec2::new(x, y)), r, &sel.units)
+    })
+}
+
 /// The cursor position in map pixels (y down), if it is over the window: by the view the last frame drew
 /// (`mapview::MapView::pointer_map`).
 fn cursor_map(input: &input::Input, view: &mapview::MapView) -> Option<Vec2> {
@@ -2571,6 +2626,7 @@ pub(crate) fn update_messages(c: &mut Core) {
         info_panel: Some(info_panel),
         screen_ui: Some(scr),
         script,
+        touch,
         ..
     } = c
     else {
@@ -2608,12 +2664,16 @@ pub(crate) fn update_messages(c: &mut Core) {
         }
     }
     let demo = sim.world.sounds.demo;
+    // On touch a tap away from the outline or the pointer only moves it, so the prompt says how to confirm.
+    let fingers = touch.touch_only || touch.emulate || touch.active;
     let prompt = match ui.mode {
-        panel::Mode::Target(_) => Some(messages::net::SELECT_TARGET),
-        panel::Mode::Place(_) => Some(messages::net::SELECT_LOCATION),
+        panel::Mode::Target(_) if fingers => Some(crate::touch::TARGET_PROMPT.to_string()),
+        panel::Mode::Place(_) if fingers => Some(crate::touch::PLACE_PROMPT.to_string()),
+        panel::Mode::Target(_) => Some(hud.art.net_string(messages::net::SELECT_TARGET)),
+        panel::Mode::Place(_) => Some(hud.art.net_string(messages::net::SELECT_LOCATION)),
         _ => None,
     };
-    scr.status.set_prompt(prompt.map(|n| hud.art.net_string(n)));
+    scr.status.set_prompt(prompt);
     match (&ui.tooltip, &info_panel.hover) {
         (Some((text, (kind, cost, mana))), _) => scr.status.button(text, *kind, *cost, *mana, demo),
         (None, Some(name)) => scr.status.name(name, demo),

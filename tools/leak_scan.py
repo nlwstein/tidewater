@@ -23,8 +23,17 @@ SELF_EXEMPT = {".githooks/blocklist.txt", ".githooks/blocklist.local"}
 MAX_BYTES = 1 << 20
 GAME_EXT = (".mpq", ".pud", ".grp", ".pcx", ".wav", ".smk", ".tbl", ".cv4", ".vx4", ".vr4", ".ppl", ".fnt", ".dat", ".bin",
             ".exe", ".dll", ".iso", ".snp", ".rpl", ".png", ".bmp", ".cur", ".ogg", ".gif", ".jpg", ".jpeg")
-# Paths exempt from the file type block (repo-relative). Empty: the repo holds no images today.
-ALLOW_PATHS = set()
+# Paths exempt from the file type block (repo-relative), each named exactly. The only images are the app icon's,
+# drawn by packaging/icon/render.sh from our own packaging/icon/tidewater.svg.
+ALLOW_PATHS = {
+    "crates/client/assets/icon/window.png",
+    "packaging/linux/tidewater.png",
+    "platform/ios/Sources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
+} | {
+    f"platform/android/app/src/main/res/mipmap-{d}/{name}.png"
+    for d in ("mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi")
+    for name in ("ic_launcher", "ic_launcher_background")
+}
 SECRETS = [
     r"glpat-[0-9A-Za-z_\-]{20,}",
     r"gh[pousr]_[0-9A-Za-z]{30,}",

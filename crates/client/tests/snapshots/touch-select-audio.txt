@@ -1,2 +1,2 @@
 # mixed sound fingerprints of the scripted scene `touch-select` (hashes only): 22050 Hz stereo 16-bit, one-second blocks
-tail	7350	8e8c66bd282c2339
+tail	7350	c11acbd0603a453c

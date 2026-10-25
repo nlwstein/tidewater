@@ -22,7 +22,8 @@ before writing any code, and follow it exactly.
   upgrade tables, map restrictions).
 - `crates/twtool`: inspection CLI (`import-check`, `disc-list`, `mpq-*`, `render-map`, `render-grp`, `render-pcx`, `smk-frame`, `smk-audio`, `grp-sheet`, `units`, `upgrades`,
   `strings`, `scripts`, `script-ops`, `fell`, `sim`, `oracle`: compare the simulation with a per-cycle trace of the original game, `snapshot`: the
-  whole-map behaviour snapshot `tests/snapshot.rs` checks, `replay`: verify a `.twrep`, `desync-diff`: find the first differing cycle and field).
+  whole-map behaviour snapshot `tests/snapshot.rs` checks, `replay`: verify a `.twrep`, `desync-diff`: find the first differing cycle and field, `app-icon`: draw the app icon
+  for `packaging/icon/render.sh`, which redraws every platform's icon from `packaging/icon/tidewater.svg`).
 - `crates/import`: game-file import (`source`: what a path is, `validate`: key-file checks, `copy`: allowlisted copy
   and atomic swap into `<data>/game`, `manifest`); used by `tidewater --import` and `twtool import-check`;
   `docs/design/import.md`.
@@ -46,8 +47,8 @@ before writing any code, and follow it exactly.
   `firstrun.rs` is the first-run import screen shown when there are no game files (`AppState::FirstRun`; its own font
   in `firstrun/font.rs`, the automatic search in `firstrun/search.rs`; `docs/design/import.md`).
   Touch (`docs/design/touch.md`): `gesture.rs` is the state machine turning fingers into mouse frames, pan and zoom,
-  `chrome.rs` the on-screen Shift/Ctrl/Alt latches, right-click toggle, pause and keyboard buttons in the pillarbox,
-  `touchemu.rs` the mouse as fingers (`--touch-emulation`) and `touch.rs` the core's glue (`Core::touch`).
+  `chrome.rs` the on-screen buttons in the pillarbox (menu, pause, Shift/Ctrl/Alt latches, plain click, keyboard, control groups),
+  `touchemu.rs` the mouse as fingers (`--touch-emulation`), `touchhelp.rs` the Touch Controls help page and `touch.rs` the core's glue (`Core::touch`).
   `session.rs` is the `Session` trait between the game screen and the sim (`LocalSession`, `ReplaySession`); `net/` is network play (`proto`: messages and identity, `tcp`, `lockstep`: `NetSession`, `lobby`: the command-line host and join, `room`: the menu lobby's host and guest ends with map transfer, `beacon`: the LAN game-list UDP packet; `docs/design/network.md`).
   `mpmenu.rs` is the multiplayer menus (Multi Player Game to the game list and Direct IP), `mpwidgets.rs` their edit boxes and pop-ups, `lobbyscreen.rs` the game setup lobby; `chat.rs` is the in-game chat line, sent as `Msg::Chat` outside the turns.
   `extras.rs` is the optional improvements' registry, settings and flags (`docs/design/extras.md`); `settings.rs` is the Settings
@@ -66,7 +67,7 @@ before writing any code, and follow it exactly.
   the shell files `crates/client/src/shell/app.rs` and `sdl.rs` by `#[path]`, so desktop and phone run one code path.
   The iOS entry (`tidewater_ios_main`), the document-picker call and the lifecycle event watch are in `sdl.rs`.
 - `platform/ios`: the Xcode project around it: `project.yml` (xcodegen), `Sources/main.c` (hands over to `SDL_RunApp`),
-  `Sources/picker.m` (UIDocumentPickerViewController), `Config/*.xcconfig` (signing is the user's own), `build.sh`;
+  `Sources/picker.m` (UIDocumentPickerViewController), `Config/*.xcconfig` (signing is the user's own), `build.sh`, `package-ipa.sh` (the unsigned `.ipa`);
   `docs/design/ios.md`.
 - `crates/android`: the Android app's native library `libmain.so` (`tidewater-android`, a `cdylib`): empty except on
   `target_os = "android"`, where it builds the same two shell files by `#[path]`; `build.rs` keeps SDL's JNI entry points
@@ -81,7 +82,7 @@ before writing any code, and follow it exactly.
 - The toolchain is pinned in `rust-toolchain.toml`; dependencies track their newest releases.
 - Building needs CMake and a C compiler besides Rust (SDL 3 is built from source). GitHub Actions
   (`.github/workflows/ci.yml`) runs fmt, clippy and the tests without game data, plus release builds on Linux, macOS
-  and Windows and the iOS Simulator and Android libraries; the full check with game data and oracle traces is still
+  and Windows, the iOS Simulator and Android libraries and an unsigned iOS `.ipa`; the full check with game data and oracle traces is still
   run locally. `.github/workflows/release.yml` builds the downloads (`docs/release.md`).
 - The multiplayer end-to-end test (`crates/client/tests/mp_e2e.rs`) needs `TIDEWATER_INSTALL` and port 6112; see `docs/design/network.md`, "Running the end-to-end check".
 - Before every commit run `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`.

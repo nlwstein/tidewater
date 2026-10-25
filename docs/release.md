@@ -1,7 +1,7 @@
 # Releasing
 
 **In short:** work lands on `develop`. To release, merge `develop` into `main`. The push to `main` works out the version
-from the commit messages, builds the Windows, macOS, Linux and Android downloads, and publishes a GitHub release. Nothing else to do.
+from the commit messages, builds the Windows, macOS, Linux, iOS and Android downloads, and publishes a GitHub release. Nothing else to do.
 
 ## Branches
 
@@ -38,7 +38,7 @@ version in `Cargo.toml` is not used.
 **What the workflow does, in order:**
 
 1. `plan`: runs the script's tests, computes the version and the notes.
-2. `linux`, `macos`, `windows`, `android`: build the downloads in parallel.
+2. `linux`, `macos`, `windows`, `ios`, `android`: build the downloads in parallel.
 3. `windows-smoke`: installs the setup program silently on a clean Windows runner, runs `tidewater --version`, uninstalls.
 4. `publish` (only when a release is due, never on a dry run): writes `SHA256SUMS`, then `gh release create` makes the tag
    `vX.Y.Z` on the built commit and the release, with every file and notes grouped by type (breaking changes, features,
@@ -57,15 +57,32 @@ publishes from `main`.
 |---|---|
 | `tidewater-X.Y.Z-windows-x64-setup.exe` | Inno Setup, `packaging/windows/tidewater.iss`. Per-user install (no administrator), Start menu entry, optional desktop shortcut, uninstaller. The uninstaller removes only the program; imported game files, saves and settings live in the user's data folders and stay. |
 | `tidewater-X.Y.Z-macos.dmg` | `packaging/macos/build-dmg.sh`: `Tidewater.app` (ad-hoc signed), an Applications link and a "Read me first" note. The binary joins the arm64 and x86_64 builds with `lipo`. |
-| `tidewater-X.Y.Z-linux-x64.tar.gz` | `packaging/linux/build-tarball.sh`: the program, `tidewater.desktop`, `README.txt`, the licence files. No AppImage yet. |
+| `tidewater-X.Y.Z-linux-x64.tar.gz` | `packaging/linux/build-tarball.sh`: the program, `tidewater.desktop` and its icon `tidewater.png`, `README.txt`, the licence files. No AppImage yet. |
 | `tidewater-X.Y.Z-android.apk` | `platform/android/build.sh --release`: one APK with arm64-v8a and x86_64 libraries, signed with the release keystore (see [Android APK](#android-apk)). Left out, with a note in the run summary, while the signing secrets are not set. |
-| `SHA256SUMS` | `sha256sum` of every file above (`publish` sums `tidewater-*`, which covers the APK). |
+| `tidewater-X.Y.Z-ios.ipa` | `platform/ios/package-ipa.sh --version X.Y.Z` after `platform/ios/build.sh device`: the Release device build (arm64), **unsigned**, with `Payload/Tidewater.app` at the root. The version goes into `CFBundleShortVersionString` and `CFBundleVersion`. The bundle id stays `dev.tidewater.client`; whoever sideloads it re-signs with their own Apple ID ([docs/design/ios.md](design/ios.md#install-the-unsigned-ipa)). CI builds the same file on every run as the `tidewater-ios-unsigned` artifact. |
+| `SHA256SUMS` | `sha256sum` of every file above (`publish` sums `tidewater-*`, which covers the APK and the IPA). |
 
-The asset names are what the update check looks for (`update.rs`), so keep them. Only the program is packaged, never game
+The asset names are what the update check looks for (`update.rs`), so keep them. The check picks the Windows and macOS files by their endings (`-windows-x64-setup.exe`, `-macos.dmg`); the phones only open the release page, so the `-ios.ipa` name is never matched. Only the program is packaged, never game
 data.
 
 To try the packaging on your own machine: `packaging/macos/build-dmg.sh 0.0.0-test target/release/tidewater out.dmg`, or
 `packaging/linux/build-tarball.sh 0.0.0-test target/release/tidewater out.tar.gz`.
+
+### The app icon
+
+One drawing, `packaging/icon/tidewater.svg` (our own artwork, MPL-2.0: a square-sailed ship riding the waves at dusk),
+is the icon everywhere. `packaging/icon/render.sh` redraws every platform's file from it with `twtool app-icon`; the
+results are committed, so the release builds don't draw anything. To change the icon, edit the SVG, run the script and
+commit what it writes.
+
+| Platform | File | Used by |
+|---|---|---|
+| iOS | `platform/ios/Sources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png` | `project.yml` (`ASSETCATALOG_COMPILER_APPICON_NAME`). |
+| Android | `platform/android/app/src/main/res/mipmap-*/` | The manifest's `android:icon`. |
+| macOS | `packaging/macos/tidewater.icns` | `build-dmg.sh` puts it in `Tidewater.app/Contents/Resources`; `Info.plist` names it. |
+| Windows | `packaging/windows/tidewater.ico` | `tidewater.iss`: the installer's own icon, the shortcuts and the Apps list. `tidewater.exe` has no icon resource yet, so Explorer shows a plain program icon for the file itself. |
+| Linux | `packaging/linux/tidewater.png` | The tarball, for `tidewater.desktop`'s `Icon=` line. |
+| The window | `crates/client/assets/icon/window.png` | The desktop shell sets it with `SDL_SetWindowIcon` (title bar, taskbar, Dock). |
 
 ## Unsigned: what players see
 
@@ -77,6 +94,7 @@ what to do.
 | **macOS** | Gatekeeper refuses the first launch. The ad-hoc signature only lets Apple-silicon Macs run the code. | Right-click, Open, Open. On newer macOS: System Settings, Privacy & Security, Open Anyway. Or `xattr -dr com.apple.quarantine Tidewater.app`. |
 | **Windows** | SmartScreen says "Windows protected your PC" for the setup program. | More info, Run anyway. |
 | **Linux** | None. | `chmod +x` if the file manager dropped the executable bit. |
+| **iOS** | The file is not signed, so iOS refuses to install it as it is. | Sideload with AltStore, SideStore or Sideloadly, which sign it with your own Apple ID. |
 | **Android** | The system asks to allow installs from the app that opened the APK (the browser or file manager). | Allow it for that app, then install. Not on Google Play. |
 
 ## Android APK

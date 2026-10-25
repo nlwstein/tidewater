@@ -11,7 +11,9 @@ The gestures are in [touch.md](touch.md), the import in [import.md](import.md) a
 | Area | State |
 |---|---|
 | Build (arm64-v8a, x86_64), debug APK | Works. |
-| Touch, chrome buttons | On from the first frame; checked with taps in the emulator. |
+| Touch, chrome buttons | On from the first frame; checked with taps in the emulator. One-finger pan, hold-then-drag box, smart tap and the control-group bar ([touch.md](touch.md)) are new and not yet run in the emulator. |
+| Touch Controls help | Shows by itself at the first game, then under Help and on the main menu. |
+| Exit Program, Back | Exit Program is not offered (Android closes apps itself); the Back button is Esc (`SDL_HINT_ANDROID_TRAP_BACK_BUTTON`), not yet tried in the emulator. |
 | Landscape only | Works (the manifest and an SDL hint). |
 | Background and foreground | The game pauses, sound stops, settings are written. Checked with Home and a relaunch. |
 | Import from the app's folder | Works (folder scan, game folders). CD images use the same code as iOS; not run on Android. |
@@ -33,6 +35,7 @@ two files, `crates/client/src/shell/app.rs` (the loop) and `sdl.rs` (the safe SD
 | Activity | `platform/android/app/src/main/java/dev/tidewater/client/TidewaterActivity.java` | SDL's activity that loads only `libmain.so`, passes the command line and shows the picker. |
 | SDL's Java sources | `platform/android/app/src/main/java/org/libsdl/app/` | Copied by `build.sh` from the `sdl3-src` crate, so Java and C always match. Not in git (SDL is zlib-licensed). |
 | Project | `platform/android/` | Gradle project in the layout of SDL's `android-project`; the Gradle wrapper (Apache 2.0) comes from that template. |
+| Launcher icon | `platform/android/app/src/main/res/mipmap-*` | Android 8 and later: an adaptive icon (`mipmap-anydpi-v26/ic_launcher.xml`) whose background layer is the whole picture, zoomed out so the launcher's mask keeps it; Android 7: `ic_launcher.png`. Drawn by `packaging/icon/render.sh` (see [`docs/release.md`](../release.md#the-app-icon)). |
 | Script | `platform/android/build.sh` | Builds the libraries with `cargo-ndk`, copies the Java sources and runs Gradle. |
 
 ## Build
@@ -111,5 +114,5 @@ whatever orientation it chooses, and the game returns to landscape afterwards.
   reader that works elsewhere.
 - **Storage.** Imported files are about 700 MB and the original stays; the picker needs the same again in cache.
 - **Network play** is untried on the phone.
-- **No app icon** and no Play Store packaging. The release APK is for sideloading; when a newer release exists the main menu offers it, and **Update now** opens the release page to download the new APK (`update.rs`). The manifest asks only for `INTERNET`, for network games and that check.
+- **No Play Store packaging.** The release APK is for sideloading; when a newer release exists the main menu offers it, and **Update now** opens the release page to download the new APK (`update.rs`). The manifest asks only for `INTERNET`, for network games and that check.
 - **Sound** is untested in the emulator (it ran with `-no-audio`).

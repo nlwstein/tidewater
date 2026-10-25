@@ -59,10 +59,18 @@ pub(crate) enum Page {
     Sound,
     Gameplay,
     Keys,
+    Touch,
 }
 
 impl Page {
-    pub(crate) const ALL: [Page; 5] = [Page::General, Page::Interface, Page::Sound, Page::Gameplay, Page::Keys];
+    pub(crate) const ALL: [Page; 6] = [
+        Page::General,
+        Page::Interface,
+        Page::Sound,
+        Page::Gameplay,
+        Page::Keys,
+        Page::Touch,
+    ];
 
     pub(crate) fn label(self) -> &'static str {
         match self {
@@ -71,6 +79,7 @@ impl Page {
             Page::Sound => "Sound",
             Page::Gameplay => "Gameplay",
             Page::Keys => "Keys",
+            Page::Touch => "Touch",
         }
     }
 
@@ -88,15 +97,20 @@ impl Page {
                 "The keys of the game screen. Choose an action and press Enter, or click it, then press the new key. \
                  Backspace puts the original key back."
             }
+            Page::Touch => "How your fingers work the game. Point at a row to read what it does.",
         }
     }
 }
 
-/// The pages the platform shows, in tab order: the Keys page needs a keyboard.
+/// The pages the platform shows, in tab order: the Keys page needs a keyboard, the Touch page touch.
 pub(crate) fn pages(env: &Env) -> Vec<Page> {
     Page::ALL
         .into_iter()
-        .filter(|&p| p != Page::Keys || !env.touch)
+        .filter(|&p| match p {
+            Page::Keys => !env.touch,
+            Page::Touch => env.touch || env.touch_input,
+            _ => true,
+        })
         .collect()
 }
 
@@ -114,6 +128,14 @@ pub(crate) fn extra_page(id: Id) -> Page {
         | Id::MapZoom => Page::Interface,
         Id::VolumeVoices | Id::VolumeEffects | Id::VolumeMusic => Page::Sound,
         Id::RallyPoints | Id::ProductionQueue | Id::SelectionLimit | Id::SpeedLevels | Id::ShiftQueue => Page::Gameplay,
+        Id::TouchDrag
+        | Id::TouchSmartTap
+        | Id::TouchTwoFinger
+        | Id::TouchPinch
+        | Id::TouchHold
+        | Id::TouchButtons
+        | Id::TouchSwapBars
+        | Id::TouchMenuTap => Page::Touch,
     }
 }
 
@@ -176,6 +198,8 @@ pub(crate) fn items_on(page: Page) -> Vec<Item> {
 pub(crate) struct Env {
     /// A phone or tablet (`Core::touch.touch_only`): no window, mouse lock or settings folder rows.
     pub touch: bool,
+    /// Touch is in use on a computer (a touch screen, `--touch-emulation`): the Touch page shows, as on a phone.
+    pub touch_input: bool,
     /// The program checks for a newer release at all (`update`): a desktop release build.
     pub updates: bool,
     /// The line about the imported game files, `None` when there is nothing to manage (`--install` reads the files in
@@ -235,6 +259,13 @@ pub(crate) const CHOICE_WORDS: &[(Id, &[&str])] = &[
     (Id::AutoReplay, &["Off", "Save from menu", "Always save"]),
     (Id::Widescreen, &["Off", "16:10", "16:9", "Auto"]),
     (Id::MapZoom, &["Off", "Mouse wheel"]),
+    (Id::TouchDrag, &["Pan", "Pan, no glide", "Selection box"]),
+    (Id::TouchSmartTap, &["On", "Off"]),
+    (Id::TouchTwoFinger, &["Pan", "Box corners", "Off"]),
+    (Id::TouchPinch, &["Auto (phones)", "On", "Off"]),
+    (Id::TouchHold, &["Normal", "Long", "Longer"]),
+    (Id::TouchButtons, &["Medium", "Small", "Large"]),
+    (Id::TouchMenuTap, &["On", "Off"]),
 ];
 
 /// The default of an item.
@@ -506,14 +537,17 @@ const OK: Rect = Rect::new(470, BUTTON_Y, BUTTON_W, BUTTON_H);
 const CANCEL: Rect = Rect::new(356, BUTTON_Y, BUTTON_W, BUTTON_H);
 const DEFAULTS: Rect = Rect::new(64, BUTTON_Y, BUTTON_W, BUTTON_H);
 
+/// A tab: [`TAB_W`] wide, narrower when that many do not fit the panel.
 fn tab_rect(p: Page, pages: &[Page]) -> Rect {
-    let n = pages.len() as i32;
-    let total = n * TAB_W as i32 + (n - 1) * TAB_GAP;
+    let n = pages.len().max(1) as i32;
+    let room = PANEL.w as i32 - 2 * TAB_GAP - (n - 1) * TAB_GAP;
+    let w = (TAB_W as i32).min(room / n);
+    let total = n * w + (n - 1) * TAB_GAP;
     let i = pages.iter().position(|&x| x == p).unwrap_or(0) as i32;
     Rect::new(
-        PANEL.x + (PANEL.w as i32 - total) / 2 + i * (TAB_W as i32 + TAB_GAP),
+        PANEL.x + (PANEL.w as i32 - total) / 2 + i * (w + TAB_GAP),
         TAB_Y,
-        TAB_W,
+        w as u32,
         TAB_H,
     )
 }
@@ -1388,6 +1422,7 @@ mod tests {
     fn env(touch: bool) -> Env {
         Env {
             touch,
+            touch_input: false,
             updates: !touch,
             data: (!touch).then(|| "Game files: GOG installer, 156 files, 41 maps, imported 2026-10-23".to_string()),
             in_game: false,
@@ -2022,10 +2057,10 @@ mod tests {
 
     #[test]
     fn the_keys_page_is_a_fifth_tab_that_a_phone_does_not_have() {
-        assert_eq!(pages(&env(false)), Page::ALL);
+        assert_eq!(pages(&env(false)), Page::ALL[..5]);
         assert_eq!(
             pages(&env(true)),
-            [Page::General, Page::Interface, Page::Sound, Page::Gameplay]
+            [Page::General, Page::Interface, Page::Sound, Page::Gameplay, Page::Touch]
         );
         let s = keys_screen();
         assert_eq!(s.page(), Page::Keys);
@@ -2040,14 +2075,18 @@ mod tests {
         let mut p = screen_with(env(true));
         p.page = Page::Gameplay;
         key(&mut p, Key::PageDown);
-        assert_eq!(p.page(), Page::General);
+        assert_eq!(p.page(), Page::Touch);
         assert!(
             p.page_targets()
                 .iter()
                 .all(|(t, _)| !matches!(t, Target::Tab(Page::Keys)))
         );
-        // The five tabs fit the panel without touching.
-        let all = pages(&env(false));
+        // A computer with touch in use has all six, and they fit the panel without touching.
+        let all = pages(&Env {
+            touch_input: true,
+            ..env(false)
+        });
+        assert_eq!(all, Page::ALL);
         for (i, a) in all.iter().enumerate() {
             let r = tab_rect(*a, &all);
             assert!(r.x >= PANEL.x && r.x + r.w as i32 <= PANEL.x + PANEL.w as i32);

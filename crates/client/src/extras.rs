@@ -39,10 +39,18 @@ pub enum Id {
     AutoReplay,
     Widescreen,
     MapZoom,
+    TouchDrag,
+    TouchSmartTap,
+    TouchTwoFinger,
+    TouchPinch,
+    TouchHold,
+    TouchButtons,
+    TouchSwapBars,
+    TouchMenuTap,
 }
 
 /// How many options there are.
-pub const COUNT: usize = 18;
+pub const COUNT: usize = 26;
 
 /// Who decides an option in a game with other players.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -105,6 +113,21 @@ pub const WIDESCREEN_MODES: &[&str] = &["off", "16:10", "16:9", "auto"];
 
 /// The values of `map-zoom`: the mouse wheel does nothing to the map view, or magnifies it.
 pub const MAP_ZOOM_MODES: &[&str] = &["off", "wheel"];
+
+/// The values of `touch-drag`: what one finger dragging on the map view does.
+pub const TOUCH_DRAG_MODES: &[&str] = &["pan", "pan-no-glide", "box"];
+/// The values of `touch-smart-tap`.
+pub const TOUCH_SMART_TAP: &[&str] = &["on", "off"];
+/// The values of `touch-two-finger`: what two fingers dragging together do.
+pub const TOUCH_TWO_FINGER_MODES: &[&str] = &["pan", "box", "off"];
+/// The values of `touch-pinch`: `auto` is on for phones, off for tablets (`touch::is_phone`).
+pub const TOUCH_PINCH_MODES: &[&str] = &["auto", "on", "off"];
+/// The values of `touch-hold`: how long a finger is held to draw the box and to right-click.
+pub const TOUCH_HOLD_MODES: &[&str] = &["normal", "long", "longer"];
+/// The values of `touch-buttons`: the size of the side bars' buttons.
+pub const TOUCH_BUTTON_SIZES: &[&str] = &["medium", "small", "large"];
+/// The values of `touch-menu-tap`.
+pub const TOUCH_MENU_TAP: &[&str] = &["on", "off"];
 
 /// The most the magnifying zoom magnifies, in times the original's view (it never shows more map than the original).
 pub const MAP_ZOOM_MAX: f32 = 4.0;
@@ -271,7 +294,79 @@ pub const REGISTRY: [Spec; COUNT] = [
         kind: Kind::Choice(MAP_ZOOM_MODES),
         default: 0,
         scope: Scope::Client,
-        description: "`wheel`: the mouse wheel over the map view magnifies it up to 4 times around the pointer and back to the normal view, never showing more map than the original does (a pinch does the same on touch devices)",
+        description: "`wheel`: the mouse wheel over the map view magnifies it up to 4 times around the pointer and back to the normal view, never showing more map than the original does (on touch devices the pinch is `touch-pinch`)",
+    },
+    Spec {
+        id: Id::TouchDrag,
+        name: "touch-drag",
+        label: "One-finger drag",
+        kind: Kind::Choice(TOUCH_DRAG_MODES),
+        default: 0,
+        scope: Scope::Client,
+        description: "Touch only. A finger dragged on the map scrolls it (`pan` glides on after a flick, `pan-no-glide` stops where the finger lifts); hold it still a moment first to draw a selection box instead. `box`: a drag draws the box at once, as the mouse does",
+    },
+    Spec {
+        id: Id::TouchSmartTap,
+        name: "touch-smart-tap",
+        label: "Tap to order",
+        kind: Kind::Choice(TOUCH_SMART_TAP),
+        default: 0,
+        scope: Scope::Client,
+        description: "Touch only. With your units selected, a tap on the ground, an enemy or a resource orders them there, as a right click does; a tap on your own unit or building selects it. `off`: every tap is a left click",
+    },
+    Spec {
+        id: Id::TouchTwoFinger,
+        name: "touch-two-finger",
+        label: "Two-finger drag",
+        kind: Kind::Choice(TOUCH_TWO_FINGER_MODES),
+        default: 0,
+        scope: Scope::Client,
+        description: "Touch only. Two fingers dragged together scroll the map (`pan`), are the corners of a selection box (`box`), or do nothing (`off`; a pinch still zooms if it is on)",
+    },
+    Spec {
+        id: Id::TouchPinch,
+        name: "touch-pinch",
+        label: "Pinch zoom",
+        kind: Kind::Choice(TOUCH_PINCH_MODES),
+        default: 0,
+        scope: Scope::Client,
+        description: "Touch only. Spreading two fingers magnifies the map view up to 4 times. `auto`: on for phones (a screen whose short side is under 90 mm), off for tablets",
+    },
+    Spec {
+        id: Id::TouchHold,
+        name: "touch-hold",
+        label: "Hold time",
+        kind: Kind::Choice(TOUCH_HOLD_MODES),
+        default: 0,
+        scope: Scope::Client,
+        description: "Touch only. How long a finger is held still before a drag draws a box, and before it right-clicks: `normal` 0.3 and 0.45 seconds, `long` 0.4 and 0.6, `longer` 0.5 and 0.75",
+    },
+    Spec {
+        id: Id::TouchButtons,
+        name: "touch-buttons",
+        label: "Button size",
+        kind: Kind::Choice(TOUCH_BUTTON_SIZES),
+        default: 0,
+        scope: Scope::Client,
+        description: "Touch only. The size of the side bars' buttons: `medium` 9 mm, `small` 7 mm, `large` 11 mm (smaller when a bar is too narrow)",
+    },
+    Spec {
+        id: Id::TouchSwapBars,
+        name: "touch-swap-bars",
+        label: "Swap side bars",
+        kind: Kind::Flag,
+        default: 0,
+        scope: Scope::Client,
+        description: "Touch only. The control-group buttons go on the left and the menu, pause and modifier buttons on the right",
+    },
+    Spec {
+        id: Id::TouchMenuTap,
+        name: "touch-menu-tap",
+        label: "Three-finger menu",
+        kind: Kind::Choice(TOUCH_MENU_TAP),
+        default: 0,
+        scope: Scope::Client,
+        description: "Touch only. A tap of three fingers at once opens the game menu (the Menu button always does)",
     },
 ];
 
@@ -382,6 +477,32 @@ pub enum Scaling {
     Integer,
     /// Any size inside the window's safe area, drawn sharp bilinear (`display`, "Fractional scale").
     Sharp,
+}
+
+/// What two fingers dragging together do (`touch-two-finger`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TouchTwoFinger {
+    Pan,
+    Corners,
+    Off,
+}
+
+/// The touch options read together ([`ClientExtras::touch`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TouchSettings {
+    /// One finger on the map view pans (else it draws the box at once).
+    pub drag_pans: bool,
+    pub glide: bool,
+    pub smart_tap: bool,
+    pub two_finger: TouchTwoFinger,
+    /// The pinch zoom: on, off, or `None` for the device's default (on for phones).
+    pub pinch: Option<bool>,
+    pub arm_ms: f64,
+    pub long_press_ms: f64,
+    /// The side bars' button size, in millimetres.
+    pub button_mm: f32,
+    pub swap_bars: bool,
+    pub menu_tap: bool,
 }
 
 /// The values of every option for a run.
@@ -503,6 +624,40 @@ impl ClientExtras {
     }
 
     /// Whether the mouse wheel magnifies the map view (option `map-zoom`).
+    /// The touch options read together (they do nothing without touch).
+    pub fn touch(&self) -> TouchSettings {
+        let pinch = match self.get(Id::TouchPinch) {
+            1 => Some(true),
+            2 => Some(false),
+            _ => None,
+        };
+        let (arm_ms, long_press_ms) = match self.get(Id::TouchHold) {
+            1 => (400.0, 600.0),
+            2 => (500.0, 750.0),
+            _ => (300.0, 450.0),
+        };
+        TouchSettings {
+            drag_pans: self.get(Id::TouchDrag) != 2,
+            glide: self.get(Id::TouchDrag) == 0,
+            smart_tap: self.get(Id::TouchSmartTap) == 0,
+            two_finger: match self.get(Id::TouchTwoFinger) {
+                1 => TouchTwoFinger::Corners,
+                2 => TouchTwoFinger::Off,
+                _ => TouchTwoFinger::Pan,
+            },
+            pinch,
+            arm_ms,
+            long_press_ms,
+            button_mm: match self.get(Id::TouchButtons) {
+                1 => 7.0,
+                2 => 11.0,
+                _ => 9.0,
+            },
+            swap_bars: self.get(Id::TouchSwapBars) == 1,
+            menu_tap: self.get(Id::TouchMenuTap) == 0,
+        }
+    }
+
     pub fn map_zoom_wheel(&self) -> bool {
         self.get(Id::MapZoom) == 1
     }

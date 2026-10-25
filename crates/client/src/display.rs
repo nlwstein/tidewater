@@ -181,6 +181,13 @@ impl Letterbox {
         (on(point.0, self.offset.0), on(point.1, self.offset.1))
     }
 
+    /// A screen pixel as a window point in logical points: the inverse of [`Letterbox::screen_of`].
+    pub fn window_of(&self, screen: (f32, f32), factor: f32) -> (f32, f32) {
+        let f = factor.max(0.01);
+        let on = |p: f32, offset: u32| (p * self.scale + offset as f32) / f;
+        (on(screen.0, self.offset.0), on(screen.1, self.offset.1))
+    }
+
     /// A window point in logical points (`factor` physical pixels each) in screen pixels, kept on the screen: a point
     /// on the black border goes to the nearest screen edge.
     pub fn screen_point(&self, point: (f32, f32), factor: f32) -> (f32, f32) {
@@ -321,6 +328,19 @@ pub const WHEEL_PIXELS: f32 = 50.0;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn window_of_undoes_screen_of() {
+        let lb = Letterbox::fit((2388, 1668));
+        for p in [(0.0, 0.0), (176.0, 16.0), (639.0, 479.0)] {
+            let w = lb.window_of(p, 2.0);
+            let back = lb.screen_of(w, 2.0);
+            assert!(
+                (back.0 - p.0).abs() < 1e-3 && (back.1 - p.1).abs() < 1e-3,
+                "{p:?} {back:?}"
+            );
+        }
+    }
 
     #[test]
     fn monitor_scale_picks_the_largest_that_fits() {

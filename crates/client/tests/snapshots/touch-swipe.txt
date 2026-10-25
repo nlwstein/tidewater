@@ -1,0 +1,21 @@
+# frame and sound fingerprints of the scripted scene `touch-swipe` (hashes only)
+sound	2	3bb3724654d4194d	0.7516	Once
+frames	1-2	156ed4086987e325
+frames	3-3	a4417597aa5e5de0
+shot	8	game	b89c5024f0bfa434
+frames	4-8	b89c5024f0bfa434
+frames	9-10	3206b9d2145ebeff
+frames	11-12	c130c5ad080cc87e
+frames	13-15	6e3c50de735bc9ee
+shot	17	panning	39068a6d997338a9
+shot	20	gliding	39068a6d997338a9
+frames	16-20	39068a6d997338a9
+frames	21-24	caa74eacf82afec4
+frames	25-25	9939429260ffbfd3
+frames	26-32	e7192dd827ca2ed4
+frames	33-36	b572b3031b3bb4dd
+frames	37-44	e6d05435a0085e75
+frames	45-56	8046fee570889067
+frames	57-72	dee5107a70073adc
+shot	81	stopped	08d7827bbba5c1b8
+frames	73-81	08d7827bbba5c1b8

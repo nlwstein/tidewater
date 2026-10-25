@@ -480,25 +480,24 @@ pub(crate) const SETTINGS_LINK_RIGHT: i32 = 612;
 /// The link's text.
 pub(crate) const SETTINGS_LINK_TEXT: &str = "Settings (F2)";
 
+/// The Touch controls link (ours, like the Settings link): above it, right-aligned the same way, clear of the update
+/// notice line (`frontend::UPDATE_NOTICE`, y 427 to 445); shown only while touch is in use.
+pub(crate) const TOUCH_LINK: Rect = Rect::new(504, 392, 120, 28);
+/// Its text.
+pub(crate) const TOUCH_LINK_TEXT: &str = "Touch controls";
+
 /// The width of `s` in `font` with spaces leaving `gap` pixels.
 pub(crate) fn text_width(font: &Font, s: &str, gap: u32) -> u32 {
     style(&[[0; 3]; 8], gap).width(font, s)
 }
 
-/// Draws the Settings link in `font10x`, right-aligned on the version line's row: white like the version line, gold
-/// while the pointer is over it.
-pub(crate) fn draw_settings_link(dst: &mut Picture, font: &Font, pal: &Palette, hover: bool) {
-    let w = text_width(font, SETTINGS_LINK_TEXT, SPACE_10X) as i32;
-    let at = (SETTINGS_LINK_RIGHT - w, VERSION_CELL.1);
-    draw_text(
-        dst,
-        font,
-        pal,
-        at,
-        SETTINGS_LINK_TEXT,
-        if hover { GOLD } else { VERSION },
-        SPACE_10X,
-    );
+/// Draws a main-menu link in `font10x` on its rectangle `r` ([`SETTINGS_LINK`] on the version line's row, or
+/// [`TOUCH_LINK`]): right-aligned to end at [`SETTINGS_LINK_RIGHT`], as high in `r` as the Settings link's text is in
+/// its own; white like the version line, gold while the pointer is over it.
+pub(crate) fn draw_link(dst: &mut Picture, font: &Font, pal: &Palette, r: Rect, text: &str, hover: bool) {
+    let w = text_width(font, text, SPACE_10X) as i32;
+    let at = (SETTINGS_LINK_RIGHT - w, VERSION_CELL.1 + r.y - SETTINGS_LINK.y);
+    draw_text(dst, font, pal, at, text, if hover { GOLD } else { VERSION }, SPACE_10X);
 }
 
 /// Draws the version line `s` in `font10x` with its glyph cell at [`VERSION_CELL`], spaces leaving 8 pixels.

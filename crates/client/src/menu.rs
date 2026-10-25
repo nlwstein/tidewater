@@ -48,6 +48,8 @@ pub enum Screen {
     Confirm(Confirm),
     Saving(Saving),
     KeyHelp,
+    /// The Touch Controls help (`touchhelp`, ours).
+    TouchHelp,
     Tips,
     /// Tidewater's own Settings screen over the game (`settings`, not in the original).
     Settings,

@@ -166,6 +166,10 @@ fn run(l: host::Launch) -> Result<()> {
             fullscreen: MOBILE || core.fullscreen_wanted(),
         },
     )?;
+    // The app icon in the title bar and taskbar (a phone's launcher icon comes from its app package instead).
+    if !MOBILE && let Some((iw, ih, rgba)) = host::window_icon() {
+        window.set_icon(iw, ih, &rgba);
+    }
     // A phone's window fills the screen: no sizes to pick and nowhere to centre it.
     if !scripted && !MOBILE {
         let d = window.pixel_density();
@@ -282,7 +286,8 @@ fn run(l: host::Launch) -> Result<()> {
         for url in core.take_open_requests() {
             sdl::open_url(&url);
         }
-        // The soft keyboard follows the chrome's button; a desktop keeps its text input open for the real keyboard.
+        // The soft keyboard follows the chrome's button (which itself follows the system's hiding it, `take_events`);
+        // a desktop keeps its text input open for the real keyboard.
         if core.touch.chrome.keyboard != shell.keyboard && (core.touch.active || MOBILE) {
             shell.keyboard = core.touch.chrome.keyboard;
             if shell.keyboard {
@@ -447,6 +452,7 @@ impl Shell<'_> {
     fn take_events(&mut self, core: &mut Core) -> bool {
         let mut quit = false;
         let mut pending: Option<KeyEvent> = None;
+        let mut keyboard_event = None;
         self.motion = (0.0, 0.0);
         let touching = core.touch.active || self.emulating;
         let (points_w, points_h) = {
@@ -527,6 +533,7 @@ impl Shell<'_> {
                     pos: (x * points_w, y * points_h),
                 }),
                 sdl::Event::Drop(path) => input.dropped(path),
+                sdl::Event::ScreenKeyboard(shown) => keyboard_event = Some(shown),
                 sdl::Event::Text(_) | sdl::Event::Other => {}
             }
         }
@@ -536,6 +543,16 @@ impl Shell<'_> {
         // The answers of the first-run screen's dialogs.
         for answer in sdl::take_dialog_answers() {
             input.picked(answer);
+        }
+        // The system hid the soft keyboard itself (its own hide key, Back, a tap elsewhere): the chrome's keyboard
+        // button goes dark, and the frame's follow-up closes the text input to match. SDL's own state decides, so a
+        // hide followed at once by a show (the keyboard reopened mid-animation) changes nothing.
+        if keyboard_event == Some(false)
+            && self.keyboard
+            && (core.touch.active || MOBILE)
+            && !self.window.screen_keyboard_shown()
+        {
+            core.touch.keyboard_hidden();
         }
         // The event watch noted these as they happened (a poll may come too late).
         for suspend in sdl::take_lifecycle() {
@@ -612,6 +629,8 @@ fn key_of(code: i32) -> Key {
         39 => Key::Digit(0),
         40 => Key::Enter,
         41 => Key::Escape,
+        // AC Back: Android's Back button, which is Esc there.
+        270 => Key::Escape,
         42 => Key::Backspace,
         43 => Key::Tab,
         44 => Key::Space,

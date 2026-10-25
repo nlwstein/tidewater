@@ -9,8 +9,17 @@ frames	9-9	1deb1f9055cea9e6
 frames	10-10	615b7f73a78a820f
 shot	13	selected	c4a6deb38ed8f983
 shot	24	held	c4a6deb38ed8f983
+frames	11-31	c4a6deb38ed8f983
+frames	32-32	9d6adda65cc7d484
+frames	33-33	db37b4abf48998ee
+frames	34-34	349d098dbeb6f6a6
+frames	35-35	4db8af4d8e7f977b
+frames	36-36	9d78ec1850295552
+frames	37-37	b0208f9b5f37fef2
+frames	38-38	87e86aa7b7e12bdc
+frames	39-39	2323773c9f9b7a7f
 sound	41	6eab1eb9376e8616	0.9882	Despawn
-frames	11-40	c4a6deb38ed8f983
+frames	40-40	b485843279ed848e
 frames	41-41	b316d71f516f0f5e
 frames	42-42	1c8240c267e8069c
 frames	43-43	349d098dbeb6f6a6

@@ -1,0 +1,3 @@
+# mixed sound fingerprints of the scripted scene `touch-swipe` (hashes only): 22050 Hz stereo 16-bit, one-second blocks
+blocks	0-0	05d3c37d3d292a6f
+tail	7717	cd75fba131359c32
