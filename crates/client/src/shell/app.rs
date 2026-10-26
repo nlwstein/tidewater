@@ -94,9 +94,37 @@ pub fn android_main(argv: Vec<std::ffi::OsString>) -> i32 {
     }
 }
 
-/// The program, from its command line: what `main` does on a desktop, and what the iOS app's entry calls.
+/// The program, from its command line: what `main` does on a desktop, and what the iOS app's entry calls. A test build
+/// with a command line baked in (`baked_args`) runs that instead.
 pub fn run_program() -> Result<()> {
+    if let Some(args) = baked_args() {
+        return run_program_from(Args::parse_from(args));
+    }
     run_program_from(Args::parse())
+}
+
+/// A test build's command line, baked in when it was built: `TIDEWATER_BAKED_ARGS` (words split at spaces, or `@FILE`
+/// for the words in that file, read at start so one build runs many tests), after the variables in
+/// `TIDEWATER_BAKED_ENV` (`NAME=value` words) are set. For a system that gives an app no command line, the PS Vita
+/// (`platform/vita/build.sh --args`, `docs/design/vita.md`); a build without them is the normal program.
+fn baked_args() -> Option<Vec<String>> {
+    let baked = option_env!("TIDEWATER_BAKED_ARGS")?;
+    for word in option_env!("TIDEWATER_BAKED_ENV").unwrap_or("").split_whitespace() {
+        if let Some((name, value)) = word.split_once('=') {
+            sdl::set_env(name, value);
+        }
+    }
+    // A missing file is an empty command line: the normal program.
+    let words = match baked.strip_prefix('@') {
+        Some(file) => std::fs::read_to_string(file).unwrap_or_default(),
+        None => baked.to_owned(),
+    };
+    Some(
+        std::iter::once("tidewater")
+            .chain(words.split_whitespace())
+            .map(String::from)
+            .collect(),
+    )
 }
 
 /// The program, from parsed arguments.
@@ -469,7 +497,9 @@ impl Shell<'_> {
         let mut pending: Option<KeyEvent> = None;
         let mut keyboard_event = None;
         self.motion = (0.0, 0.0);
-        let touching = core.touch.active || self.emulating;
+        // `controls` can turn fingers off: the mouse is a mouse again, even with `--touch-emulation`.
+        let emulating = self.emulating && core.fingers_enabled();
+        let touching = core.touch.active || emulating;
         let (points_w, points_h) = {
             let (w, h) = self.window.size_in_pixels();
             let d = self.window.pixel_density();
@@ -512,7 +542,7 @@ impl Shell<'_> {
                         _ => {}
                     }
                     // Alt chooses the emulation's extra fingers: the game does not see it.
-                    if !(self.emulating && matches!(key, Key::AltLeft | Key::AltRight)) {
+                    if !(emulating && matches!(key, Key::AltLeft | Key::AltRight)) {
                         pending = Some(KeyEvent {
                             key,
                             pressed: down,
@@ -520,7 +550,7 @@ impl Shell<'_> {
                         })
                     }
                 }
-                sdl::Event::Button { button: 1, down, x, y } if self.emulating => {
+                sdl::Event::Button { button: 1, down, x, y } if emulating => {
                     self.left_down = down;
                     input.mouse_touch(self.mouse_touch(
                         if down { MouseTouchKind::Down } else { MouseTouchKind::Up },
@@ -533,7 +563,7 @@ impl Shell<'_> {
                 sdl::Event::Motion { dx, dy, x, y } => {
                     self.motion.0 += dx;
                     self.motion.1 += dy;
-                    if self.emulating && self.left_down {
+                    if emulating && self.left_down {
                         input.mouse_touch(self.mouse_touch(MouseTouchKind::Move, x, y));
                     }
                 }

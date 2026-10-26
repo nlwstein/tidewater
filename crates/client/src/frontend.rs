@@ -20,8 +20,8 @@
 //! [`end_with`] (a game's end, through the victory or defeat dialog's Continue), and [`to_main_menu`].
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::Mutex;
 use std::sync::mpsc::{Receiver, channel};
+use std::sync::{Arc, Mutex};
 
 use glam::Vec2;
 use tidewater_formats::fnt::Font;
@@ -1181,14 +1181,15 @@ pub(crate) fn enter_video(c: &mut Core) {
     let Some(Step::Video(n)) = flow.current else { return };
     music.start(None);
     flow.memory.played(n);
-    let data = front.install.read(&cf::video_path(n)).unwrap_or_default();
-    // The audio track is gathered from a second decoder on a thread and starts where the picture is.
+    let data = Arc::new(front.install.read(&cf::video_path(n)).unwrap_or_default());
+    // The audio track is gathered from a second decoder on a thread and starts where the picture is. Both read the one
+    // copy of the file: the intro is over 30 MB, and the Vita's heap is small.
     let (tx, rx) = channel();
-    let copy = data.clone();
+    let shared = Arc::clone(&data);
     std::thread::spawn(move || {
-        let _ = tx.send(video::audio_wav(copy));
+        let _ = tx.send(video::audio_wav(shared));
     });
-    let Ok(mut smk) = Smacker::from_vec(data) else {
+    let Ok(mut smk) = Smacker::from_shared(data) else {
         commands.queue(|c| c.screens.clock = Some(Clock(f64::INFINITY)));
         return;
     };
@@ -1569,6 +1570,7 @@ fn menu_input(
     at: Option<Vec2>,
     mouse: &Buttons<Button>,
     keys: &Buttons<Key>,
+    (pad, pad_confirm): (Option<menuscreen::FocusKey>, bool),
 ) -> Option<usize> {
     menu.hot = at.and_then(|p| menu.items.iter().position(|it| it.enabled && it.r.contains(p.x, p.y)));
     if mouse.just_pressed(Button::Left) {
@@ -1580,8 +1582,12 @@ fn menu_input(
             menu.focus = h;
         }
     }
+    // The keyboard's Tab passes over the links (F2 opens Settings); a pad, which has no F2, also stops on them.
     if let Some(k) = focus_key(keys) {
         let enabled: Vec<bool> = menu.items.iter().map(|it| it.enabled && !it.link).collect();
+        menu.focus = menuscreen::move_focus(&enabled, menu.focus, k);
+    } else if let Some(k) = pad {
+        let enabled: Vec<bool> = menu.items.iter().map(|it| it.enabled).collect();
         menu.focus = menuscreen::move_focus(&enabled, menu.focus, k);
     }
     let released = mouse.just_released(Button::Left);
@@ -1602,7 +1608,7 @@ fn menu_input(
                         &menu.palette,
                         it.r,
                         &it.label,
-                        menu.hot == Some(i),
+                        menu.hot == Some(i) || menu.focus == i,
                     );
                 }
                 continue;
@@ -1634,7 +1640,10 @@ fn menu_input(
     }
     // Screen spec, "Keyboard focus": Enter activates the focused button, as a click on it does.
     if keys.any_just_pressed([Key::Enter, Key::NumpadEnter])
-        && menu.items.get(menu.focus).is_some_and(|it| it.enabled && !it.link)
+        && menu
+            .items
+            .get(menu.focus)
+            .is_some_and(|it| it.enabled && (!it.link || pad_confirm))
     {
         return Some(menu.focus);
     }
@@ -1926,7 +1935,15 @@ fn run_menu(c: &mut Core) {
         return;
     }
     let at = pointer(input, cam);
-    let mut pick = menu_input(menu, front, pictures, at, mouse, keys);
+    let mut pick = menu_input(
+        menu,
+        front,
+        pictures,
+        at,
+        mouse,
+        keys,
+        (input.pad_focus, input.pad_confirm),
+    );
     // F2 is the Settings link's key.
     if pick.is_none()
         && keys.just_pressed(Key::F(2))
@@ -2036,7 +2053,15 @@ fn run_single_player(c: &mut Core) {
     }
     let keys = &input.keys;
     let at = pointer(input, cam);
-    let pick = menu_input(menu, front, pictures, at, &input.mouse, keys);
+    let pick = menu_input(
+        menu,
+        front,
+        pictures,
+        at,
+        &input.mouse,
+        keys,
+        (input.pad_focus, input.pad_confirm),
+    );
     match pick {
         // New Campaign: the campaign menu, on the same picture with no fade.
         Some(0) => {
@@ -2171,7 +2196,15 @@ fn run_new_campaign(c: &mut Core) {
     let keys = &input.keys;
     let mouse = &input.mouse;
     let at = pointer(input, cam);
-    let pick = menu_input(menu, front, pictures, at, mouse, keys);
+    let pick = menu_input(
+        menu,
+        front,
+        pictures,
+        at,
+        mouse,
+        keys,
+        (input.pad_focus, input.pad_confirm),
+    );
     let ctrl = keys.any_pressed([Key::ControlLeft, Key::ControlRight]);
     // Campaign flow, "Choosing a new campaign": a choice fades all sound (track 22 out), then the screen to black over
     // 200 ms, then the flow goes on; Previous Menu goes back at once, with no fade, and track 22 plays on.
@@ -2321,6 +2354,7 @@ pub(crate) fn custom_input(input: &crate::input::Input, cam: &FrontScreen) -> cu
         ctrl: input.keys.any_pressed([Key::ControlLeft, Key::ControlRight]),
         alt: input.keys.any_pressed([Key::AltLeft, Key::AltRight]),
         wheel: lines.round() as i32,
+        pad_focus: input.pad_focus,
         ..Default::default()
     }
 }
@@ -2436,6 +2470,7 @@ pub(crate) fn enter_settings(c: &mut Core) {
         touch: touch.touch_only,
         touch_input: touch.emulate || touch.active,
         pad: pad.seen,
+        devices: crate::controls::Devices::of(pad, touch),
         updates: crate::update::build_version().is_some(),
         data: game_files_line(opts),
         in_game: false,

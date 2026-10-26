@@ -131,7 +131,7 @@ a narrow bar but never under 30 points; if only one bar is wide enough it takes 
 gets the two lists over the picture's left and right edges. A control acts when its finger lifts inside it, except a
 held group button, which acts at 450 ms. The chrome is an
 RGBA overlay of the window's size that the shell blends over the picture; it is never part of the frame (640 x 480; the game screen is never wider on a touch device, because the `widescreen`
-option is ignored there: the pillarbox is where the chrome lives, see `client-core.md`, "Widescreen"), so frames and
+option is ignored there while the chrome shows: the pillarbox is where the chrome lives, see `client-core.md`, "Widescreen"; with a controller hiding it the option applies), so frames and
 snapshots do not depend on it.
 
 ## Scaling
@@ -191,6 +191,11 @@ client-only options of `docs/design/extras.md` whose names start with `touch-`:
 | `touch-buttons` | `medium` | The chrome's buttons: 9 mm; `small` 7; `large` 11 |
 | `touch-swap-bars` | off | The groups go left and the tools right |
 | `touch-menu-tap` | `on` | `off`: a three-finger tap does nothing (the Menu button still opens the menu) |
+
+**Control modes.** The **Controls** setting (option `controls`, General page) can leave fingers out (the Keyboard and
+mouse and Controller modes) or show the side bars beside a controller (Touch); Automatic, the default, changes
+nothing. See `gamepad.md`, "Control modes". A mode without fingers drops them before the side bars and the gesture
+machine (`touch::park`).
 
 The phone rule reads the window's size and the shell's density (`touch::is_phone`), so a desktop window under
 `--touch-emulation` counts as a phone when it is small (640 x 480 at 140 points to the inch is 87 mm high).

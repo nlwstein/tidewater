@@ -42,6 +42,8 @@
 //! pair per two rows, each pixel doubled horizontally) and `SMK4` in general. The Y-scale flags are reported by
 //! [`Smacker::y_scale`] but the frames are returned at the stored size.
 
+use std::sync::Arc;
+
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -270,7 +272,8 @@ pub enum YScale {
 
 /// A Smacker stream being decoded frame by frame.
 pub struct Smacker {
-    data: Vec<u8>,
+    /// The file, shared: a video's picture and its sound are decoded by two readers of one copy.
+    data: Arc<Vec<u8>>,
     version: u8,
     pub width: u32,
     pub height: u32,
@@ -303,6 +306,11 @@ impl Smacker {
     }
 
     pub fn from_vec(data: Vec<u8>) -> Result<Smacker> {
+        Self::from_shared(Arc::new(data))
+    }
+
+    /// A reader of a file another reader may hold too (`Arc::clone` it for each), without a copy.
+    pub fn from_shared(data: Arc<Vec<u8>>) -> Result<Smacker> {
         if data.len() < 4 || &data[0..3] != b"SMK" {
             return Err(SmkError::NotSmacker);
         }
@@ -462,9 +470,8 @@ impl Smacker {
         let (start, len) = self.spans[index];
         let kind = self.types[index];
         // Borrow the frame's bytes separately from the decoder state.
-        let data = std::mem::take(&mut self.data);
+        let data = Arc::clone(&self.data);
         let res = self.decode_frame(&data[start..start + len], kind);
-        self.data = data;
         let audio = res?;
         self.next += 1;
         let (w, h) = (self.width as usize, self.height as usize);

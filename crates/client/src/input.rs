@@ -403,6 +403,12 @@ pub struct Input {
     pub mouse_touches: Vec<MouseTouch>,
     /// The gamepads' events since the last frame, oldest first; the core's pad step takes them (`pad`).
     pub pads: Vec<PadEvent>,
+    /// A pad's d-pad up or down in a menu this frame, as a focus step (Shift+Tab or Tab), set by the pad step. A
+    /// keyboard never sets it: its arrow keys keep their own meaning (`frontend::menu_input`, the game menu).
+    pub(crate) pad_focus: Option<crate::menuscreen::FocusKey>,
+    /// A pad's confirm button in a menu this frame, set by the pad step beside the Enter it sends: it also presses the
+    /// focused item that Enter leaves alone (a main-menu link, a game dialog's check box or radio). Never a keyboard's.
+    pub(crate) pad_confirm: bool,
     /// This frame's events, applied to the keys and buttons by [`Input::begin_frame`].
     pending: Vec<Event>,
 }

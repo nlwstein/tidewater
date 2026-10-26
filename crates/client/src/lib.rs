@@ -14,6 +14,7 @@ mod cheats;
 pub mod chrome;
 mod clock;
 pub mod compose;
+mod controls;
 pub mod core;
 mod customsetup;
 mod diplomacy;

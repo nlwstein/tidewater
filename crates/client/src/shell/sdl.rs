@@ -440,6 +440,12 @@ fn android_environment() {
     }
 }
 
+/// Sets an environment variable for the program: a test build's baked-in variables (`app::baked_args`).
+pub fn set_env(name: &str, value: &str) {
+    // SAFETY: called first thing in `run_program`, before the program starts any thread of its own.
+    unsafe { std::env::set_var(name, value) };
+}
+
 /// Writes a line to the system log (`adb logcat -s SDL`) as an error.
 pub fn log_error(msg: &str) {
     // SAFETY: a fixed format string and a valid C string for its one argument.

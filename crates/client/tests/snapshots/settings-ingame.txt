@@ -5,10 +5,10 @@ frames	3-3	2ab4d7048026f340
 frames	4-10	c2e52e287af839f4
 shot	33	game	302f66d6801ce7bd
 frames	11-34	302f66d6801ce7bd
-shot	41	general	7b59cf5ae5f8aee9
-shot	62	general-later	7b59cf5ae5f8aee9
-frames	35-62	7b59cf5ae5f8aee9
-frames	63-63	0d070d87352e957a
+shot	41	general	9011ab235ef1777b
+shot	62	general-later	9011ab235ef1777b
+frames	35-62	9011ab235ef1777b
+frames	63-63	ab3f267b8fa7bfc3
 frames	64-65	10efe1527378f303
 frames	66-66	4a8cb2d752a0e19c
 frames	67-68	d2e8a8ac1e833a5b
@@ -39,8 +39,8 @@ frames	150-154	1e0598f3a70ed839
 shot	156	options-link-hover	a587220a12b2f6ac
 frames	155-156	a587220a12b2f6ac
 frames	157-157	6010be0baf9ea5fb
-shot	161	from-link	661184929edeb1d3
-frames	158-161	661184929edeb1d3
+shot	161	from-link	8e7d592463b90f86
+frames	158-161	8e7d592463b90f86
 frames	162-162	69ddc7cec52bafcc
 shot	166	cancelled	a9311e98b4229a73
 frames	163-166	a9311e98b4229a73

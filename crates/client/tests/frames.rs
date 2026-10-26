@@ -60,6 +60,7 @@ const SCENES: &[&str] = &[
     "pad-only",
     "pad-mixed",
     "pad-menu",
+    "pad-focus",
 ];
 
 fn on(var: &str) -> bool {

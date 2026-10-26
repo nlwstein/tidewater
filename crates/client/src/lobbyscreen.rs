@@ -654,9 +654,13 @@ impl Lobby {
     }
 
     fn keys(&mut self, input: &Input, ctx: &mut Ctx) -> Outcome {
+        let mut pad = input.pad_focus;
         if self.text_focused() {
             for e in &input.typed {
                 self.changed = true;
+                if e.pressed && self.pad_step(&mut pad, e.key) {
+                    continue;
+                }
                 if let Some(k) = self.draft.feed(e, input.command_held)
                     && let Some(o) = self.key(k, input.shift, ctx)
                 {
@@ -667,11 +671,27 @@ impl Lobby {
         }
         for &k in &input.keys {
             self.changed = true;
+            if self.pad_step(&mut pad, k) {
+                continue;
+            }
             if let Some(o) = self.key(k, input.shift, ctx) {
                 return o;
             }
         }
         Outcome::Stay
+    }
+
+    /// A pad's d-pad up or down moves the focus, as Tab and Shift+Tab do, except in an open pop-up (where it moves the
+    /// line) and under a notice.
+    fn pad_step(&mut self, pad: &mut Option<FocusKey>, k: Key) -> bool {
+        if self.popup.is_some() || self.notice.is_some() {
+            return false;
+        }
+        let Some(step) = menuscreen::pad_step(pad, k) else {
+            return false;
+        };
+        self.focus = menuscreen::step_focus(&self.stops(), self.focus, step);
+        true
     }
 
     fn key(&mut self, k: Key, shift: bool, ctx: &mut Ctx) -> Option<Outcome> {

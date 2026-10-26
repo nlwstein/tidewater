@@ -14,6 +14,7 @@ use tidewater_formats::fnt::Font;
 use tidewater_formats::tileset::Palette;
 
 use crate::hud::{self, Rect, TextStyle};
+use crate::input::Key;
 use crate::palette::fades;
 use crate::scene::Picture;
 
@@ -361,6 +362,16 @@ pub(crate) enum FocusKey {
     Back,
 }
 
+/// The pad's focus step for the arrow key `k`, taken once. A pad's d-pad up or down in a menu arrives both as an arrow
+/// key and as `pad` (`Input::pad_focus`); a screen that gives the arrows a meaning of its own calls this where it wants
+/// the pad to move the focus ring instead. A keyboard's arrows leave `pad` empty, so they keep their meaning.
+pub(crate) fn pad_step(pad: &mut Option<FocusKey>, k: Key) -> Option<FocusKey> {
+    match (k, *pad) {
+        (Key::Up, Some(FocusKey::Back)) | (Key::Down, Some(FocusKey::Next)) => pad.take(),
+        _ => None,
+    }
+}
+
 /// Where the focus goes from `focus` on `key` among the dialog's Tab stops, `stops` in its Tab order (screen spec,
 /// "Keyboard focus", round 75: buttons, sliders, checkboxes, each radio button, lists and text fields, hidden controls
 /// left out), from the last back to the first and the other way. A focus not among them goes to the first stop (or,
@@ -554,6 +565,16 @@ pub(crate) fn draw_button(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pad_step_matches_its_own_arrow_once() {
+        let mut pad = Some(FocusKey::Next);
+        assert_eq!(pad_step(&mut pad, Key::Up), None, "the other arrow is not the pad's");
+        assert_eq!(pad_step(&mut pad, Key::Down), Some(FocusKey::Next));
+        assert_eq!(pad_step(&mut pad, Key::Down), None, "taken once");
+        assert_eq!(pad_step(&mut None, Key::Down), None, "a keyboard's arrow");
+    }
+
     use MenuScreen::*;
 
     const SHARED: [MenuScreen; 6] = [Main, SinglePlayer, Campaign, LoadGame, Multiplayer, SmallDialog];

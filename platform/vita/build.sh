@@ -1,12 +1,14 @@
 #!/bin/sh
 # Builds the PS Vita app (docs/design/vita.md).
 #
-#   platform/vita/build.sh [--version X.Y.Z] [--out FILE]
+#   platform/vita/build.sh [--version X.Y.Z] [--out FILE] [--args "WORDS"] [--env "NAME=value ..."]
 #
 # Builds the program for armv7-sony-vita-newlibeabihf with the pinned nightly (nightly-version) and `-Z build-std`
 # (the target has no prebuilt standard library), then packs it the way the Vita expects: velf, eboot.bin, param.sfo
 # and the icon in a .vpk. The default output is platform/vita/build/tidewater.vpk; --out FILE copies it elsewhere.
 # --version X.Y.Z sets the version the Vita shows (APP_VER, "XX.YY": major and minor, each under 100; 00.00 without).
+# --args bakes a command line into a test build (the Vita gives an app none), e.g. --args "--script firstrun
+# --script-out ux0:data/Tidewater/out --headless"; --env adds environment variables to it. Releases carry neither.
 #
 # Needs rustup, CMake, and VITASDK (the folder of the Vita SDK, https://vitasdk.org; its bin folder holds
 # arm-vita-eabi-gcc and vita-pack-vpk). Install the SDK from its official release for your system; CI does.
@@ -26,8 +28,16 @@ while [ $# -gt 0 ]; do
             out=$2
             shift 2
             ;;
+        --args)
+            export TIDEWATER_BAKED_ARGS="$2"
+            shift 2
+            ;;
+        --env)
+            export TIDEWATER_BAKED_ENV="$2"
+            shift 2
+            ;;
         *)
-            echo "usage: $0 [--version X.Y.Z] [--out FILE]" >&2
+            echo "usage: $0 [--version X.Y.Z] [--out FILE] [--args \"WORDS\"] [--env \"NAME=value ...\"]" >&2
             exit 2
             ;;
     esac
@@ -54,14 +64,16 @@ mkdir -p "$build"
 arm-vita-eabi-gcc -c -O2 "$here/stub.c" -o "$build/stub.o"
 
 # The Rust target's tools: the Vita's compiler and linker, and the SDK's CMake toolchain file (sdl3-sys builds SDL from
-# source). `-u` keeps the linker from dropping the stack-size symbol.
+# source). `-u` keeps the linker from dropping the stack-size symbol. `__sce_headroom` (read by the SDK's linker script)
+# leaves room after the code for the module data vita-elf-create adds there: without it the build fails whenever the
+# code happens to end within a few KiB of a 64 KiB boundary ("Cannot allocate ... segment 1 overlaps").
 lower=$(echo "$target" | tr - _)
 upper=$(echo "$lower" | tr '[:lower:]' '[:upper:]')
 export "CMAKE_TOOLCHAIN_FILE_$lower=$VITASDK/share/vita.toolchain.cmake"
 export "CC_$lower=arm-vita-eabi-gcc"
 export "AR_$lower=arm-vita-eabi-ar"
 export "CARGO_TARGET_${upper}_LINKER=arm-vita-eabi-gcc"
-export "CARGO_TARGET_${upper}_RUSTFLAGS=-C link-arg=$build/stub.o -C link-arg=-Wl,-u,sceUserMainThreadStackSize"
+export "CARGO_TARGET_${upper}_RUSTFLAGS=-C link-arg=$build/stub.o -C link-arg=-Wl,-u,sceUserMainThreadStackSize -C link-arg=-Wl,--defsym=__sce_headroom=0x4000"
 
 cd "$root"
 cargo "+$nightly" build --locked --release -Z build-std=std,panic_abort --target "$target" \

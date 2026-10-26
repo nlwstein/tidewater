@@ -1,9 +1,9 @@
 # Tidewater on the PS Vita
 
 **Bottom line.** Tidewater builds as a Vita app (`.vpk`) from the same shell code as the other platforms, and CI builds
-it on every run. It starts in the Vita3K emulator and reaches the first-run screen. It has not been tried on a real
-Vita, its buttons and sticks work through the gamepad support ([gamepad.md](gamepad.md)) but are untested on the
-Vita, and we expect it to run slower than 60 fps.
+it on every run. In the Vita3K emulator it plays: the videos, menus and a custom game work with the Vita's buttons
+and sticks, and every frame-test scene gives the same frames and sound as on the desktop. It has not been tried on a
+real Vita, and we expect it to run slower than 60 fps there.
 
 The import is in [import.md](import.md), the touch gestures in [touch.md](touch.md) and the Android version in
 [android.md](android.md).
@@ -13,13 +13,13 @@ The import is in [import.md](import.md), the touch gestures in [touch.md](touch.
 | Area | State |
 |---|---|
 | Build | Works on Linux and macOS (`platform/vita/build.sh`). CI builds the VPK on every run. |
-| Vita3K | Starts and draws the first-run screen. Nothing past it was tried, because no game data was loaded. |
+| Vita3K | Plays. All 33 game scenes of the frame test match the desktop snapshots, frames and sound (`firstrun` differs on purpose, see [Test builds](#test-builds)). Played by hand with the pad: videos, menus, a custom game. |
 | Real Vita | Not tried. |
 | Game files | Copied to `ux0:data/Tidewater`; the first-run screen scans that folder. |
 | Saves and settings | `ux0:data/Tidewater`. |
 | Front touch screen | Read as touch, like a phone. Not tried on hardware. |
-| Buttons and sticks | Not read yet. |
-| Speed | Unmeasured on a Vita. Expect 30 fps at best until the compositor gets cheaper. |
+| Buttons and sticks | Read as a gamepad (SDL's built-in "PSVita Controller" mapping). Tried in Vita3K: click, right click, panel mode, the minimap jump, the game menu, pause and scrolling work. |
+| Speed | Unmeasured on a Vita. Vita3K on a fast Mac holds 60 fps with 10 to 12 ms of work a frame in a game, which says little about the hardware. Expect 30 fps at best until the compositor gets cheaper. |
 | Update check | Off. Install a newer VPK by hand. |
 | GOG installer (`.exe`) | Not possible (see [Limits](#limits)). |
 
@@ -55,7 +55,12 @@ The same shell and core as every other platform (see [client-core.md](client-cor
   `ATTRIBUTE2=12` asks for extended memory, which the 88 to 155 MB in-game footprint needs.
 - **C stub** (`platform/vita/stub.c`). It answers `getpwuid_r` with "no such user", which Rust's standard library
   asks for and the Vita's C library lacks. It also sets `sceUserMainThreadStackSize` to 8 MB: the default main stack
-  overflowed when the core was built. `build.sh` keeps that symbol with `-Wl,-u`.
+  overflowed when the core was built. `build.sh` keeps that symbol with `-Wl,-u`. And it sets
+  `_newlib_heap_size_user` to 256 MiB: newlib's default heap is 128 MiB whatever the memory budget, and the start-up
+  videos with the music behind them went past it.
+- **Linker headroom.** `build.sh` defines `__sce_headroom` (16 KiB), which the SDK's linker script leaves between the
+  code and the data. `vita-elf-create` puts the module's own data there; without it, packaging failed whenever the
+  code happened to end just below a 64 KiB boundary.
 - **Folders.** `storage.rs` uses `ux0:data/Tidewater` instead of the `directories` crate, because the app's own folder
   is read-only.
 - **Keyboard.** The shell never opens the system keyboard at launch: on the Vita it is a modal screen that stops the
@@ -78,13 +83,36 @@ platform/vita/build.sh --version 1.2.3 --out dist/tidewater-vita.vpk
 To try it in Vita3K: `Vita3K --frontend sdl platform/vita/build/tidewater.vpk` installs the VPK and runs it. The
 emulator prints "Unhandled write protected region" lines; they are its own memory tracking and harmless.
 
+### Test builds
+
+A Vita app gets no command line (Vita3K's `--app-args` does not reach it either), so a test build bakes one in:
+
+```sh
+# One scene, fixed at build time:
+platform/vita/build.sh --args "--script firstrun --script-out ux0:data/TWtest/firstrun --headless"
+# Any command line, read from a file when the app starts, so one build runs every scene:
+platform/vita/build.sh --args "@ux0:data/TWtest/args.txt" --env "TIDEWATER_NO_BEACON=1"
+```
+
+`--env "NAME=value ..."` sets environment variables first, such as `TIDEWATER_SCRIPT_PICTURES=0` (save each shot as
+a PNG) or `TIDEWATER_FRAME_STATS=1`. With `@FILE`, a missing file means no arguments: the normal program. Release
+builds carry neither option. A test build runs the same on a real Vita: copy the files there with VitaShell and read
+the results back from `ux0:data/TWtest`.
+
+To compare with the desktop, copy the imported game folder to `ux0:data/Tidewater/game`, run a scene with
+`--install ux0:data/Tidewater/game --script NAME --script-out ux0:data/TWtest/NAME --headless`, and diff the
+`NAME.txt` and `NAME-audio.txt` it writes against `crates/client/tests/snapshots/`. The `firstrun` scene differs on
+purpose: the Vita's first-run screen has its own text and only **Scan again**.
+
+Scenes run only headless here. With a window, the scripted run waits for a frame shown at one window pixel per screen
+pixel, and the Vita's window is always the whole 960 by 544 screen, so it never ends.
+
 ## Limits
 
 - **Not tried on a Vita.** Memory, speed, touch and the extended-memory request are all untested on hardware.
-- **Controls untested on the Vita.** SDL's Vita backend presents the buttons and sticks as a gamepad, which the
-  gamepad support ([gamepad.md](gamepad.md)) reads like any other; the build links SDL's joystick subsystem, but
-  nobody has played with them on a Vita or in Vita3K yet. The Vita has no L2, R2 or stick presses, so Alt, the faster
-  pointer, the system keyboard and the idle-worker button are not on its pad.
+- **Controls tried only in Vita3K.** SDL's Vita backend presents the buttons and sticks as a gamepad, which the
+  gamepad support ([gamepad.md](gamepad.md)) reads like any other. The Vita has no L2, R2 or stick presses, so Alt,
+  the faster pointer, the system keyboard and the idle-worker button are not on its pad.
 - **Speed.** The compositor draws a 640 by 480 picture on the CPU each frame. We expect about 30 fps. Ideas, cheapest
   first: run at 30 fps (the simulation's fixed step is unaffected), raise the CPU clock to 444 MHz, compose only the
   changed regions, convert an indexed frame on the GPU.

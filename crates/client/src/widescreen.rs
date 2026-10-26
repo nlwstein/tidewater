@@ -27,9 +27,11 @@
 //! 640 × 480 and the window keeps whatever width a game gave it.
 //!
 //! **Touch.** On a touch device the pillarbox beside a 4:3 picture holds the touch buttons (`chrome`), so the option
-//! is ignored there ([`width`]'s `touch`): on a phone or tablet ([`crate::touch::TouchState::touch_only`], set by the
-//! shell on iOS and Android), while touch is in use on a computer with a touch screen (it switches back the moment a
-//! mouse is used again), and always with `--touch-emulation`.
+//! is ignored while they show ([`width`]'s `touch`, from [`crate::controls::blocks_widescreen`]): on a phone or tablet
+//! ([`crate::touch::TouchState::touch_only`], set by the shell on iOS and Android), while touch is in use on a computer
+//! with a touch screen (it switches back the moment a mouse is used again), and always with `--touch-emulation`. When
+//! a controller hides the buttons (`pad-hide-touch`), or the `controls` option leaves touch out, the pillarbox is
+//! empty and the option applies.
 
 use crate::display::SCREEN;
 use crate::extras::Widescreen;
@@ -44,7 +46,7 @@ pub const WIDTH_16_10: u32 = SCREEN.0 + 4 * TILE;
 /// The game screen's width for a setting.
 ///
 /// `window` is the window's usable size in physical pixels (what `auto` matches; `None` without a window counts as
-/// 4:3). `touch`: touch is the main input, so the pillarbox stays and the option is ignored.
+/// 4:3). `touch`: touch is the main input and its buttons show, so the pillarbox stays and the option is ignored.
 pub fn width(mode: Widescreen, window: Option<(u32, u32)>, touch: bool) -> u32 {
     if touch {
         return SCREEN.0;

@@ -1,0 +1,32 @@
+# frame and sound fingerprints of the scripted scene `pad-focus` (hashes only)
+frames	1-1	156ed4086987e325
+frames	2-2	1441019148d7593b
+frames	3-3	584a40b5f6e700b0
+frames	4-4	0296f7ea0d62fb70
+frames	5-5	16681813b15494bf
+frames	6-6	d8e558fcedb56b72
+frames	7-7	97fca11a3ff36b77
+frames	8-8	0e907c6717da634a
+frames	9-9	70840faa2f4f2984
+frames	10-10	0c564bf75225e8a5
+frames	11-11	1c74e8b7a0380beb
+frames	12-12	38a5ca800b2a4f9b
+sound	14	d0e6afe865a35291	0.7516	Loop
+shot	28	menu	ae002ae8f7021e83
+shot	32	keyboard-down	ae002ae8f7021e83
+frames	13-32	ae002ae8f7021e83
+shot	36	pad-down	231a4d415aec3183
+frames	33-36	231a4d415aec3183
+frames	37-37	f95853ff08b0b813
+shot	41	pad-down-up	231a4d415aec3183
+frames	38-42	231a4d415aec3183
+shot	47	multiplayer	b6581ec9fb687a37
+shot	51	mp-keyboard-down	b6581ec9fb687a37
+frames	43-51	b6581ec9fb687a37
+shot	55	mp-pad-down	a992df2f132e5937
+frames	52-55	a992df2f132e5937
+shot	60	mp-confirm	11cc09a8a72a6d0a
+frames	56-60	11cc09a8a72a6d0a
+frames	61-61	8a413a74a6d95867
+shot	65	mp-back	ae002ae8f7021e83
+frames	62-65	ae002ae8f7021e83

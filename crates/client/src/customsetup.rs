@@ -350,6 +350,8 @@ pub(crate) struct Input {
     pub typed: Vec<crate::input::KeyEvent>,
     /// Ctrl or Alt is held (a combination is never typed into a text box).
     pub command_held: bool,
+    /// A pad's d-pad up or down this frame as a focus step (`input::Input::pad_focus`); its arrow key is in `keys` too.
+    pub pad_focus: Option<menuscreen::FocusKey>,
 }
 
 /// An open drop-down list.
@@ -818,8 +820,17 @@ impl Screen {
 
     fn keys(&mut self, input: &Input) -> Outcome {
         let mut out = Outcome::Stay;
+        let mut pad = input.pad_focus;
         for &k in &input.keys {
             self.changed = true;
+            // On the main screen the pad's up and down move the focus; its left and right still cycle an option.
+            if self.popup.is_none()
+                && self.dialog.is_none()
+                && let Some(step) = menuscreen::pad_step(&mut pad, k)
+            {
+                self.focus = menuscreen::step_focus(&self.stops(), self.focus, step);
+                continue;
+            }
             out = if self.popup.is_some() {
                 self.popup_key(k)
             } else if self.dialog.is_some() {
@@ -852,12 +863,17 @@ impl Screen {
         Outcome::Stay
     }
 
-    fn main_key(&mut self, k: Key, shift: bool) -> Outcome {
-        let stops: Vec<Target> = STOPS
+    /// The main screen's focus stops, Start only when a game can start.
+    fn stops(&self) -> Vec<Target> {
+        STOPS
             .iter()
             .copied()
             .filter(|&t| t != Target::Start || self.can_start())
-            .collect();
+            .collect()
+    }
+
+    fn main_key(&mut self, k: Key, shift: bool) -> Outcome {
+        let stops = self.stops();
         match k {
             Key::Tab => {
                 let key = if shift {
@@ -1474,6 +1490,28 @@ mod tests {
         assert_eq!(key(&mut s, Key::Letter('s')), Outcome::Start);
         assert_eq!(key(&mut s, Key::Letter('C')), Outcome::Cancel);
         assert_eq!(key(&mut s, Key::Escape), Outcome::Cancel);
+    }
+
+    #[test]
+    fn the_pad_moves_the_focus_with_up_and_down_and_the_keyboard_still_cycles() {
+        let mut s = Screen::new(sorted(), None);
+        let pad = |s: &mut Screen, k: Key, f: menuscreen::FocusKey| {
+            s.update(&Input {
+                keys: vec![k],
+                pad_focus: Some(f),
+                ..Default::default()
+            })
+        };
+        key(&mut s, Key::Down);
+        assert_eq!(s.custom.race, Some(race::HUMAN), "the keyboard's Down cycles the box");
+        assert_eq!(s.focus, Target::Drop(Drop::Opt(Opt::Race)));
+        pad(&mut s, Key::Down, menuscreen::FocusKey::Next);
+        assert_eq!(s.custom.race, Some(race::HUMAN), "the pad's Down leaves the value");
+        assert_ne!(s.focus, Target::Drop(Drop::Opt(Opt::Race)));
+        pad(&mut s, Key::Up, menuscreen::FocusKey::Back);
+        assert_eq!(s.focus, Target::Drop(Drop::Opt(Opt::Race)));
+        key(&mut s, Key::Right);
+        assert_eq!(s.custom.race, Some(race::ORC), "left and right still cycle");
     }
 
     #[test]

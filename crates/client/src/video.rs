@@ -3,6 +3,8 @@
 //! its module doc). The WAV layout written here is the canonical RIFF/WAVE PCM layout (public: the "Multimedia
 //! Programming Interface and Data Specifications 1.0", 1991, "WAVE" chapter).
 
+use std::sync::Arc;
+
 use tidewater_formats::smk::{Frame, Smacker, YScale};
 
 /// The shown height of a video: twice the stored height when its rows are doubled or interlaced.
@@ -97,8 +99,8 @@ pub fn wav_length_ms(d: &[u8]) -> Option<u32> {
 }
 
 /// The first audio track of a video as a WAV file, decoding the whole video (`None` without a usable track).
-pub fn audio_wav(data: Vec<u8>) -> Option<Vec<u8>> {
-    let mut smk = Smacker::from_vec(data).ok()?;
+pub fn audio_wav(data: Arc<Vec<u8>>) -> Option<Vec<u8>> {
+    let mut smk = Smacker::from_shared(data).ok()?;
     let t = *smk.audio_tracks().iter().find(|t| !t.unsupported_codec)?;
     smk.set_decode_audio(true);
     let mut samples = Vec::new();

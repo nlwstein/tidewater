@@ -1169,7 +1169,7 @@ pub(crate) fn run_menu(c: &mut Core) {
     {
         focus = Some(i);
     }
-    if let (Some(k), Some(f)) = (frontend::focus_key(keys), focus) {
+    if let (Some(k), Some(f)) = (frontend::focus_key(keys).or(input.pad_focus), focus) {
         focus = Some(crate::menuscreen::step_focus(&tab_stops(&built, screen), f, k));
     }
     if focus != m.focus {
@@ -1210,9 +1210,11 @@ pub(crate) fn run_menu(c: &mut Core) {
         }
     }
 
-    // What was asked.
+    // What was asked. A pad's confirm also toggles the focused check box or radio, which Enter leaves alone.
+    let pad_pick =
+        focus.filter(|&i| input.pad_confirm && matches!(built.items[i].kind, Kinds::Check(..) | Kinds::Radio(..)));
     let mut act = None;
-    if let Some(i) = released {
+    if let Some(i) = released.or(pad_pick) {
         match &built.items[i].kind {
             Kinds::Button(a, _) | Kinds::Link(a, _) => act = Some(*a),
             Kinds::Check(id, _, on) => {
@@ -1456,6 +1458,7 @@ pub(crate) fn run_settings(c: &mut Core) {
     let (touch_only, no_intro, no_check) = (c.touch.touch_only, c.opts.no_intro, c.opts.no_update_check);
     let touch_input = c.touch.emulate || c.touch.active;
     let pad = c.pad.seen;
+    let devices = crate::controls::Devices::of(&c.pad, &c.touch);
     let data = frontend::game_files_line(&c.opts);
     let Core {
         commands,
@@ -1478,6 +1481,7 @@ pub(crate) fn run_settings(c: &mut Core) {
             touch: touch_only,
             touch_input,
             pad,
+            devices,
             updates: crate::update::build_version().is_some(),
             data,
             in_game: true,

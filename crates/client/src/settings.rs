@@ -123,7 +123,7 @@ pub(crate) fn pages(env: &Env) -> Vec<Page> {
 /// The page an option is on. No catch-all arm: a new option has to be put on a page to build.
 pub(crate) fn extra_page(id: Id) -> Page {
     match id {
-        Id::Scaling | Id::Widescreen => Page::General,
+        Id::Scaling | Id::Widescreen | Id::Controls => Page::General,
         Id::HealthBars
         | Id::IdleWorker
         | Id::GameClock
@@ -209,6 +209,8 @@ pub(crate) struct Env {
     pub touch_input: bool,
     /// A controller has been connected in this run: the Controller page shows.
     pub pad: bool,
+    /// The input devices there are now: the Controls row offers only the choices they allow (`offered`).
+    pub devices: crate::controls::Devices,
     /// The program checks for a newer release at all (`update`): a desktop release build.
     pub updates: bool,
     /// The line about the imported game files, `None` when there is nothing to manage (`--install` reads the files in
@@ -279,6 +281,16 @@ pub(crate) const CHOICE_WORDS: &[(Id, &[&str])] = &[
     (Id::PadAcceleration, &["On", "Off"]),
     (Id::PadDeadZone, &["Normal", "Small", "Large"]),
     (Id::PadHideTouch, &["On", "Off"]),
+    (
+        Id::Controls,
+        &[
+            "Automatic",
+            "Keyboard and mouse",
+            "Touch",
+            "Controller",
+            "Controller and touch",
+        ],
+    ),
 ];
 
 /// The default of an item.
@@ -318,6 +330,26 @@ pub(crate) fn options(item: Item, current: u8) -> Vec<(u8, String)> {
         Item::Window => vec![(0, "Window".to_string()), (1, "Full screen".to_string())],
         Item::MouseLock | Item::IntroVideo | Item::UpdateCheck => on_off(),
     }
+}
+
+/// The values a drop-down offers now: [`options`] without the choices of `controls` whose devices are not there
+/// (`controls::Devices::available`). Every other row offers everything.
+pub(crate) fn offered(item: Item, current: u8, env: &Env) -> Vec<(u8, String)> {
+    let mut v = options(item, current);
+    if item == Item::Extra(Id::Controls) {
+        v.retain(|(n, _)| env.devices.available(crate::controls::Mode::from_index(*n)));
+    }
+    v
+}
+
+/// The description of a row for the value it has now: the registry's, and for `controls` a note when the stored
+/// choice cannot be used because its devices are not there.
+fn describe_now(item: Item, current: u8, env: &Env) -> String {
+    let mut text = describe(item);
+    if item == Item::Extra(Id::Controls) && !env.devices.available(crate::controls::Mode::from_index(current)) {
+        text.push_str(" Its device is not here now, so Automatic is in use until it is back.");
+    }
+    text
 }
 
 /// The settings as the screen edits them: a number for each item, and which items were changed.
@@ -535,6 +567,9 @@ const ROW_W: u32 = 528;
 /// A row's tap target; rows are 30 pixels apart.
 const ROW_H: u32 = 28;
 const ROW_PITCH: i32 = 30;
+/// The General page has seven rows and the game files' line and buttons under them: its rows are 28 apart so the
+/// buttons clear the description.
+const GENERAL_PITCH: i32 = 28;
 const LABEL_X: i32 = 64;
 const DROP_X: i32 = 352;
 const DROP_W: u32 = 224;
@@ -621,9 +656,14 @@ fn layout(page: Page, env: &Env) -> Layout {
     let mut targets = Vec::new();
     let mut texts = Vec::new();
     let mut y = ROWS_TOP;
+    let pitch = if page == Page::General {
+        GENERAL_PITCH
+    } else {
+        ROW_PITCH
+    };
     for item in items_on(page).into_iter().filter(|&i| shown(i, env)) {
         targets.push((Target::Row(item), Rect::new(ROW_X, y, ROW_W, ROW_H)));
-        y += ROW_PITCH;
+        y += pitch;
     }
     if page == Page::General {
         if let Some(line) = &env.data {
@@ -1022,7 +1062,7 @@ impl Screen {
 
     fn open_list(&mut self, item: Item) {
         let current = self.values.get(item);
-        let opts = options(item, current);
+        let opts = offered(item, current, &self.env);
         let at = opts.iter().position(|(n, _)| *n == current).unwrap_or(0);
         let anchor = self
             .page_targets()
@@ -1070,7 +1110,7 @@ impl Screen {
             return;
         }
         let current = self.values.get(item);
-        let opts = options(item, current);
+        let opts = offered(item, current, &self.env);
         let at = opts.iter().position(|(n, _)| *n == current).unwrap_or(0);
         let next = (at as isize + by).rem_euclid(opts.len() as isize) as usize;
         self.values.set(item, opts[next].0);
@@ -1178,7 +1218,7 @@ impl Screen {
         };
         match t {
             Target::Tab(p) => p.blurb().to_string(),
-            Target::Row(item) => describe(item),
+            Target::Row(item) => describe_now(item, self.values.get(item), &self.env),
             Target::Action(a) => describe_action(a).to_string(),
             Target::Ok => "Apply the changes and save them.".to_string(),
             Target::Cancel if self.env.in_game => "Throw the changes away and go back to the game.".to_string(),
@@ -1437,6 +1477,11 @@ mod tests {
             touch,
             touch_input: false,
             pad: false,
+            devices: crate::controls::Devices {
+                pad: false,
+                touch,
+                mouse: !touch,
+            },
             updates: !touch,
             data: (!touch).then(|| "Game files: GOG installer, 156 files, 41 maps, imported 2026-10-23".to_string()),
             in_game: false,
@@ -1523,7 +1568,7 @@ mod tests {
                 })
                 .collect()
         };
-        assert_eq!(names(Page::General), ["scaling", "widescreen"]);
+        assert_eq!(names(Page::General), ["scaling", "widescreen", "controls"]);
         assert_eq!(
             names(Page::Interface),
             [
@@ -1901,6 +1946,7 @@ mod tests {
                 Item::Window,
                 Item::Extra(Id::Scaling),
                 Item::Extra(Id::Widescreen),
+                Item::Extra(Id::Controls),
                 Item::MouseLock,
                 Item::IntroVideo,
                 Item::UpdateCheck
@@ -1909,7 +1955,12 @@ mod tests {
         let phone = env(true);
         assert_eq!(
             rows(&phone, Page::General),
-            [Item::Extra(Id::Scaling), Item::Extra(Id::Widescreen), Item::IntroVideo]
+            [
+                Item::Extra(Id::Scaling),
+                Item::Extra(Id::Widescreen),
+                Item::Extra(Id::Controls),
+                Item::IntroVideo
+            ]
         );
         // A development build never checks for updates.
         let dev = Env {
@@ -2542,5 +2593,94 @@ mod tests {
         assert_eq!(s, "Game files: GOG installer, 4 files, 2 maps, imported 2026-10-23");
         m.source_kind = "something-new".into();
         assert!(data_summary(&m).contains("an earlier import"));
+    }
+
+    fn controls_words(e: &Env, current: u8) -> Vec<String> {
+        offered(Item::Extra(Id::Controls), current, e)
+            .into_iter()
+            .map(|(_, w)| w)
+            .collect()
+    }
+
+    fn with_devices(pad: bool, touch: bool, mouse: bool) -> Env {
+        Env {
+            devices: crate::controls::Devices { pad, touch, mouse },
+            ..env(false)
+        }
+    }
+
+    #[test]
+    fn the_controls_row_is_on_the_general_page_with_its_words() {
+        assert_eq!(extra_page(Id::Controls), Page::General);
+        assert!(items_on(Page::General).contains(&Item::Extra(Id::Controls)));
+        assert_eq!(Id::Controls.spec().label, "Controls");
+        assert_eq!(
+            options(Item::Extra(Id::Controls), 0)
+                .into_iter()
+                .map(|(_, w)| w)
+                .collect::<Vec<_>>(),
+            [
+                "Automatic",
+                "Keyboard and mouse",
+                "Touch",
+                "Controller",
+                "Controller and touch"
+            ]
+        );
+    }
+
+    #[test]
+    fn the_controls_drop_down_offers_only_the_devices_there_are() {
+        // A computer: Automatic and Keyboard and mouse.
+        assert_eq!(
+            controls_words(&with_devices(false, false, true), 0),
+            ["Automatic", "Keyboard and mouse"]
+        );
+        // A computer with a controller.
+        assert_eq!(
+            controls_words(&with_devices(true, false, true), 0),
+            ["Automatic", "Keyboard and mouse", "Controller"]
+        );
+        // A computer whose touch screen has been used.
+        assert_eq!(
+            controls_words(&with_devices(false, true, true), 0),
+            ["Automatic", "Keyboard and mouse", "Touch"]
+        );
+        // A handheld with a pad: no mouse until one is used.
+        assert_eq!(
+            controls_words(&with_devices(true, true, false), 0),
+            ["Automatic", "Touch", "Controller", "Controller and touch"]
+        );
+        // Every device.
+        assert_eq!(controls_words(&with_devices(true, true, true), 0).len(), 5);
+        // Other rows offer everything.
+        assert_eq!(
+            offered(Item::Extra(Id::Scaling), 0, &with_devices(false, false, false)).len(),
+            3
+        );
+    }
+
+    #[test]
+    fn left_and_right_skip_the_controls_that_are_not_there() {
+        let mut s = screen_with(with_devices(true, false, true));
+        let item = Item::Extra(Id::Controls);
+        let cur = |s: &Screen| s.values.get(item);
+        assert_eq!(cur(&s), 0);
+        s.cycle(item, 1);
+        assert_eq!(cur(&s), 1, "keyboard and mouse");
+        s.cycle(item, 1);
+        assert_eq!(cur(&s), 3, "controller, past touch");
+        s.cycle(item, 1);
+        assert_eq!(cur(&s), 0, "wraps to Automatic");
+        s.cycle(item, -1);
+        assert_eq!(cur(&s), 3);
+        // A stored choice that is not there is shown as itself, and a step leaves it for an offered one.
+        s.values.set(item, 2);
+        let word = options(item, 2).into_iter().find(|(n, _)| *n == 2).map(|(_, w)| w);
+        assert_eq!(word.as_deref(), Some("Touch"));
+        assert!(describe_now(item, 2, &s.env).contains("Automatic is in use"));
+        assert!(!describe_now(item, 3, &s.env).contains("Automatic is in use"));
+        s.cycle(item, 1);
+        assert!(s.env.devices.available(crate::controls::Mode::from_index(cur(&s))));
     }
 }

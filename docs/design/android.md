@@ -30,7 +30,7 @@ two files, `crates/client/src/shell/app.rs` (the loop) and `sdl.rs` (the safe SD
 | Piece | Where | Job |
 |---|---|---|
 | `tidewater-android` | `crates/android` | A `cdylib` named `libmain.so` that includes `app.rs` and `sdl.rs` with `#[path]`. Empty on any other target, so `cargo test --workspace` needs no NDK. |
-| JNI exports | `crates/android/build.rs` | SDL is linked in statically, so this exports its `Java_org_libsdl_app_*` functions and `JNI_OnLoad`, which Rust's linker settings would hide. |
+| JNI exports, C++ runtime | `crates/android/build.rs` | SDL is linked in statically, so this exports its `Java_org_libsdl_app_*` functions and `JNI_OnLoad`, which Rust's linker settings would hide. It also links the NDK's static libc++: SDL's HIDAPI controller driver is C++ on Android, and without it the library fails to load (`cannot locate symbol "__gxx_personality_v0"`). |
 | Entry point | `SDL_main` in `sdl.rs` | SDL's Java activity loads `libmain.so`, starts a thread and calls `SDL_main` with the command line. |
 | Activity | `platform/android/app/src/main/java/dev/tidewater/client/TidewaterActivity.java` | SDL's activity that loads only `libmain.so`, passes the command line and shows the picker. |
 | SDL's Java sources | `platform/android/app/src/main/java/org/libsdl/app/` | Copied by `build.sh` from the `sdl3-src` crate, so Java and C always match. Not in git (SDL is zlib-licensed). |

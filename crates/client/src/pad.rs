@@ -3,6 +3,11 @@
 //! the touch step and before the frame's events are applied, and does nothing at all until a pad's event comes in, so
 //! without a pad every frame is exactly what it was.
 //!
+//! **Control modes.** Option `controls` (`crate::controls`) can leave the pad out (the Touch and Keyboard and mouse
+//! modes): its connections are still noted, but its buttons and sticks are dropped and whatever it held lets go, as
+//! when it is unplugged. It can also leave fingers out (the Controller mode), so a finger does not take the pointer
+//! from the pad then. Automatic leaves out only a device that is not there.
+//!
 //! **The pointer.** While the pad has it ([`PadState::active`]), the pointer is the pad's: the left stick moves it in
 //! screen pixels a second, with a dead zone, an optional curve and friction over units and command buttons. A pad
 //! button or a push of a stick takes it, starting where the pointer last was (so a finger or the mouse puts it, and
@@ -13,13 +18,13 @@
 //!
 //! | Pad | In a game | Elsewhere |
 //! |---|---|---|
-//! | South (confirm) | left button; held, a box | left button |
-//! | East (back) | right button; in panel mode, back to the map | right button |
+//! | South (confirm) | left button; held, a box | Enter, the focused item |
+//! | East (back) | right button; in panel mode, back to the map | Esc |
 //! | West | panel mode: the pointer on the command buttons, the d-pad stepping between them | - |
 //! | North | the pointer to the minimap and back | - |
 //! | L1 / R1 | Shift / Ctrl, held | the same |
 //! | L2 / R2 | the pointer twice as fast / Alt, held | the same |
-//! | D-pad | control groups 1-4 (with R1 set, with R2 centre and recall) | arrow keys |
+//! | D-pad | control groups 1-4 (with R1 set, with R2 centre and recall) | arrow keys; up and down also step the focus |
 //! | Right stick | scrolls the map (the arrow keys) | the mouse wheel |
 //! | Start | F10, the game menu (Esc while a menu is open) | Enter |
 //! | Back / Select | pause | Esc |
@@ -37,6 +42,7 @@ use crate::game::PadAim;
 use crate::gesture::Pt;
 use crate::hud::Rect;
 use crate::input::{Button, Input, Key, KeyEvent, PadAxis, PadButton, PadEvent, Wheel, WindowGeom};
+use crate::menuscreen::FocusKey;
 
 /// The pointer's speed at a full push of the stick, in screen pixels a second.
 pub const SPEED: f32 = 640.0;
@@ -184,6 +190,9 @@ fn bind(b: PadButton, x: Ctx) -> Out {
         }
     };
     match b {
+        // In the menus confirm presses the focused item and back is Esc, rather than clicks at the pointer.
+        _ if b == confirm && !game => Out::Key(Key::Enter),
+        _ if b == back && !game => Out::Key(Key::Escape),
         _ if b == confirm => Out::Mouse(Button::Left),
         _ if b == back => {
             if x.panel {
@@ -223,11 +232,6 @@ impl PadState {
     /// The pad's pointer, while it has it.
     pub fn pointer(&self) -> Option<Pt> {
         self.active.then_some(self.pointer).flatten()
-    }
-
-    /// Whether a pad is connected and the touch chrome should hide for it (option `pad-hide-touch`).
-    pub fn hides_touch(&self, s: &PadSettings) -> bool {
-        !self.connected.is_empty() && s.hide_touch
     }
 
     /// Where the shell should move the system's pointer, if the pad moved it since the last call.
@@ -309,6 +313,8 @@ impl PadState {
 
 /// One frame's pad step; see the module doc.
 pub fn step(c: &mut Core, elapsed: Duration, window: Option<WindowGeom>) {
+    c.input.pad_focus = None;
+    c.input.pad_confirm = false;
     let events = std::mem::take(&mut c.input.pads);
     let fingers = !c.input.touches.is_empty() || !c.input.mouse_touches.is_empty();
     if events.is_empty() && c.pad.bound.is_empty() && c.pad.level_keys.is_empty() && !c.pad.active {
@@ -352,6 +358,14 @@ pub fn step(c: &mut Core, elapsed: Duration, window: Option<WindowGeom>) {
             presses.clear();
             p.let_go(&mut c.input);
         }
+    }
+    // The control mode (`controls`): a pad it leaves out is ignored from here, and what it held lets go.
+    let mode = crate::controls::mode(c);
+    let fingers = fingers && mode.fingers();
+    if !mode.pad() {
+        presses.clear();
+        c.pad.let_go(&mut c.input);
+        c.pad.active = false;
     }
     let (push, dir) = stick(c.pad.axes[0], c.pad.axes[1], settings.dead_zone);
     let (rpush, _) = stick(c.pad.axes[2], c.pad.axes[3], settings.dead_zone);
@@ -415,7 +429,16 @@ pub fn step(c: &mut Core, elapsed: Duration, window: Option<WindowGeom>) {
         );
         p.bound.insert(b, out);
         match out {
-            Out::Key(k) => key(input, k, true),
+            Out::Key(k) => {
+                key(input, k, true);
+                // In the menus the d-pad's up and down also move the focus ring, which the menus move only with Tab.
+                match k {
+                    Key::Up => input.pad_focus = Some(FocusKey::Back),
+                    Key::Down => input.pad_focus = Some(FocusKey::Next),
+                    Key::Enter => input.pad_confirm = true,
+                    _ => {}
+                }
+            }
             Out::Mouse(m) => input.button(m, true),
             Out::Panel => {
                 if p.panel.is_some() {
@@ -587,8 +610,11 @@ mod tests {
         assert_eq!(bind(PadButton::Start, g), Out::Key(Key::F(10)));
         assert_eq!(bind(PadButton::Back, g), Out::Pause);
         assert_eq!(bind(PadButton::RightStick, g), Out::Key(Key::F(6)));
-        // Outside a game: arrows, Enter and Esc; no panel or minimap.
+        // Outside a game: arrows, Enter and Esc; confirm and back press the focused item and go back; no panel or
+        // minimap.
         let m = ctx(false);
+        assert_eq!(bind(PadButton::South, m), Out::Key(Key::Enter));
+        assert_eq!(bind(PadButton::East, m), Out::Key(Key::Escape));
         assert_eq!(bind(PadButton::Up, m), Out::Key(Key::Up));
         assert_eq!(bind(PadButton::Start, m), Out::Key(Key::Enter));
         assert_eq!(bind(PadButton::Back, m), Out::Key(Key::Escape));
@@ -596,6 +622,11 @@ mod tests {
         // The game menu open: Start closes it.
         let menu = Ctx { menu_open: true, ..g };
         assert_eq!(bind(PadButton::Start, menu), Out::Key(Key::Escape));
+        assert_eq!(bind(PadButton::South, menu), Out::Key(Key::Enter));
+        assert_eq!(bind(PadButton::East, menu), Out::Key(Key::Escape));
+        let swapped_menu = Ctx { swap: true, ..m };
+        assert_eq!(bind(PadButton::East, swapped_menu), Out::Key(Key::Enter));
+        assert_eq!(bind(PadButton::South, swapped_menu), Out::Key(Key::Escape));
         // Panel mode: the d-pad steps and back leaves it.
         let panel = Ctx { panel: true, ..g };
         assert_eq!(bind(PadButton::Right, panel), Out::PanelStep(1, 0));

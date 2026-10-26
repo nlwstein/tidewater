@@ -16,7 +16,9 @@
 //!   makes the next tap a left click.
 //! - The chrome's keys: the group buttons (a tap is the digit, a hold Ctrl and the digit), the menu (F10) and the
 //!   idle-worker button (F6, `crate::idle::KEY`), each let go a frame later.
-//! - With a controller connected (option `pad-hide-touch`), no chrome: it neither shows nor takes fingers.
+//! - In the Controller and touch mode with a controller connected (options `controls` and `pad-hide-touch`), no
+//!   chrome: it neither shows nor takes fingers. In the Controller and Keyboard and mouse modes ([`crate::controls`])
+//!   fingers are dropped before the chrome and the gesture machine ([`park`]).
 //! - A pulse where a long press fired, drawn onto the picture after it is composed ([`draw_pulse`]).
 //!
 //! [`Input::touches`]: crate::input::Input::touches
@@ -55,6 +57,14 @@ pub struct TouchState {
     pub active: bool,
     /// The platform has no mouse to speak of (a phone or tablet): touch is always the main input.
     pub touch_only: bool,
+    /// A real finger has touched in this run: touch is there for the `controls` option (`crate::controls`).
+    pub seen: bool,
+    /// A real mouse has moved in this run on a phone or tablet, which has none to start with.
+    pub mouse_seen: bool,
+    /// Touch was in use when the `controls` option turned fingers off: it comes back when they are on again.
+    parked: bool,
+    /// The platform's pointer last frame, to see a mouse on a phone or tablet.
+    mouse_last: Option<Option<Pt>>,
     gesture: Gesture,
     pub chrome: Chrome,
     emu: Emulator,
@@ -97,11 +107,24 @@ impl TouchState {
         }
     }
 
-    /// Whether touch is the main input right now, so the pillarbox holds the chrome and the `widescreen` option is
-    /// ignored (`crate::widescreen::width`): on a touch-only platform, with `--touch-emulation`, and while touch is in
-    /// use on a computer with a touch screen.
-    pub fn blocks_widescreen(&self) -> bool {
-        self.touch_only || self.emulate || self.active
+    /// Whether the `widescreen` option is ignored (`crate::widescreen::width`) because the pillarbox holds the chrome:
+    /// touch is the main input (a touch-only platform, `--touch-emulation`, or touch in use on a computer with a
+    /// touch screen) and the chrome shows (`chrome_shown`, from `controls::Mode::chrome_shown`). With the chrome
+    /// hidden (a controller, or the keyboard and mouse chosen) the pillarbox is empty and the option applies.
+    pub fn blocks_widescreen(&self, chrome_shown: bool) -> bool {
+        chrome_shown && (self.touch_only || self.emulate || self.active)
+    }
+
+    /// Notes a real mouse on a phone or tablet (a pointer that moved with no finger down), for the `controls`
+    /// option's list of what is there. Called with the platform's pointer, before the fingers' pointer replaces it.
+    pub fn note_mouse(&mut self, pointer: Option<Pt>, scripted: bool) {
+        if !self.touch_only || scripted || self.mouse_seen {
+            return;
+        }
+        let last = self.mouse_last.replace(pointer);
+        if last.is_some_and(|l| l != pointer) && pointer.is_some() && !self.gesture.touching() {
+            self.mouse_seen = true;
+        }
     }
 
     /// The chrome's picture for a window, `None` while touch is not in use. Draw it over the picture; it changes only
@@ -235,6 +258,14 @@ fn gesture_config(s: &TouchSettings, w: WindowGeom) -> gesture::Config {
 /// One frame's touch step; see the module doc.
 pub fn step(c: &mut Core, elapsed: Duration, window: Option<WindowGeom>) {
     c.input.tap_radius = None;
+    let mode = crate::controls::mode(c);
+    if !mode.fingers() {
+        park(c);
+        return;
+    }
+    if std::mem::take(&mut c.touch.parked) {
+        c.touch.active = true;
+    }
     let fresh = !c.input.touches.is_empty() || !c.input.mouse_touches.is_empty();
     if !(c.touch.active || fresh) {
         return;
@@ -274,7 +305,7 @@ pub fn step(c: &mut Core, elapsed: Duration, window: Option<WindowGeom>) {
         idle_worker: extras.idle_worker(),
     };
     let tap_px = TAP_MM * ppmm * w.factor / lb.scale;
-    let hide_chrome = c.pad.hides_touch(&extras.pad());
+    let hide_chrome = !mode.chrome_shown(extras.pad().hide_touch);
     // The Pause button shows play while the game is paused.
     c.touch.chrome.paused = in_game && c.sim.as_ref().is_some_and(|s| s.world.paused);
     let Core {
@@ -308,8 +339,8 @@ pub fn step(c: &mut Core, elapsed: Duration, window: Option<WindowGeom>) {
     for m in mice {
         fingers.extend(t.emu.feed(m, lb.centre(w.factor), 5.0 * ppmm));
     }
-    // With a controller connected the chrome may hide (option `pad-hide-touch`): every finger goes to the gesture
-    // machine, and the shoulder buttons are the modifiers (`pad`).
+    // With the chrome hidden for a controller (option `pad-hide-touch`) every finger goes to the gesture machine, and
+    // the shoulder buttons are the modifiers (`pad`).
     t.hidden = hide_chrome;
     let mut passed = Vec::new();
     for f in fingers {
@@ -425,6 +456,58 @@ pub fn step(c: &mut Core, elapsed: Duration, window: Option<WindowGeom>) {
     }
 }
 
+/// The touch step in a mode without fingers (`controls::Mode::fingers`): the frame's fingers are dropped before the
+/// chrome and the gesture machine see them, and whatever touch held lets go (the left button, the latched keys, the
+/// chrome's queued keys), so a mode change in the middle of a press leaves nothing stuck. Touch that was in use comes
+/// back with the fingers ([`TouchState::parked`]). Does nothing when touch was not in use, which is all that happens
+/// in Automatic, where a mode without fingers means there are none.
+fn park(c: &mut Core) {
+    c.input.touches.clear();
+    c.input.mouse_touches.clear();
+    let Core { touch: t, input, .. } = c;
+    if !t.active {
+        return;
+    }
+    let mut keys: Vec<(Key, bool)> = std::mem::take(&mut t.queued);
+    for (latch, k) in [
+        (&mut t.chrome.shift, Key::ShiftLeft),
+        (&mut t.chrome.ctrl, Key::ControlLeft),
+        (&mut t.chrome.alt, Key::AltLeft),
+    ] {
+        if latch.held() {
+            keys.push((k, false));
+        }
+        *latch = Latch::Off;
+    }
+    t.emu.cancel();
+    t.gesture.reset();
+    while let Some(f) = t.gesture.pop() {
+        keys.extend(f.keys.iter().copied());
+        for &(b, down) in &f.buttons {
+            input.button(b, down);
+        }
+    }
+    // A fresh machine: the fingers that were down are not coming back to be lifted.
+    t.gesture = Gesture::default();
+    t.latched_at = None;
+    t.pointer = None;
+    t.pulse = None;
+    t.pan = (0.0, 0.0);
+    t.zoom = None;
+    t.tap_right = false;
+    t.release_mods = false;
+    t.parked = true;
+    t.active = false;
+    for (k, down) in keys {
+        input.key(KeyEvent {
+            key: k,
+            pressed: down,
+            text: None,
+        });
+    }
+    t.revision += 1;
+}
+
 /// The map view's place in the window, in points, as the last frame drew it.
 fn view_zone(c: &Core, w: WindowGeom) -> Option<Zone> {
     let (r, _, _) = c.view.as_ref()?.drawn()?;
@@ -486,15 +569,17 @@ mod tests {
         }
     }
 
-    /// The `widescreen` option is ignored where touch is the main input (`crate::widescreen`): the pillarbox holds the
-    /// chrome, so the screen stays 640 wide.
+    /// The `widescreen` option is ignored where touch is the main input and its side bars show (`crate::widescreen`):
+    /// the pillarbox holds the chrome, so the screen stays 640 wide. With the bars hidden the option applies
+    /// (`controls`' tests).
     #[test]
-    fn touch_overrides_the_widescreen_option() {
+    fn touch_with_its_side_bars_overrides_the_widescreen_option() {
         use crate::extras::Widescreen;
-        let width = |t: &TouchState, mode| crate::widescreen::width(mode, Some((1920, 1080)), t.blocks_widescreen());
+        let width =
+            |t: &TouchState, mode| crate::widescreen::width(mode, Some((1920, 1080)), t.blocks_widescreen(true));
         // A mouse and keyboard: the option stands.
         let desktop = TouchState::new(false);
-        assert!(!desktop.blocks_widescreen());
+        assert!(!desktop.blocks_widescreen(true));
         assert_eq!(width(&desktop, Widescreen::Ratio16x9), 864);
         assert_eq!(width(&desktop, Widescreen::Auto), 864);
         // A phone or tablet.
@@ -506,7 +591,7 @@ mod tests {
         }
         // `--touch-emulation` forces it off, even before a finger has touched.
         let emulated = TouchState::new(true);
-        assert!(emulated.blocks_widescreen());
+        assert!(emulated.blocks_widescreen(true));
         assert_eq!(width(&emulated, Widescreen::Ratio16x9), 640);
         // A computer with a touch screen: off while touch is in use, back once the mouse is used again.
         let mut hybrid = TouchState::new(false);

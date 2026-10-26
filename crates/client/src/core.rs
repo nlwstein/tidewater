@@ -177,6 +177,12 @@ pub struct Core {
 }
 
 impl Core {
+    /// Whether fingers (and `--touch-emulation`'s mouse as a finger) work now, by the `controls` option. The shell
+    /// sends the mouse's left button as a plain button when they do not.
+    pub fn fingers_enabled(&self) -> bool {
+        crate::controls::mode(self).fingers()
+    }
+
     /// The core over `store`, with the flow's first steps and the stored settings in force.
     pub fn new(
         opts: Args,
@@ -314,6 +320,7 @@ impl Core {
         if c.script.is_some() {
             script::drive(c, window);
         }
+        crate::controls::note_fingers(c);
         crate::pad::step(c, elapsed, window);
         crate::touch::step(c, elapsed, window);
         c.input.begin_frame();
@@ -331,8 +338,9 @@ impl Core {
                 c.input.focused = focused;
             }
         }
+        let scripted = c.script.is_some();
+        c.touch.note_mouse(c.input.pointer, scripted || c.pad.active);
         if c.touch.active {
-            let scripted = c.script.is_some();
             c.touch.place_pointer(&mut c.input.pointer, scripted);
         }
         c.pad.place_pointer(&mut c.input.pointer);
@@ -630,7 +638,11 @@ pub(crate) fn screen_size(c: &Core, window: Option<WindowGeom>) -> (u32, u32) {
         return original;
     }
     let area = window.map(|w| (w.safe.2, w.safe.3));
-    let width = crate::widescreen::width(game::extras(c).widescreen(), area, c.touch.blocks_widescreen());
+    let width = crate::widescreen::width(
+        game::extras(c).widescreen(),
+        area,
+        crate::controls::blocks_widescreen(c),
+    );
     (width, original.1)
 }
 

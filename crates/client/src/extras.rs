@@ -52,10 +52,11 @@ pub enum Id {
     PadDeadZone,
     PadSwap,
     PadHideTouch,
+    Controls,
 }
 
 /// How many options there are.
-pub const COUNT: usize = 31;
+pub const COUNT: usize = 32;
 
 /// Who decides an option in a game with other players.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -140,6 +141,8 @@ pub const PAD_SPEEDS: &[&str] = &["normal", "slow", "fast"];
 pub const PAD_ACCELERATION: &[&str] = &["on", "off"];
 /// The values of `pad-dead-zone`: how far a stick moves before it counts.
 pub const PAD_DEAD_ZONES: &[&str] = &["normal", "small", "large"];
+/// The values of `controls`: which input devices drive the game (`crate::controls`).
+pub const CONTROLS_MODES: &[&str] = &["auto", "mouse", "touch", "pad", "pad-touch"];
 /// The values of `pad-hide-touch`.
 pub const PAD_HIDE_TOUCH: &[&str] = &["on", "off"];
 
@@ -299,7 +302,7 @@ pub const REGISTRY: [Spec; COUNT] = [
         kind: Kind::Choice(WIDESCREEN_MODES),
         default: 0,
         scope: Scope::ClientLobby,
-        description: "A wider game screen, the extra width being map: 16:10, 16:9, or auto to match the window (ignored on touch devices; menus and videos stay 4:3)",
+        description: "A wider game screen, the extra width being map: 16:10, 16:9, or auto to match the window (ignored while the touch side bars show; menus and videos stay 4:3)",
     },
     Spec {
         id: Id::MapZoom,
@@ -425,7 +428,16 @@ pub const REGISTRY: [Spec; COUNT] = [
         kind: Kind::Choice(PAD_HIDE_TOUCH),
         default: 0,
         scope: Scope::Client,
-        description: "Controller and touch. While a controller is connected the touch screen's side bars hide (taps still work, and the shoulder buttons are Shift and Ctrl)",
+        description: "Controller and touch mode. While a controller is connected the touch screen's side bars hide (taps still work, and the shoulder buttons are Shift and Ctrl)",
+    },
+    Spec {
+        id: Id::Controls,
+        name: "controls",
+        label: "Controls",
+        kind: Kind::Choice(CONTROLS_MODES),
+        default: 0,
+        scope: Scope::Client,
+        description: "Which devices work the game; the keyboard always does. `auto`: every device there is. `mouse`: keyboard and mouse only. `touch`: fingers. `pad`: controller. `pad-touch`: both. A missing device falls back to `auto`",
     },
 ];
 
@@ -749,6 +761,11 @@ impl ClientExtras {
             swap: self.get(Id::PadSwap) == 1,
             hide_touch: self.get(Id::PadHideTouch) == 0,
         }
+    }
+
+    /// The choice of input devices (`controls`).
+    pub fn controls(&self) -> crate::controls::Mode {
+        crate::controls::Mode::from_index(self.get(Id::Controls))
     }
 
     pub fn map_zoom_wheel(&self) -> bool {

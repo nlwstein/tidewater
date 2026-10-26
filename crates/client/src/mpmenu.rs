@@ -659,10 +659,14 @@ impl Mp {
     }
 
     fn keys(&mut self, input: &Input) -> Outcome {
+        let mut pad = input.pad_focus;
         // A text box takes the typed events; every other control takes the keys that went down.
         if self.popup.is_none() && self.text_focused() {
             for e in &input.typed {
                 self.changed = true;
+                if e.pressed && self.pad_step(&mut pad, e.key) {
+                    continue;
+                }
                 let key = match self.focused_box() {
                     Some(b) => b.feed(e, input.command_held),
                     None => None,
@@ -677,11 +681,27 @@ impl Mp {
         }
         for &k in &input.keys {
             self.changed = true;
+            if self.pad_step(&mut pad, k) {
+                continue;
+            }
             if let Some(o) = self.key(k, input.shift) {
                 return o;
             }
         }
         Outcome::Stay
+    }
+
+    /// A pad's d-pad up or down moves the focus, as Tab and Shift+Tab do, except in an open pop-up and in the game
+    /// list, where it moves the line as the arrow keys do.
+    fn pad_step(&mut self, pad: &mut Option<FocusKey>, k: Key) -> bool {
+        if self.popup.is_some() || matches!(self.focus, T::GameList | T::GameRow(_)) {
+            return false;
+        }
+        let Some(step) = menuscreen::pad_step(pad, k) else {
+            return false;
+        };
+        self.focus = menuscreen::step_focus(&self.stops(), self.focus, step);
+        true
     }
 
     fn text_focused(&self) -> bool {
@@ -1431,6 +1451,23 @@ mod tests {
         mp.update(&key(Key::Tab));
         assert_eq!(mp.focus, T::Previous);
         mp.update(&key(Key::Tab));
+        assert_eq!(mp.focus, T::Enhanced);
+    }
+
+    #[test]
+    fn the_pads_down_moves_the_focus_and_the_keyboards_does_not() {
+        let mut mp = fresh();
+        mp.update(&key(Key::Down));
+        assert_eq!(mp.focus, T::Enhanced);
+        mp.update(&Input {
+            pad_focus: Some(FocusKey::Next),
+            ..key(Key::Down)
+        });
+        assert_eq!(mp.focus, T::Classic);
+        mp.update(&Input {
+            pad_focus: Some(FocusKey::Back),
+            ..key(Key::Up)
+        });
         assert_eq!(mp.focus, T::Enhanced);
     }
 
