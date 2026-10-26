@@ -136,6 +136,30 @@ jobs:
           path: dist/Tidewater.ipa
           if-no-files-found: error
 
+  # The PS Vita app (docs/design/vita.md): a pinned nightly with build-std and the Vita SDK, packed as a .vpk. A
+  # separate job with its own caches, so the main checks stay as fast as they were.
+  vita:
+    name: vita (vpk)
+    needs: check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/vitasdk
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: vita-${{ hashFiles('platform/vita/nightly-version') }}
+      - name: Build the VPK
+        run: platform/vita/build.sh --out dist/tidewater.vpk
+      - name: Check the package
+        run: |
+          unzip -l dist/tidewater.vpk | grep -F 'eboot.bin'
+          unzip -l dist/tidewater.vpk | grep -F 'sce_sys/param.sfo'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tidewater-vita
+          path: dist/tidewater.vpk
+          if-no-files-found: error
+
   # The Android app's native library for one ABI (docs/design/android.md): compiles SDL 3 and the shell with the
   # pinned NDK, builds no APK and signs nothing. Kept to one ABI so it stays cheap.
   android:

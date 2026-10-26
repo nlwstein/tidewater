@@ -16,9 +16,9 @@ shot	28	menu	ac7337a45275d79d
 frames	13-28	ac7337a45275d79d
 frames	29-29	1d91c679828eec63
 frames	30-31	7243f44be11062e2
-shot	33	page	b60a5a2f6933c98b
-frames	32-34	b60a5a2f6933c98b
-frames	35-35	17e5b80ae0b974bc
+shot	33	page	7117859f078584eb
+frames	32-34	7117859f078584eb
+frames	35-35	e4b27498f56db11c
 frames	36-36	0ece2a9bb9c2b044
 shot	38	page-2	ea658eb9503e39eb
 frames	37-39	ea658eb9503e39eb

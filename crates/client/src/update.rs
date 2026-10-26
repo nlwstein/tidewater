@@ -66,9 +66,9 @@ pub fn is_newer(current: &str, latest: &str) -> bool {
 }
 
 /// Whether the start-up check runs: a release build, not turned off by the flag or the setting, and not a scripted or
-/// headless run.
+/// headless run. Never on the PS Vita, which installs a new `.vpk` by hand.
 pub fn enabled(version: Option<&str>, no_flag: bool, setting: bool, scripted: bool) -> bool {
-    version.is_some_and(|v| parse_version(v).is_some()) && !no_flag && setting && !scripted
+    version.is_some_and(|v| parse_version(v).is_some()) && !no_flag && setting && !scripted && !cfg!(target_os = "vita")
 }
 
 /// The systems the program has release downloads for.

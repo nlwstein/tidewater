@@ -1,0 +1,82 @@
+# frame and sound fingerprints of the scripted scene `pad-only` (hashes only)
+sound	2	3bb3724654d4194d	0.7516	Once
+frames	1-2	156ed4086987e325
+frames	3-3	a4417597aa5e5de0
+shot	8	game	b89c5024f0bfa434
+frames	4-8	b89c5024f0bfa434
+frames	9-9	f800b4f7a0272500
+frames	10-10	b4ae5982e8e5575e
+frames	11-11	db7068de7b192dc7
+frames	12-12	6096dd41b48a0149
+frames	13-13	c1ffd5608a11bf73
+frames	14-14	23780ac9d8d52fc7
+frames	15-15	3266e6be2798e6e9
+frames	16-16	3f7d84df4bd6cc43
+frames	17-17	b64565e15b265607
+frames	18-18	57d86ae1b3559fc1
+frames	19-19	c67d77ca1e7089f5
+frames	20-20	430a2f8f641e1959
+frames	21-21	d6bbc488ea7b7ce9
+frames	22-22	95124d956511fe15
+frames	23-23	b005426fff59ef3d
+frames	24-24	5e2ea5bea8861dce
+shot	27	aimed	af425395d84fc5de
+frames	25-27	af425395d84fc5de
+sound	29	b18b87133dda1256	0.9882	Despawn
+frames	28-28	6702266359f2ec50
+shot	33	selected	3b296863176fb3ab
+frames	29-33	3b296863176fb3ab
+frames	34-34	3cb481abe884d636
+frames	35-35	c838b01f578d79b0
+frames	36-36	5f0ccff43f529d64
+frames	37-37	5a8eb01f3001e916
+frames	38-38	91613de17884b888
+frames	39-39	64c48b6b4993938c
+frames	40-40	6e64b7bbe663db7e
+sound	42	6eab1eb9376e8616	0.9882	Despawn
+shot	46	ordered	f2f13d2074011c90
+frames	41-46	f2f13d2074011c90
+shot	50	panel	7e333439dda40c57
+frames	47-50	7e333439dda40c57
+frames	51-51	ea6794f99ccf132d
+frames	52-53	8f215c1887b0627c
+shot	54	panel-step	c1b606b074a4bfb2
+frames	54-54	c1b606b074a4bfb2
+frames	55-56	977cfd2e1253134f
+shot	58	panel-back	c076f17772d61f7c
+frames	57-58	c076f17772d61f7c
+shot	62	minimap	ac196034d2f49948
+frames	59-62	ac196034d2f49948
+frames	63-63	5e44c4683dff57a4
+frames	64-65	9547a36adb248434
+shot	66	minimap-back	f72a5f67094de004
+frames	66-70	f72a5f67094de004
+frames	71-72	7b6ee10217289f66
+frames	73-73	806e3cbc091d362b
+frames	74-75	7ecc1aefe0690874
+frames	76-77	fe890f87e991320c
+frames	78-79	8b9d0fe0e2d992fe
+frames	80-82	e97e1542dd1dbdda
+frames	83-84	3f60d8dc7673098e
+frames	85-85	0da3615cb16cd54d
+frames	86-89	f241779692c02973
+frames	90-91	d4136881af77cf37
+frames	92-92	dfc11007fdd7081c
+frames	93-94	0ae64505a7046edc
+frames	95-96	3465b561658a1ecd
+frames	97-97	acc50714be7e6ecb
+frames	98-103	fba15b23d05f4453
+frames	104-108	c2c1be73bc40c8c3
+shot	113	scrolled	2e036500a8ebf045
+sound	114	52db032368c69602	0.9882	Despawn
+shot	118	group-recalled	2e036500a8ebf045
+frames	109-118	2e036500a8ebf045
+shot	125	menu	424edf1daa119f28
+frames	119-125	424edf1daa119f28
+frames	126-126	356112f7ee00c676
+shot	132	menu-closed	2e036500a8ebf045
+frames	127-135	2e036500a8ebf045
+shot	137	paused	0da8ce3a7e343f2f
+frames	136-140	0da8ce3a7e343f2f
+shot	142	resumed	2e036500a8ebf045
+frames	141-142	2e036500a8ebf045

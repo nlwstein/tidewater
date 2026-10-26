@@ -217,7 +217,7 @@ pub enum Intake {
 impl Intake {
     /// The way this build gets its game files.
     pub fn native() -> Intake {
-        if cfg!(any(target_os = "ios", target_os = "android")) {
+        if cfg!(any(target_os = "ios", target_os = "android", target_os = "vita")) {
             Intake::SharedFolder
         } else {
             Intake::Dialogs
@@ -226,7 +226,13 @@ impl Intake {
 
     /// The phone system's name, for the screen's messages.
     fn phone_name() -> &'static str {
-        if cfg!(target_os = "android") { "Android" } else { "iOS" }
+        if cfg!(target_os = "android") {
+            "Android"
+        } else if cfg!(target_os = "vita") {
+            "the PS Vita"
+        } else {
+            "iOS"
+        }
     }
 }
 
@@ -305,10 +311,16 @@ const ANDROID_INTRO: &str = "Tidewater needs the game files from your own copy o
                     Choose the game folder or a CD image (.iso .bin .cue .mdf .nrg) below, or put it in Tidewater's \
                     folder from a computer, then tap Scan again. A GOG installer (.exe) can't be used on Android.";
 
+const VITA_INTRO: &str = "Tidewater needs the game files from your own copy of Warcraft II: Battle.net Edition. \
+                    Copy the game folder or a CD image (.iso .bin .cue .mdf .nrg) to ux0:data/Tidewater with VitaShell \
+                    or FTP, then choose Scan again. A GOG installer (.exe) can't be used on the PS Vita.";
+
 /// The introduction on a phone.
 fn phone_intro() -> &'static str {
     if cfg!(target_os = "android") {
         ANDROID_INTRO
+    } else if cfg!(target_os = "vita") {
+        VITA_INTRO
     } else {
         PHONE_INTRO
     }
@@ -464,6 +476,9 @@ impl FirstRun {
     /// The buttons under the list, top to bottom.
     fn buttons(&self) -> &'static [Item] {
         match (self.intake, self.returning) {
+            // The Vita has no system dialogs: the files come through the shared folder only.
+            (Intake::SharedFolder, false) if cfg!(target_os = "vita") => &[Item::Rescan],
+            (Intake::SharedFolder, true) if cfg!(target_os = "vita") => &[Item::Rescan, Item::Quit],
             (Intake::Dialogs, _) => &[Item::Folder, Item::Installer, Item::Disc, Item::Quit],
             (Intake::SharedFolder, false) => &[Item::Folder, Item::Disc, Item::Rescan],
             (Intake::SharedFolder, true) => &[Item::Folder, Item::Disc, Item::Rescan, Item::Quit],

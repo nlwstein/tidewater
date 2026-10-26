@@ -1,0 +1,2 @@
+# mixed sound fingerprints of the scripted scene `pad-mixed` (hashes only): 22050 Hz stereo 16-bit, one-second blocks
+tail	19110	1b9efbd05ecd34e0

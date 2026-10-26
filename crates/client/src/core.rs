@@ -8,8 +8,9 @@
 //!
 //! 1. The input's typed events and wheel steps age after a frame that ran a game cycle; the clock takes the frame's
 //!    time (`clock`).
-//! 2. A scripted run's input replaces the system's (`script`); the frame's input is applied; the pointer is placed (the
-//!    platform's, after its mouse lock, or the scene's); the chat line takes its keys (`chat`).
+//! 2. A scripted run's input replaces the system's (`script`); the pads' and the fingers' events become mouse and
+//!    keyboard input (`pad`, `touch`); the frame's input is applied; the pointer is placed (the platform's, after its
+//!    mouse lock, or the scene's, then the fingers' or the pad's); the chat line takes its keys (`chat`).
 //! 3. The flow's change of screen, if one was asked for: the leaving screen's hooks, its layers and sounds, the
 //!    entering screen's hooks (`states`).
 //! 4. The frame's game cycles (`clock`, `game::tick`).
@@ -166,6 +167,8 @@ pub struct Core {
     pub first_run: Option<crate::firstrun::FirstRun>,
     /// Touch input: the gesture machine, the chrome, the emulation (`touch`).
     pub touch: crate::touch::TouchState,
+    /// Gamepad input: the pad's pointer, buttons and sticks (`pad`).
+    pub pad: crate::pad::PadState,
     /// The start-up check for a newer release, and the install (`update`).
     pub updater: crate::update::Updater,
     /// Addresses the core wants the system to open (the Settings screen's "Open settings folder", a phone's "Update
@@ -254,6 +257,7 @@ impl Core {
             commands: Commands::default(),
             first_run: None,
             touch: crate::touch::TouchState::new(emulate),
+            pad: crate::pad::PadState::default(),
             updater: crate::update::Updater::default(),
             open_requests: Vec::new(),
         }
@@ -310,6 +314,7 @@ impl Core {
         if c.script.is_some() {
             script::drive(c, window);
         }
+        crate::pad::step(c, elapsed, window);
         crate::touch::step(c, elapsed, window);
         c.input.begin_frame();
         match &c.script {
@@ -330,6 +335,7 @@ impl Core {
             let scripted = c.script.is_some();
             c.touch.place_pointer(&mut c.input.pointer, scripted);
         }
+        c.pad.place_pointer(&mut c.input.pointer);
         if c.states.get() == AppState::Game {
             chat::chat_keys(c);
             game::net_keys(c);
@@ -543,7 +549,7 @@ fn frame_systems(c: &mut Core) {
     }
     if in_game(c) {
         if game_running(c) {
-            if c.touch.active {
+            if c.touch.active || c.pad.pause_pending() {
                 game::touch_view(c);
             }
             game::panel_input(c);

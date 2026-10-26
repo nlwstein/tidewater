@@ -15,6 +15,8 @@
 //! - Touch: the shell (or a scripted run, or the touch emulation) puts the fingers' events in with [`Input::touch`];
 //!   the core's gesture machine (`gesture`) takes them in the frame's input step and turns them into the mouse and
 //!   keyboard input above, so the game's rules only ever see the mouse model (`docs/design/touch.md`).
+//! - Gamepads: the shell (or a scripted run) puts the pads' events in with [`Input::pad`]; the core's pad step
+//!   (`pad`) turns them into a pointer, mouse buttons and keys in the same way (`docs/design/gamepad.md`).
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -318,6 +320,60 @@ pub enum MouseTouchKind {
     Up,
 }
 
+/// A gamepad button, by its place on the pad (SDL's names): the face buttons are south, east, west and north whatever
+/// their letters, so a Nintendo-layout pad's A (east) is not the confirm button unless the player swaps them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PadButton {
+    South,
+    East,
+    West,
+    North,
+    /// Back, Select, View or Share: the small button left of the middle.
+    Back,
+    Guide,
+    /// Start, Menu or Options: the small button right of the middle.
+    Start,
+    LeftStick,
+    RightStick,
+    LeftShoulder,
+    RightShoulder,
+    Up,
+    Down,
+    Left,
+    Right,
+    /// Any other button (paddles, touchpad click).
+    Other,
+}
+
+/// A gamepad axis.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PadAxis {
+    LeftX,
+    LeftY,
+    RightX,
+    RightY,
+    LeftTrigger,
+    RightTrigger,
+}
+
+/// What a gamepad did. `pad` names the pad from its `Added` to its `Removed`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PadEvent {
+    Added(u32),
+    Removed(u32),
+    Button {
+        pad: u32,
+        button: PadButton,
+        down: bool,
+    },
+    /// A stick from -1 to 1 (positive right and down) or a trigger from 0 to 1.
+    Axis {
+        pad: u32,
+        axis: PadAxis,
+        value: f32,
+    },
+}
+
 /// The player's input.
 #[derive(Clone, Debug, Default)]
 pub struct Input {
@@ -345,6 +401,8 @@ pub struct Input {
     pub tap_radius: Option<f32>,
     /// The mouse acting as a finger (`--touch-emulation`): the events since the last frame.
     pub mouse_touches: Vec<MouseTouch>,
+    /// The gamepads' events since the last frame, oldest first; the core's pad step takes them (`pad`).
+    pub pads: Vec<PadEvent>,
     /// This frame's events, applied to the keys and buttons by [`Input::begin_frame`].
     pending: Vec<Event>,
 }
@@ -385,6 +443,11 @@ impl Input {
         self.mouse_touches.push(t);
     }
 
+    /// A gamepad came, went, or moved a button or an axis.
+    pub fn pad(&mut self, e: PadEvent) {
+        self.pads.push(e);
+    }
+
     /// A file or folder was dropped on the window.
     pub fn dropped(&mut self, path: PathBuf) {
         self.files.push(FileEvent::Dropped(path));
@@ -405,6 +468,7 @@ impl Input {
         self.pending.clear();
         self.touches.clear();
         self.mouse_touches.clear();
+        self.pads.clear();
         self.typed.clear();
         self.wheel.clear();
         self.files.clear();

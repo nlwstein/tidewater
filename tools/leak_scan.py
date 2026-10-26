@@ -28,6 +28,7 @@ GAME_EXT = (".mpq", ".pud", ".grp", ".pcx", ".wav", ".smk", ".tbl", ".cv4", ".vx
 ALLOW_PATHS = {
     "crates/client/assets/icon/window.png",
     "packaging/linux/tidewater.png",
+    "platform/vita/sce_sys/icon0.png",
     "platform/ios/Sources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
 } | {
     f"platform/android/app/src/main/res/mipmap-{d}/{name}.png"

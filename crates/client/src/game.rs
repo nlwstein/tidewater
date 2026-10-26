@@ -1369,6 +1369,66 @@ pub(crate) fn touch_aim(c: &Core) -> (bool, Option<(f32, f32, f32, f32)>) {
     }
 }
 
+/// What the pad step (`pad`) aims at on the game screen, in screen pixels.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PadAim {
+    /// The command panel's buttons that show, by slot.
+    pub slots: [Option<hud::Rect>; 9],
+    pub minimap: Option<hud::Rect>,
+    /// The map view.
+    pub viewport: Option<hud::Rect>,
+    /// The pointer is over a command button or a unit: the stick slows there (`pad`, "Friction").
+    pub over: bool,
+    /// Choosing a target or placing a building: the pointer belongs on the map.
+    pub aiming: bool,
+}
+
+/// The game screen as the pad step sees it, with the pointer at `at` (screen pixels); `hover` asks whether it is over
+/// something (it costs a look at the units, so only while the stick moves the pointer).
+pub(crate) fn pad_aim(c: &Core, at: Option<(f32, f32)>, hover: bool) -> PadAim {
+    let mut aim = PadAim::default();
+    let (Some(hud), Some(ui), Some(sel), Some(sim)) = (
+        c.hud.as_ref(),
+        c.panel_ui.as_ref(),
+        c.selection.as_ref(),
+        c.sim.as_ref(),
+    ) else {
+        return aim;
+    };
+    let Some(l) = hud.layout else { return aim };
+    aim.minimap = Some(l.minimap);
+    aim.viewport = Some(l.viewport);
+    aim.aiming = matches!(ui.mode, panel::Mode::Target(_) | panel::Mode::Place(_));
+    let state = panel::WorldState {
+        world: &sim.world,
+        local: sim.human,
+    };
+    let infos: Vec<panel::UnitInfo> = sel.units.iter().filter_map(|&id| state.unit(id)).collect();
+    if infos.first().is_some_and(|u| u.owner == sim.human) {
+        let slots = panel::fill(panel::choose_set(ui.mode, &infos, &state), &state, &infos);
+        for (n, en) in slots.iter().enumerate() {
+            if en.is_some() {
+                aim.slots[n] = Some(panel::slot_rect((l.buttons.x, l.buttons.y), n));
+            }
+        }
+    }
+    if let Some(p) = at
+        && hover
+    {
+        aim.over = aim.slots.iter().flatten().any(|r| r.contains(p.0, p.1));
+        if !aim.over
+            && l.viewport.contains(p.0, p.1)
+            && let Some(mv) = c.view.as_ref()
+            && let Some((x, y)) = mv.pointer_map(p)
+        {
+            aim.over = with_board(&sim.world, sim.human, c.art.as_ref(), mv.tiles(), |b| {
+                !mouse::hover(b, px(Vec2::new(x, y))).is_empty()
+            });
+        }
+    }
+    aim
+}
+
 /// The smart tap (`mouse::smart_tap`) for a tap at `at`, in screen pixels, with a tolerance of `radius` screen pixels:
 /// whether it should be a right click. Never while placing or targeting.
 pub(crate) fn touch_smart_tap(c: &Core, at: (f32, f32), radius: f32) -> bool {
@@ -1413,7 +1473,7 @@ const ZOOM_SNAP: f32 = 0.94;
 /// (to within the tile grid).
 pub(crate) fn touch_view(c: &mut Core) {
     let (pan, zoom_by) = c.touch.take_view();
-    let pause = c.touch.take_pause();
+    let pause = c.touch.take_pause() | c.pad.take_pause();
     let Core {
         input,
         sim,

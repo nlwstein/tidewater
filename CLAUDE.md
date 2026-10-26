@@ -49,6 +49,7 @@ before writing any code, and follow it exactly.
   Touch (`docs/design/touch.md`): `gesture.rs` is the state machine turning fingers into mouse frames, pan and zoom,
   `chrome.rs` the on-screen buttons in the pillarbox (menu, pause, Shift/Ctrl/Alt latches, plain click, keyboard, control groups),
   `touchemu.rs` the mouse as fingers (`--touch-emulation`), `touchhelp.rs` the Touch Controls help page and `touch.rs` the core's glue (`Core::touch`).
+  Gamepads (`docs/design/gamepad.md`): `pad.rs` turns a pad into the pointer, buttons and keys (`Core::pad`; panel mode, the minimap jump).
   `session.rs` is the `Session` trait between the game screen and the sim (`LocalSession`, `ReplaySession`); `net/` is network play (`proto`: messages and identity, `tcp`, `lockstep`: `NetSession`, `lobby`: the command-line host and join, `room`: the menu lobby's host and guest ends with map transfer, `beacon`: the LAN game-list UDP packet; `docs/design/network.md`).
   `mpmenu.rs` is the multiplayer menus (Multi Player Game to the game list and Direct IP), `mpwidgets.rs` their edit boxes and pop-ups, `lobbyscreen.rs` the game setup lobby; `chat.rs` is the in-game chat line, sent as `Msg::Chat` outside the turns.
   `extras.rs` is the optional improvements' registry, settings and flags (`docs/design/extras.md`); `settings.rs` is the Settings

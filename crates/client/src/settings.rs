@@ -60,16 +60,18 @@ pub(crate) enum Page {
     Gameplay,
     Keys,
     Touch,
+    Controller,
 }
 
 impl Page {
-    pub(crate) const ALL: [Page; 6] = [
+    pub(crate) const ALL: [Page; 7] = [
         Page::General,
         Page::Interface,
         Page::Sound,
         Page::Gameplay,
         Page::Keys,
         Page::Touch,
+        Page::Controller,
     ];
 
     pub(crate) fn label(self) -> &'static str {
@@ -80,6 +82,7 @@ impl Page {
             Page::Gameplay => "Gameplay",
             Page::Keys => "Keys",
             Page::Touch => "Touch",
+            Page::Controller => "Controller",
         }
     }
 
@@ -98,17 +101,20 @@ impl Page {
                  Backspace puts the original key back."
             }
             Page::Touch => "How your fingers work the game. Point at a row to read what it does.",
+            Page::Controller => "How the controller works the game. Point at a row to read what it does.",
         }
     }
 }
 
-/// The pages the platform shows, in tab order: the Keys page needs a keyboard, the Touch page touch.
+/// The pages the platform shows, in tab order: the Keys page needs a keyboard, the Touch page touch, the Controller
+/// page a controller seen in this run.
 pub(crate) fn pages(env: &Env) -> Vec<Page> {
     Page::ALL
         .into_iter()
         .filter(|&p| match p {
             Page::Keys => !env.touch,
             Page::Touch => env.touch || env.touch_input,
+            Page::Controller => env.pad,
             _ => true,
         })
         .collect()
@@ -136,6 +142,7 @@ pub(crate) fn extra_page(id: Id) -> Page {
         | Id::TouchButtons
         | Id::TouchSwapBars
         | Id::TouchMenuTap => Page::Touch,
+        Id::PadSpeed | Id::PadAcceleration | Id::PadDeadZone | Id::PadSwap | Id::PadHideTouch => Page::Controller,
     }
 }
 
@@ -200,6 +207,8 @@ pub(crate) struct Env {
     pub touch: bool,
     /// Touch is in use on a computer (a touch screen, `--touch-emulation`): the Touch page shows, as on a phone.
     pub touch_input: bool,
+    /// A controller has been connected in this run: the Controller page shows.
+    pub pad: bool,
     /// The program checks for a newer release at all (`update`): a desktop release build.
     pub updates: bool,
     /// The line about the imported game files, `None` when there is nothing to manage (`--install` reads the files in
@@ -266,6 +275,10 @@ pub(crate) const CHOICE_WORDS: &[(Id, &[&str])] = &[
     (Id::TouchHold, &["Normal", "Long", "Longer"]),
     (Id::TouchButtons, &["Medium", "Small", "Large"]),
     (Id::TouchMenuTap, &["On", "Off"]),
+    (Id::PadSpeed, &["Normal", "Slow", "Fast"]),
+    (Id::PadAcceleration, &["On", "Off"]),
+    (Id::PadDeadZone, &["Normal", "Small", "Large"]),
+    (Id::PadHideTouch, &["On", "Off"]),
 ];
 
 /// The default of an item.
@@ -1423,6 +1436,7 @@ mod tests {
         Env {
             touch,
             touch_input: false,
+            pad: false,
             updates: !touch,
             data: (!touch).then(|| "Game files: GOG installer, 156 files, 41 maps, imported 2026-10-23".to_string()),
             in_game: false,
@@ -2081,9 +2095,11 @@ mod tests {
                 .iter()
                 .all(|(t, _)| !matches!(t, Target::Tab(Page::Keys)))
         );
-        // A computer with touch in use has all six, and they fit the panel without touching.
+        // A computer with touch in use and a controller connected has all seven, and they fit the panel without
+        // touching.
         let all = pages(&Env {
             touch_input: true,
+            pad: true,
             ..env(false)
         });
         assert_eq!(all, Page::ALL);

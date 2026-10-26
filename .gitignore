@@ -1,4 +1,5 @@
 /target
+/platform/vita/build/
 .githooks/blocklist.local
 /local/
 /.claude/

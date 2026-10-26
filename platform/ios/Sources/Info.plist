@@ -24,6 +24,8 @@
 	<false/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Tidewater uses Bluetooth to talk to game controllers.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIFileSharingEnabled</key>

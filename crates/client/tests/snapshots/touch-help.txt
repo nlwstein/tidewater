@@ -3,8 +3,8 @@ sound	2	3bb3724654d4194d	0.7516	Once
 frames	1-2	156ed4086987e325
 frames	3-3	a4417597aa5e5de0
 frames	4-5	b89c5024f0bfa434
-shot	13	help	58c950f1d8ddf484
-frames	6-13	58c950f1d8ddf484
+shot	13	help	6c50ae3930086ac4
+frames	6-13	6c50ae3930086ac4
 shot	19	help-2	27dc092a56481a78
 frames	14-19	27dc092a56481a78
 frames	20-20	3206b9d2145ebeff

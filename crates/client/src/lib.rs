@@ -47,6 +47,7 @@ mod mpwidgets;
 mod music;
 pub mod net;
 mod overlay;
+pub mod pad;
 mod palette;
 mod panel;
 mod ping;

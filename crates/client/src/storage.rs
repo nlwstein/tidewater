@@ -96,8 +96,15 @@ pub fn open_install(storage: &Arc<dyn Storage>) -> Result<Install, InstallError>
     Install::from_files(Box::new(InstallFiles(storage.clone())))
 }
 
+/// The PS Vita's folder for everything: saved games, settings and the game files, and where the user copies the game
+/// in (`docs/design/vita.md`). The Vita has no home folder for the `directories` crate to find.
+pub const VITA_DATA_DIR: &str = "ux0:data/Tidewater";
+
 /// The default save folder: `Save` in the user's data directory for Tidewater.
 pub fn default_save_dir() -> PathBuf {
+    if cfg!(target_os = "vita") {
+        return Path::new(VITA_DATA_DIR).join("Save");
+    }
     directories::ProjectDirs::from("", "", "Tidewater")
         .map_or_else(|| PathBuf::from("Save"), |d| d.data_dir().join("Save"))
 }
@@ -123,6 +130,7 @@ pub fn user_dir(save_dir: Option<&Path>, data_dir: Option<&Path>) -> PathBuf {
 pub fn data_dir(data_dir: Option<&Path>) -> PathBuf {
     match data_dir {
         Some(d) => d.to_path_buf(),
+        None if cfg!(target_os = "vita") => PathBuf::from(VITA_DATA_DIR),
         None => directories::ProjectDirs::from("", "", "Tidewater")
             .map_or_else(|| PathBuf::from("."), |d| d.data_local_dir().to_path_buf()),
     }

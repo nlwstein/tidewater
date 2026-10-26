@@ -1,0 +1,43 @@
+# frame and sound fingerprints of the scripted scene `pad-mixed` (hashes only)
+sound	2	3bb3724654d4194d	0.7516	Once
+frames	1-2	156ed4086987e325
+frames	3-3	a4417597aa5e5de0
+frames	4-7	b89c5024f0bfa434
+sound	9	b18b87133dda1256	0.9882	Despawn
+frames	8-8	859cbb1e47b466ce
+frames	9-10	52668f45e7d628d9
+shot	13	mouse-selected	dc7b738fedd64e54
+frames	11-13	dc7b738fedd64e54
+frames	14-14	bfedef8392ca000e
+frames	15-15	ea46d5fd5e1768e6
+frames	16-16	d3cd90f4e7bc05e8
+frames	17-17	1ac61fe89254d4f4
+frames	18-18	df47c2e923f86d6e
+frames	19-19	66479855067ec8e0
+frames	20-20	ed995ccccd5c9fbc
+shot	23	pad-moved	fa86b9a65a4e17f6
+sound	24	6eab1eb9376e8616	0.9882	Despawn
+frames	21-27	fa86b9a65a4e17f6
+shot	28	pad-ordered	572d90aaceeaaa70
+frames	28-28	572d90aaceeaaa70
+shot	31	mouse-back	bd9c54d13e0d1702
+frames	29-32	bd9c54d13e0d1702
+sound	34	52db032368c69602	0.9882	Despawn
+frames	33-33	398ec6d2399f233f
+frames	34-34	38856009ca8039ff
+frames	35-36	a3547db38feafd0d
+shot	38	shift-click	469f84a3cc5bcef7
+frames	37-38	469f84a3cc5bcef7
+frames	39-39	ca7169b0edbf7d19
+frames	40-40	523d9085832df7da
+frames	41-41	8e264842e9217343
+shot	44	finger	b603743e5ba4180c
+frames	42-44	b603743e5ba4180c
+frames	45-45	e755d1005575edab
+frames	46-46	c2038b3c768d9d3f
+frames	47-47	ea408b44209a3c74
+frames	48-48	c9a1ee7e10e80f90
+frames	49-49	1d2d14675c9e78e6
+frames	50-51	bf89aff7a6a89812
+shot	52	pad-after-finger	3a7761518caf6941
+frames	52-52	3a7761518caf6941

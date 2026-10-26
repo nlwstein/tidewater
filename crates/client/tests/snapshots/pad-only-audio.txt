@@ -1,0 +1,4 @@
+# mixed sound fingerprints of the scripted scene `pad-only` (hashes only): 22050 Hz stereo 16-bit, one-second blocks
+blocks	0-0	a083f192647136f1
+blocks	1-1	422f84935c000e73
+tail	8085	0e654b34eecca7da

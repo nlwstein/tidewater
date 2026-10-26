@@ -49,7 +49,9 @@ impl Where {
                 .iter()
                 .filter_map(|v| std::env::var_os(v).map(PathBuf::from))
                 .collect(),
-            shared: std::env::var_os("TIDEWATER_SHARED_DIR").map(PathBuf::from),
+            shared: std::env::var_os("TIDEWATER_SHARED_DIR")
+                .map(PathBuf::from)
+                .or_else(|| cfg!(target_os = "vita").then(|| PathBuf::from(crate::storage::VITA_DATA_DIR))),
         }
     }
 }

@@ -57,6 +57,9 @@ const SCENES: &[&str] = &[
     "touch-help",
     "touch-help-menu",
     "touch-menu",
+    "pad-only",
+    "pad-mixed",
+    "pad-menu",
 ];
 
 fn on(var: &str) -> bool {

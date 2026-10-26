@@ -21,7 +21,7 @@ the iOS and Android apps run the same shell code. Every build needs CMake and a 
 - **Touchpad scrolling is faster than a wheel.** SDL reports a touchpad's scroll as fractions of a wheel step, which
   the shell passes on as steps. It matters only for the `--free-zoom` development aid; the shell would scale it if
   someone finds it too fast.
-- **Gamepads are not built.** See [Gamepads](#gamepads-not-built).
+- **Gamepads translate, as touch does.** The pad's rules live in the core (`pad.rs`), so every port behaves the same; see [Gamepads](#gamepads) and `gamepad.md`.
 
 ## Core API
 
@@ -62,7 +62,7 @@ pub struct Frame { pub rgba: Vec<u8>, pub width: usize, pub height: usize }
 
 ## Input model
 
-The shell turns its events into one `Input` per frame, in screen pixels. Touch rules (and the gamepad's, when it lands) live in the core, so
+The shell turns its events into one `Input` per frame, in screen pixels. Touch and gamepad rules live in the core, so
 every shell behaves the same.
 
 ```rust
@@ -76,6 +76,7 @@ pub struct Input {
     pub window: Option<WindowGeom>,
     pub focused: bool,
     pub touches: Vec<Touch>,       // id, phase, window position (points)
+    pub pads: Vec<PadEvent>,       // pads added and removed, their buttons and axes
     /* scroll, tap radius, mouse-as-finger events, dropped and picked files */
 }
 ```
@@ -85,7 +86,7 @@ pub struct Input {
 | Mouse | pointer, buttons, wheel | The mouse lock (`display`, "Mouse lock") stays in the shell. |
 | Keyboard | key events with text | Text typed with a key feeds the save dialog and the chat line. |
 | Touch | tap: left click; hold 450 ms: right click; drag: box select; two fingers: pan; pinch: zoom 1 to 4 times; three-finger tap: F10 | Our own rules (not part of the original); see "Touch" below and `touch.md`. |
-| Gamepad | Not built. | See [Gamepads](#gamepads-not-built). |
+| Gamepad | left stick: the pointer; south: left click; east: right click; right stick: scrolling; shoulders: Shift and Ctrl; Start: F10 | Our own rules; see [Gamepads](#gamepads) and `gamepad.md`. |
 
 ## Touch
 
@@ -307,14 +308,14 @@ to tests of the package that has the binary; one shell needs no crate of its own
 only `shell/sdl.rs` allows it (the crate's lint is `deny` so that one module can). The cost is that building the client
 library also builds SDL. If a port ever needs the core without SDL, the shell moves into its own crate then.
 
-### Gamepads (not built)
+### Gamepads
 
-`no-default-subsystems` leaves the joystick subsystem out. When the core's pad input lands (an `Input::pads` field of `PadState`s):
-
-1. **Build:** add `sdl-joystick` (and `sdl-hidapi` for the common pads' drivers) to `sdl3-sys`'s features in `crates/client/Cargo.toml`.
-2. **Wrapper (`shell/sdl.rs`):** `SDL_INIT_GAMEPAD` in `Sdl::init`; open pads on `SDL_EVENT_GAMEPAD_ADDED`, close them on `..._REMOVED`; `poll` returns their button and axis events.
-3. **Shell (`shell/app.rs`):** `take_events` hands them to the core as `PadState`s, as it does keys.
-4. **Core:** the rules stay in the core, so every port behaves the same: the left stick moves a drawn pointer with acceleration, A is left click, B right click, the d-pad or right stick scrolls, Start opens the game menu (F10).
+`gamepad.md` is the design. The build turns on `sdl-joystick` and `sdl-hidapi` in `sdl3-sys`'s features (the
+workspace `Cargo.toml`). `Sdl::init` adds `SDL_INIT_GAMEPAD`; `poll` opens a pad on `SDL_EVENT_GAMEPAD_ADDED`, closes
+it on `..._REMOVED` and returns its button and axis events, which `take_events` hands to the core as `PadEvent`s
+(`Input::pads`). The core's pad step (`pad::step`) runs first in the frame's input step and turns them into the
+pointer, buttons and keys; after `Core::advance` the shell moves the system pointer to the pad's
+(`PadState::take_warp`), or the mouse lock's pointer while the lock holds it.
 
 ## Time and the flow's states
 

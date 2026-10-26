@@ -26,6 +26,10 @@
 //! **Android** (`docs/design/android.md`) is the same: `crates/android` builds this file and `sdl.rs` as `libmain.so`,
 //! which SDL's Java activity loads and enters at `SDL_main`; the lifecycle is the same pair of events.
 //!
+//! **Gamepads** (`docs/design/gamepad.md`). SDL's gamepad events go in as `input::PadEvent`s; the core turns them into
+//! its own pointer, buttons and keys. When the pad moves the pointer the shell moves the system's to it (or the mouse
+//! lock's), so a mouse picks up where the pad left off and a screen that shows the system's pointer shows the pad's.
+//!
 //! The shell does what the design asks of one: the system's key, button, wheel and focus events into the core's input;
 //! [`Core::advance`] once a frame; the composed frame into one streaming texture, drawn at the window's whole-number
 //! scale with black around it (`display::Letterbox`), with the core's title and system-pointer wish; the core's mixer
@@ -49,7 +53,8 @@ use tidewater_client::extras::Scaling;
 use tidewater_client::firstrun::PickKind;
 use tidewater_client::host::{self, FrameStats, LockedPointer};
 use tidewater_client::input::{
-    Button, Buttons, Key, KeyEvent, MouseTouch, MouseTouchKind, Touch, TouchPhase, Wheel, WindowGeom,
+    Button, Buttons, Key, KeyEvent, MouseTouch, MouseTouchKind, PadAxis, PadButton, PadEvent, Touch, TouchPhase, Wheel,
+    WindowGeom,
 };
 use tidewater_client::script;
 
@@ -279,6 +284,15 @@ fn run(l: host::Launch) -> Result<()> {
         // screen after the frame (a phone's window is always full screen).
         shell.lock_enabled = core.mouse_lock_enabled();
         core.advance(elapsed, &mut shell);
+        if let Some((x, y)) = core.pad.take_warp()
+            && !scripted
+        {
+            if shell.locked.0.is_some() {
+                shell.locked.0 = Some((x, y));
+            } else if window.focused() {
+                window.warp_mouse(x, y);
+            }
+        }
         if !MOBILE && core.fullscreen_wanted() != shell.fullscreen {
             shell.fullscreen = core.fullscreen_wanted();
             window.set_fullscreen(shell.fullscreen);
@@ -286,9 +300,10 @@ fn run(l: host::Launch) -> Result<()> {
         for url in core.take_open_requests() {
             sdl::open_url(&url);
         }
-        // The soft keyboard follows the chrome's button (which itself follows the system's hiding it, `take_events`);
+        // The soft keyboard follows the chrome's button or the pad's (which itself follows the system's hiding it,
+        // `take_events`);
         // a desktop keeps its text input open for the real keyboard.
-        if core.touch.chrome.keyboard != shell.keyboard && (core.touch.active || MOBILE) {
+        if core.touch.chrome.keyboard != shell.keyboard && (core.touch.active || core.pad.active || MOBILE) {
             shell.keyboard = core.touch.chrome.keyboard;
             if shell.keyboard {
                 window.start_text_input();
@@ -534,6 +549,18 @@ impl Shell<'_> {
                 }),
                 sdl::Event::Drop(path) => input.dropped(path),
                 sdl::Event::ScreenKeyboard(shown) => keyboard_event = Some(shown),
+                sdl::Event::PadAdded(pad) => input.pad(PadEvent::Added(pad)),
+                sdl::Event::PadRemoved(pad) => input.pad(PadEvent::Removed(pad)),
+                sdl::Event::PadButton { pad, button, down } => input.pad(PadEvent::Button {
+                    pad,
+                    button: pad_button_of(button),
+                    down,
+                }),
+                sdl::Event::PadAxis { pad, axis, value } => {
+                    if let Some((axis, value)) = pad_axis_of(axis, value) {
+                        input.pad(PadEvent::Axis { pad, axis, value });
+                    }
+                }
                 sdl::Event::Text(_) | sdl::Event::Other => {}
             }
         }
@@ -677,6 +704,42 @@ fn button_of(b: u8) -> Button {
     }
 }
 
+/// A gamepad button by SDL's number (`SDL_GamepadButton`).
+fn pad_button_of(b: u8) -> PadButton {
+    match b {
+        0 => PadButton::South,
+        1 => PadButton::East,
+        2 => PadButton::West,
+        3 => PadButton::North,
+        4 => PadButton::Back,
+        5 => PadButton::Guide,
+        6 => PadButton::Start,
+        7 => PadButton::LeftStick,
+        8 => PadButton::RightStick,
+        9 => PadButton::LeftShoulder,
+        10 => PadButton::RightShoulder,
+        11 => PadButton::Up,
+        12 => PadButton::Down,
+        13 => PadButton::Left,
+        14 => PadButton::Right,
+        _ => PadButton::Other,
+    }
+}
+
+/// A gamepad axis by SDL's number (`SDL_GamepadAxis`), its value from -1 to 1 (a trigger from 0 to 1).
+fn pad_axis_of(a: u8, value: i16) -> Option<(PadAxis, f32)> {
+    let axis = match a {
+        0 => PadAxis::LeftX,
+        1 => PadAxis::LeftY,
+        2 => PadAxis::RightX,
+        3 => PadAxis::RightY,
+        4 => PadAxis::LeftTrigger,
+        5 => PadAxis::RightTrigger,
+        _ => return None,
+    };
+    Some((axis, (value as f32 / 32767.0).clamp(-1.0, 1.0)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -693,6 +756,66 @@ mod tests {
         assert_eq!(key_of(89), Key::Numpad(1));
         assert_eq!(key_of(98), Key::Numpad(0));
         assert_eq!(key_of(227), Key::SuperLeft);
+    }
+
+    #[test]
+    fn pad_buttons_and_axes_by_sdl_number() {
+        assert_eq!(pad_button_of(0), PadButton::South);
+        assert_eq!(pad_button_of(3), PadButton::North);
+        assert_eq!(pad_button_of(6), PadButton::Start);
+        assert_eq!(pad_button_of(10), PadButton::RightShoulder);
+        assert_eq!(pad_button_of(14), PadButton::Right);
+        assert_eq!(pad_button_of(20), PadButton::Other);
+        assert_eq!(pad_axis_of(0, 32767), Some((PadAxis::LeftX, 1.0)));
+        assert_eq!(pad_axis_of(1, -32768), Some((PadAxis::LeftY, -1.0)));
+        assert_eq!(pad_axis_of(5, 0), Some((PadAxis::RightTrigger, 0.0)));
+        assert_eq!(pad_axis_of(9, 0), None);
+    }
+
+    /// The whole way from SDL: a virtual gamepad (SDL's own driver for one made in software) is plugged in, presses
+    /// a button and pushes a stick, and `sdl::poll` hands each on as the shell reads it.
+    #[test]
+    fn a_virtual_pad_reaches_the_shell_through_sdl() {
+        let events = crate::sdl::virtual_pad_events();
+        let mut seen: Vec<PadEvent> = Vec::new();
+        let mut id = None;
+        for e in events {
+            match e {
+                crate::sdl::Event::PadAdded(p) => {
+                    id = Some(p);
+                    seen.push(PadEvent::Added(p));
+                }
+                crate::sdl::Event::PadButton { pad, button, down } => seen.push(PadEvent::Button {
+                    pad,
+                    button: pad_button_of(button),
+                    down,
+                }),
+                crate::sdl::Event::PadAxis { pad, axis, value } => {
+                    if let Some((axis, value)) = pad_axis_of(axis, value) {
+                        seen.push(PadEvent::Axis { pad, axis, value });
+                    }
+                }
+                crate::sdl::Event::PadRemoved(p) => seen.push(PadEvent::Removed(p)),
+                _ => {}
+            }
+        }
+        let id = id.expect("the pad was plugged in");
+        assert!(seen.contains(&PadEvent::Button {
+            pad: id,
+            button: PadButton::South,
+            down: true
+        }));
+        assert!(seen.contains(&PadEvent::Button {
+            pad: id,
+            button: PadButton::South,
+            down: false
+        }));
+        assert!(seen.contains(&PadEvent::Axis {
+            pad: id,
+            axis: PadAxis::LeftX,
+            value: 1.0
+        }));
+        assert_eq!(seen.last(), Some(&PadEvent::Removed(id)));
     }
 
     #[test]

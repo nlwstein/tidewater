@@ -41,6 +41,11 @@ chooses it in the lobby and it travels with the game, saves and replays (see "Si
 | `touch-buttons` | `--extra-touch-buttons VALUE` | medium, small, large | C | medium | Touch only. The size of the side bars' buttons: `medium` 9 mm, `small` 7 mm, `large` 11 mm (smaller when a bar is too narrow) |
 | `touch-swap-bars` | `--extra-touch-swap-bars` | on, off | C | off | Touch only. The control-group buttons go on the left and the menu, pause and modifier buttons on the right |
 | `touch-menu-tap` | `--extra-touch-menu-tap VALUE` | on, off | C | on | Touch only. A tap of three fingers at once opens the game menu (the Menu button always does) |
+| `pad-speed` | `--extra-pad-speed VALUE` | normal, slow, fast | C | normal | Controller only. How fast the left stick moves the pointer (holding the left trigger doubles it) |
+| `pad-acceleration` | `--extra-pad-acceleration VALUE` | on, off | C | on | Controller only. A small push on the left stick moves the pointer slowly for aiming and a full push fast; it also slows over units and buttons. `off`: the speed follows the push evenly |
+| `pad-dead-zone` | `--extra-pad-dead-zone VALUE` | normal, small, large | C | normal | Controller only. How far a stick moves before it counts: raise it if the pointer drifts on its own |
+| `pad-swap` | `--extra-pad-swap` | on, off | C | off | Controller only. The right face button clicks and the bottom one right-clicks, for pads with Nintendo's layout |
+| `pad-hide-touch` | `--extra-pad-hide-touch VALUE` | on, off | C | on | Controller and touch. While a controller is connected the touch screen's side bars hide (taps still work, and the shoulder buttons are Shift and Ctrl) |
 
 - **Default** is the value when nothing says otherwise. For a volume, 100 means "leave the sound as the game's own
   dialog sets it", so the original sound dialog keeps its look and meaning.

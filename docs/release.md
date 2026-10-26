@@ -38,7 +38,7 @@ version in `Cargo.toml` is not used.
 **What the workflow does, in order:**
 
 1. `plan`: runs the script's tests, computes the version and the notes.
-2. `linux`, `macos`, `windows`, `ios`, `android`: build the downloads in parallel.
+2. `linux`, `macos`, `windows`, `ios`, `android`, `vita`: build the downloads in parallel.
 3. `windows-smoke`: installs the setup program silently on a clean Windows runner, runs `tidewater --version`, uninstalls.
 4. `publish` (only when a release is due, never on a dry run): writes `SHA256SUMS`, then `gh release create` makes the tag
    `vX.Y.Z` on the built commit and the release, with every file and notes grouped by type (breaking changes, features,
@@ -60,6 +60,7 @@ publishes from `main`.
 | `tidewater-X.Y.Z-linux-x64.tar.gz` | `packaging/linux/build-tarball.sh`: the program, `tidewater.desktop` and its icon `tidewater.png`, `README.txt`, the licence files. No AppImage yet. |
 | `tidewater-X.Y.Z-android.apk` | `platform/android/build.sh --release`: one APK with arm64-v8a and x86_64 libraries, signed with the release keystore (see [Android APK](#android-apk)). Left out, with a note in the run summary, while the signing secrets are not set. |
 | `tidewater-X.Y.Z-ios.ipa` | `platform/ios/package-ipa.sh --version X.Y.Z` after `platform/ios/build.sh device`: the Release device build (arm64), **unsigned**, with `Payload/Tidewater.app` at the root. The version goes into `CFBundleShortVersionString` and `CFBundleVersion`. The bundle id stays `dev.tidewater.client`; whoever sideloads it re-signs with their own Apple ID ([docs/design/ios.md](design/ios.md#install-the-unsigned-ipa)). CI builds the same file on every run as the `tidewater-ios-unsigned` artifact. |
+| `tidewater-X.Y.Z-vita.vpk` | `platform/vita/build.sh --version X.Y.Z`: the PS Vita app with a pinned nightly and the Vita SDK ([docs/design/vita.md](design/vita.md)). The version shows as `XX.YY` (major and minor). CI builds the same file on every run as the `tidewater-vita` artifact. |
 | `SHA256SUMS` | `sha256sum` of every file above (`publish` sums `tidewater-*`, which covers the APK and the IPA). |
 
 The asset names are what the update check looks for (`update.rs`), so keep them. The check picks the Windows and macOS files by their endings (`-windows-x64-setup.exe`, `-macos.dmg`); the phones only open the release page, so the `-ios.ipa` name is never matched. Only the program is packaged, never game

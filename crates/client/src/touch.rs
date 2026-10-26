@@ -16,6 +16,7 @@
 //!   makes the next tap a left click.
 //! - The chrome's keys: the group buttons (a tap is the digit, a hold Ctrl and the digit), the menu (F10) and the
 //!   idle-worker button (F6, `crate::idle::KEY`), each let go a frame later.
+//! - With a controller connected (option `pad-hide-touch`), no chrome: it neither shows nor takes fingers.
 //! - A pulse where a long press fired, drawn onto the picture after it is composed ([`draw_pulse`]).
 //!
 //! [`Input::touches`]: crate::input::Input::touches
@@ -78,8 +79,11 @@ pub struct TouchState {
     pause: bool,
     /// The platform's pointer the last frame, to see a mouse come back.
     last_platform: Option<Option<Pt>>,
+    /// The chrome is hidden for a controller (`pad::PadState::hides_touch`).
+    hidden: bool,
     /// The chrome as the shell last drew it, and a count of its changes.
     drawn: Chrome,
+    drawn_hidden: bool,
     pub revision: u64,
 }
 
@@ -103,7 +107,7 @@ impl TouchState {
     /// The chrome's picture for a window, `None` while touch is not in use. Draw it over the picture; it changes only
     /// when [`TouchState::revision`] does.
     pub fn overlay(&self, size: (u32, u32), factor: f32) -> Option<Overlay> {
-        self.active.then(|| self.chrome.overlay(size, factor))
+        (self.active && !self.hidden).then(|| self.chrome.overlay(size, factor))
     }
 
     /// The map view's pan (window points) and zoom (a factor and its centre in window points) since the last call.
@@ -270,6 +274,7 @@ pub fn step(c: &mut Core, elapsed: Duration, window: Option<WindowGeom>) {
         idle_worker: extras.idle_worker(),
     };
     let tap_px = TAP_MM * ppmm * w.factor / lb.scale;
+    let hide_chrome = c.pad.hides_touch(&extras.pad());
     // The Pause button shows play while the game is paused.
     c.touch.chrome.paused = in_game && c.sim.as_ref().is_some_and(|s| s.world.paused);
     let Core {
@@ -303,16 +308,21 @@ pub fn step(c: &mut Core, elapsed: Duration, window: Option<WindowGeom>) {
     for m in mice {
         fingers.extend(t.emu.feed(m, lb.centre(w.factor), 5.0 * ppmm));
     }
+    // With a controller connected the chrome may hide (option `pad-hide-touch`): every finger goes to the gesture
+    // machine, and the shoulder buttons are the modifiers (`pad`).
+    t.hidden = hide_chrome;
     let mut passed = Vec::new();
     for f in fingers {
-        match t.chrome.feed(f) {
+        match if hide_chrome { Fed::Pass } else { t.chrome.feed(f) } {
             Fed::Pass => passed.push(f),
             Fed::Consumed => {}
             Fed::Pressed(ctl) => t.press(ctl, &mut keys),
         }
     }
-    for ctl in t.chrome.advance(ms) {
-        t.hold(ctl, &mut keys);
+    if !hide_chrome {
+        for ctl in t.chrome.advance(ms) {
+            t.hold(ctl, &mut keys);
+        }
     }
     t.clock += ms;
 
@@ -408,8 +418,9 @@ pub fn step(c: &mut Core, elapsed: Duration, window: Option<WindowGeom>) {
         t.pan = (0.0, 0.0);
         t.zoom = None;
     }
-    if t.chrome != t.drawn {
+    if t.chrome != t.drawn || t.hidden != t.drawn_hidden {
         t.drawn = t.chrome.clone();
+        t.drawn_hidden = t.hidden;
         t.revision += 1;
     }
 }

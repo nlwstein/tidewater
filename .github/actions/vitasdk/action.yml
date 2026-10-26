@@ -1,0 +1,36 @@
+# Installs the PS Vita SDK (VITASDK) on a Linux runner from the project's own release snapshot, checked against a
+# pinned SHA-256, and cached between runs. Sets VITASDK and puts its bin folder on the PATH for the later steps.
+# Bump the snapshot by changing `tag`, `file` and `sha256` together (https://github.com/vitasdk/autobuilds/releases).
+name: Install the Vita SDK
+description: VITASDK from the official snapshot, cached.
+runs:
+  using: composite
+  steps:
+    - id: pin
+      shell: bash
+      run: |
+        echo "tag=sdk-snapshot-20261015.850.1" >> "$GITHUB_OUTPUT"
+        echo "file=vitasdk-x86_64-linux-gnu-2026-10-15_05-01-16.tar.bz2" >> "$GITHUB_OUTPUT"
+        echo "sha256=801f483928523fe63547faf58a7dfdaca7482b26c33af0064acea96a906f7662" >> "$GITHUB_OUTPUT"
+    - id: cache
+      uses: actions/cache@v6
+      with:
+        path: ~/vitasdk
+        key: vitasdk-${{ steps.pin.outputs.tag }}
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        TAG: ${{ steps.pin.outputs.tag }}
+        FILE: ${{ steps.pin.outputs.file }}
+        SHA256: ${{ steps.pin.outputs.sha256 }}
+      run: |
+        curl -fsSL --retry 3 -o "$RUNNER_TEMP/vitasdk.tar.bz2" \
+          "https://github.com/vitasdk/autobuilds/releases/download/$TAG/$FILE"
+        echo "$SHA256  $RUNNER_TEMP/vitasdk.tar.bz2" | sha256sum -c -
+        mkdir -p ~/vitasdk
+        tar -xjf "$RUNNER_TEMP/vitasdk.tar.bz2" -C ~/vitasdk --strip-components=1
+        rm "$RUNNER_TEMP/vitasdk.tar.bz2"
+    - shell: bash
+      run: |
+        echo "VITASDK=$HOME/vitasdk" >> "$GITHUB_ENV"
+        echo "$HOME/vitasdk/bin" >> "$GITHUB_PATH"

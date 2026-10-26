@@ -1,6 +1,6 @@
 # mixed sound fingerprints of the scripted scene `touch-order` (hashes only): 22050 Hz stereo 16-bit, one-second blocks
-blocks	0-0	fa53ae85825925b7
-blocks	1-1	906b4025eff58109
+blocks	0-0	40e64e9502959bd9
+blocks	1-1	c99b0aeb69b60a44
 blocks	2-2	0f997db10a53e278
 blocks	3-3	e786e93a24f9bdcf
 tail	18375	1562f8c724bc5433

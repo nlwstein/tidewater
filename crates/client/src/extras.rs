@@ -47,10 +47,15 @@ pub enum Id {
     TouchButtons,
     TouchSwapBars,
     TouchMenuTap,
+    PadSpeed,
+    PadAcceleration,
+    PadDeadZone,
+    PadSwap,
+    PadHideTouch,
 }
 
 /// How many options there are.
-pub const COUNT: usize = 26;
+pub const COUNT: usize = 31;
 
 /// Who decides an option in a game with other players.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -128,6 +133,15 @@ pub const TOUCH_HOLD_MODES: &[&str] = &["normal", "long", "longer"];
 pub const TOUCH_BUTTON_SIZES: &[&str] = &["medium", "small", "large"];
 /// The values of `touch-menu-tap`.
 pub const TOUCH_MENU_TAP: &[&str] = &["on", "off"];
+
+/// The values of `pad-speed`: how fast the left stick moves the pointer.
+pub const PAD_SPEEDS: &[&str] = &["normal", "slow", "fast"];
+/// The values of `pad-acceleration`.
+pub const PAD_ACCELERATION: &[&str] = &["on", "off"];
+/// The values of `pad-dead-zone`: how far a stick moves before it counts.
+pub const PAD_DEAD_ZONES: &[&str] = &["normal", "small", "large"];
+/// The values of `pad-hide-touch`.
+pub const PAD_HIDE_TOUCH: &[&str] = &["on", "off"];
 
 /// The most the magnifying zoom magnifies, in times the original's view (it never shows more map than the original).
 pub const MAP_ZOOM_MAX: f32 = 4.0;
@@ -368,6 +382,51 @@ pub const REGISTRY: [Spec; COUNT] = [
         scope: Scope::Client,
         description: "Touch only. A tap of three fingers at once opens the game menu (the Menu button always does)",
     },
+    Spec {
+        id: Id::PadSpeed,
+        name: "pad-speed",
+        label: "Pointer speed",
+        kind: Kind::Choice(PAD_SPEEDS),
+        default: 0,
+        scope: Scope::Client,
+        description: "Controller only. How fast the left stick moves the pointer (holding the left trigger doubles it)",
+    },
+    Spec {
+        id: Id::PadAcceleration,
+        name: "pad-acceleration",
+        label: "Acceleration",
+        kind: Kind::Choice(PAD_ACCELERATION),
+        default: 0,
+        scope: Scope::Client,
+        description: "Controller only. A small push on the left stick moves the pointer slowly for aiming and a full push fast; it also slows over units and buttons. `off`: the speed follows the push evenly",
+    },
+    Spec {
+        id: Id::PadDeadZone,
+        name: "pad-dead-zone",
+        label: "Stick dead zone",
+        kind: Kind::Choice(PAD_DEAD_ZONES),
+        default: 0,
+        scope: Scope::Client,
+        description: "Controller only. How far a stick moves before it counts: raise it if the pointer drifts on its own",
+    },
+    Spec {
+        id: Id::PadSwap,
+        name: "pad-swap",
+        label: "Swap confirm and back",
+        kind: Kind::Flag,
+        default: 0,
+        scope: Scope::Client,
+        description: "Controller only. The right face button clicks and the bottom one right-clicks, for pads with Nintendo's layout",
+    },
+    Spec {
+        id: Id::PadHideTouch,
+        name: "pad-hide-touch",
+        label: "Hide touch controls",
+        kind: Kind::Choice(PAD_HIDE_TOUCH),
+        default: 0,
+        scope: Scope::Client,
+        description: "Controller and touch. While a controller is connected the touch screen's side bars hide (taps still work, and the shoulder buttons are Shift and Ctrl)",
+    },
 ];
 
 impl Id {
@@ -503,6 +562,21 @@ pub struct TouchSettings {
     pub button_mm: f32,
     pub swap_bars: bool,
     pub menu_tap: bool,
+}
+
+/// The controller options read together ([`ClientExtras::pad`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PadSettings {
+    /// The pointer's speed, as a factor of the normal one.
+    pub speed: f32,
+    /// A curve on the stick's push, and friction over units and buttons.
+    pub acceleration: bool,
+    /// The share of a stick's travel that counts as rest.
+    pub dead_zone: f32,
+    /// East confirms and south goes back.
+    pub swap: bool,
+    /// The touch chrome hides while a pad is connected.
+    pub hide_touch: bool,
 }
 
 /// The values of every option for a run.
@@ -655,6 +729,25 @@ impl ClientExtras {
             },
             swap_bars: self.get(Id::TouchSwapBars) == 1,
             menu_tap: self.get(Id::TouchMenuTap) == 0,
+        }
+    }
+
+    /// The controller options read together (they do nothing without a controller).
+    pub fn pad(&self) -> PadSettings {
+        PadSettings {
+            speed: match self.get(Id::PadSpeed) {
+                1 => 0.65,
+                2 => 1.5,
+                _ => 1.0,
+            },
+            acceleration: self.get(Id::PadAcceleration) == 0,
+            dead_zone: match self.get(Id::PadDeadZone) {
+                1 => 0.08,
+                2 => 0.25,
+                _ => 0.15,
+            },
+            swap: self.get(Id::PadSwap) == 1,
+            hide_touch: self.get(Id::PadHideTouch) == 0,
         }
     }
 

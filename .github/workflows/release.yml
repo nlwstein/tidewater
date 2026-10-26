@@ -287,6 +287,30 @@ jobs:
           path: dist/*.ipa
           if-no-files-found: error
 
+  # The PS Vita VPK (platform/vita/build.sh): a pinned nightly with build-std and the Vita SDK. The release version
+  # goes into the app's version (APP_VER, major and minor).
+  vita:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    runs-on: ubuntu-24.04
+    env:
+      TIDEWATER_VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/vitasdk
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: vita-${{ hashFiles('platform/vita/nightly-version') }}
+      - name: Build the VPK
+        run: platform/vita/build.sh --version "$TIDEWATER_VERSION" --out "dist/tidewater-${TIDEWATER_VERSION}-vita.vpk"
+      - name: Check the package
+        run: unzip -l "dist/tidewater-${TIDEWATER_VERSION}-vita.vpk" | grep -F 'eboot.bin'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vita
+          path: dist/*.vpk
+          if-no-files-found: error
+
   # Installs the built setup program silently, checks the installed program starts and reports the build's version,
   # then uninstalls. Runs on dry runs too.
   windows-smoke:
@@ -321,7 +345,7 @@ jobs:
           echo "installed, ran and uninstalled"
 
   publish:
-    needs: [plan, linux, macos, windows, windows-smoke, android, ios]
+    needs: [plan, linux, macos, windows, windows-smoke, android, ios, vita]
     if: needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     permissions:

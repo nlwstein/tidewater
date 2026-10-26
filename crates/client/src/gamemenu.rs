@@ -1455,6 +1455,7 @@ pub(crate) fn run_settings(c: &mut Core) {
     }
     let (touch_only, no_intro, no_check) = (c.touch.touch_only, c.opts.no_intro, c.opts.no_update_check);
     let touch_input = c.touch.emulate || c.touch.active;
+    let pad = c.pad.seen;
     let data = frontend::game_files_line(&c.opts);
     let Core {
         commands,
@@ -1476,6 +1477,7 @@ pub(crate) fn run_settings(c: &mut Core) {
         let env = settings::Env {
             touch: touch_only,
             touch_input,
+            pad,
             updates: crate::update::build_version().is_some(),
             data,
             in_game: true,

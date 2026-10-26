@@ -69,17 +69,17 @@ frames	104-104	b72513021b8c15fb
 shot	109	options	ca7180433184212d
 frames	105-109	ca7180433184212d
 frames	110-110	5c422820cfcdb7d7
-shot	113	dialog	fddc727027ac6c1e
-frames	111-113	fddc727027ac6c1e
-frames	114-114	d75ea997bb43612a
-shot	117	players-list	0eb4da6a233706fa
-frames	115-117	0eb4da6a233706fa
-frames	118-118	8df58a03075b3959
-shot	121	filtered	2bbd35d07e3e8450
-frames	119-121	2bbd35d07e3e8450
-shot	125	second-line	8790a2baafe7f6fb
-frames	122-125	8790a2baafe7f6fb
-frames	126-126	9d3b548a05a230d7
+shot	113	dialog	f4d29deced0178e0
+frames	111-113	f4d29deced0178e0
+frames	114-114	f622a216a4da37d0
+shot	117	players-list	005217c7c039c190
+frames	115-117	005217c7c039c190
+frames	118-118	76fbffb2c3d119b7
+shot	121	filtered	ce3d66b1ecd38f54
+frames	119-121	ce3d66b1ecd38f54
+shot	125	second-line	8149566c5551a1d7
+frames	122-125	8149566c5551a1d7
+frames	126-126	de3451e1f7440c9f
 frames	127-127	b82d1f48d73eb8ae
 shot	129	picked	44fe21049c6f4592
 frames	128-129	44fe21049c6f4592

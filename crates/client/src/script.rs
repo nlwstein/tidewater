@@ -12,7 +12,7 @@ use glam::Vec2;
 use crate::compose::Frame;
 use crate::core::Core;
 use crate::frontend::{AppState, Step};
-use crate::input::{Button, Key, KeyEvent, Touch, TouchPhase, Wheel, WindowGeom};
+use crate::input::{Button, Key, KeyEvent, PadAxis, PadButton, PadEvent, Touch, TouchPhase, Wheel, WindowGeom};
 
 /// One step of a scene's input.
 #[derive(Clone, Debug, PartialEq)]
@@ -54,6 +54,13 @@ pub enum Cmd {
     UntilMessage(&'static str),
     /// From now on the run is a phone's or tablet's (`TouchState::touch_only`), as on iOS and Android.
     TouchDevice,
+    /// A gamepad (number 0) is plugged in (`pad`).
+    PadAdded,
+    /// Its button goes down or up.
+    PadDown(PadButton),
+    PadUp(PadButton),
+    /// Its stick or trigger goes to this value (-1 to 1; a trigger 0 to 1).
+    PadAxis(PadAxis, f32),
 }
 
 /// Where the multiplayer screens stand, for the network scenes' waits (`frontend::Screens::mp_progress`).
@@ -477,6 +484,31 @@ pub fn scenes() -> Vec<Scene> {
             extras: &[],
             keys: "",
         },
+        // A controller (`pad`, `docs/design/gamepad.md`): played with the pad alone, the stick moving the pointer, the
+        // face buttons clicking, panel mode, the minimap jump, scrolling, the menu and pause; then mixed with the
+        // mouse and a finger, each taking the pointer from the others; then the menus and the Settings screen's
+        // Controller page.
+        Scene {
+            name: "pad-only",
+            start: vec![play(0)],
+            cmds: pad_only(),
+            extras: &[],
+            keys: "",
+        },
+        Scene {
+            name: "pad-mixed",
+            start: vec![play(0)],
+            cmds: pad_mixed(),
+            extras: &[],
+            keys: "",
+        },
+        Scene {
+            name: "pad-menu",
+            start: vec![Step::MainMenu],
+            cmds: pad_menu(),
+            extras: &[],
+            keys: "",
+        },
         // Needs no game files: `host::launch` shows the first-run screen over a demo backend.
         Scene {
             name: FIRST_RUN,
@@ -702,6 +734,111 @@ fn play(entry: u8) -> Step {
         map: crate::campaign::map_name(entry),
         setup: None,
     }
+}
+
+/// A pad button pressed and let go a frame later.
+fn pad_press(b: PadButton) -> [Cmd; 3] {
+    [Cmd::PadDown(b), Cmd::Wait(1), Cmd::PadUp(b)]
+}
+
+/// The left stick pushed fully one way for `frames` frames, then let go.
+fn pad_push(x: f32, y: f32, frames: u32) -> [Cmd; 5] {
+    [
+        Cmd::PadAxis(PadAxis::LeftX, x),
+        Cmd::PadAxis(PadAxis::LeftY, y),
+        Cmd::Wait(frames),
+        Cmd::PadAxis(PadAxis::LeftX, 0.0),
+        Cmd::PadAxis(PadAxis::LeftY, 0.0),
+    ]
+}
+
+/// The pad alone (the mouse never moves from the middle): the stick takes the pointer to the first peasant, south
+/// selects it, the stick goes to open ground and east sends it there; west opens panel mode and the d-pad steps to
+/// the next button, east goes back; north jumps to the minimap and back; the right stick scrolls the map; R1 with the
+/// d-pad sets group 1; Start opens the game menu and closes it; Back pauses and resumes.
+fn pad_only() -> Vec<Cmd> {
+    use Cmd::*;
+    use PadButton as P;
+    let mut v = vec![PadAdded, Until(AppState::Game), Wait(5), Shot("game")];
+    v.extend(pad_push(1.0, 0.0, 10));
+    v.extend(pad_push(0.0, 1.0, 7));
+    v.extend([Wait(1), Shot("aimed")]);
+    v.extend(pad_press(P::South));
+    v.extend([Wait(4), Shot("selected")]);
+    v.extend(pad_push(1.0, 0.0, 8));
+    v.extend(pad_press(P::East));
+    v.extend([Wait(3), Shot("ordered")]);
+    v.extend(pad_press(P::West));
+    v.extend([Wait(2), Shot("panel")]);
+    v.extend(pad_press(P::Right));
+    v.extend([Wait(2), Shot("panel-step")]);
+    v.extend(pad_press(P::East));
+    v.extend([Wait(2), Shot("panel-back")]);
+    v.extend(pad_press(P::North));
+    v.extend([Wait(2), Shot("minimap")]);
+    v.extend(pad_press(P::North));
+    v.extend([Wait(2), Shot("minimap-back")]);
+    v.extend([PadDown(P::RightShoulder), Wait(1)]);
+    v.extend(pad_press(P::Up));
+    v.extend([PadUp(P::RightShoulder), Wait(2)]);
+    let right_x = crate::input::PadAxis::RightX;
+    v.extend([PadAxis(right_x, 1.0), Wait(40), PadAxis(right_x, 0.0)]);
+    v.extend([Wait(2), Shot("scrolled")]);
+    v.extend(pad_press(P::Up));
+    v.extend([Wait(3), Shot("group-recalled")]);
+    v.extend(pad_press(P::Start));
+    v.extend([Wait(5), Shot("menu")]);
+    v.extend(pad_press(P::Start));
+    v.extend([Wait(5), Shot("menu-closed")]);
+    v.extend(pad_press(P::Back));
+    v.extend([Wait(3), Shot("paused")]);
+    v.extend(pad_press(P::Back));
+    v.extend([Wait(3), Shot("resumed")]);
+    v
+}
+
+/// The pad with the mouse and a finger: the mouse selects a peasant, the stick moves the pointer on from where the
+/// mouse left it and east orders there; the mouse moves and has the pointer back; L1 held is Shift for a mouse click
+/// (add to the selection); a finger taps a peasant and the stick moves on from the finger.
+fn pad_mixed() -> Vec<Cmd> {
+    use Cmd::*;
+    use PadButton as P;
+    let mut v = vec![PadAdded, Until(AppState::Game), Wait(5)];
+    v.extend(click(430.0, 318.0));
+    v.extend([Wait(4), Shot("mouse-selected")]);
+    v.extend(pad_push(1.0, 0.0, 8));
+    v.extend([Wait(1), Shot("pad-moved")]);
+    v.extend(pad_press(P::East));
+    v.extend([Wait(3), Shot("pad-ordered")]);
+    v.extend([Move(300.0, 200.0), Wait(2), Shot("mouse-back")]);
+    v.extend([PadDown(P::LeftShoulder), Wait(1)]);
+    v.extend(click(512.0, 250.0));
+    v.extend([PadUp(P::LeftShoulder), Wait(4), Shot("shift-click")]);
+    v.extend(finger_tap(444.0, 318.0));
+    v.extend([Wait(4), Shot("finger")]);
+    v.extend(pad_push(0.0, -1.0, 6));
+    v.extend([Wait(1), Shot("pad-after-finger")]);
+    v
+}
+
+/// The pad in the menus: the stick takes the pointer to Settings... on the main menu and south opens it; the
+/// Controller tab shows because a pad is connected, and the stick and south open it; Back (Esc) leaves.
+fn pad_menu() -> Vec<Cmd> {
+    use Cmd::*;
+    use PadButton as P;
+    let mut v = vec![PadAdded, Until(AppState::MainMenu), Wait(25), Shot("menu")];
+    v.extend(pad_push(1.0, 0.0, 23));
+    v.extend(pad_push(0.0, 1.0, 21));
+    v.extend([Wait(1), Shot("aimed")]);
+    v.extend(pad_press(P::South));
+    v.extend([Wait(30), Shot("settings")]);
+    v.extend(pad_push(0.0, -1.0, 36));
+    v.extend(pad_push(-1.0, 0.0, 2));
+    v.extend(pad_press(P::South));
+    v.extend([Wait(5), Shot("controller")]);
+    v.extend(pad_press(P::Back));
+    v.extend([Wait(30), Shot("left")]);
+    v
 }
 
 /// A finger touching the screen at a screen pixel.
@@ -1955,6 +2092,18 @@ pub(crate) fn drive(c: &mut Core, window: Option<WindowGeom>) {
             Cmd::Wheel(y) => input.wheel(Wheel { y, lines: true }),
             Cmd::Drop(path) => input.dropped(path.into()),
             Cmd::TouchDevice => touch.touch_only = true,
+            Cmd::PadAdded => input.pad(PadEvent::Added(0)),
+            Cmd::PadDown(button) => input.pad(PadEvent::Button {
+                pad: 0,
+                button,
+                down: true,
+            }),
+            Cmd::PadUp(button) => input.pad(PadEvent::Button {
+                pad: 0,
+                button,
+                down: false,
+            }),
+            Cmd::PadAxis(axis, value) => input.pad(PadEvent::Axis { pad: 0, axis, value }),
             Cmd::Finger(id, phase, x, y) => {
                 let lb = w.letterbox();
                 let at = |p: f32, offset: u32| (offset as f32 + p * lb.scale) / w.factor;

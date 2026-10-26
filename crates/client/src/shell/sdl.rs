@@ -1,6 +1,6 @@
 //! A thin safe wrapper over the parts of SDL 3 the shell uses (`sdl3-sys`, the C API as published in SDL's headers;
 //! <https://wiki.libsdl.org/SDL3/>): the window, a renderer with one streaming texture, the system's events (including
-//! files dropped on the window), fingers on a touch screen, the system's folder and file dialogs, the mouse modes and
+//! files dropped on the window), fingers on a touch screen, gamepads (opened as they are plugged in), the system's folder and file dialogs, the mouse modes and
 //! an audio stream fed by a callback. On iOS it also holds the app's entry point, the lifecycle events and the
 //! document picker (SDL has no dialogs there; the picker is a small Objective-C shim in `platform/ios`). On Android
 //! it holds the entry `SDL_main` and the activity's picker callback (the picker is `TidewaterActivity.java`). Every
@@ -51,7 +51,9 @@ impl Sdl {
             // SAFETY: as above.
             unsafe { sys::SDL_SetHint(sys::SDL_HINT_ANDROID_TRAP_BACK_BUTTON, c"1".as_ptr()) };
         }
-        let mut flags = sys::SDL_INIT_VIDEO;
+        // Gamepads: SDL opens none by itself; `poll` opens each as it is plugged in (the ones already there come as
+        // plugged in at start-up).
+        let mut flags = sys::SDL_INIT_VIDEO | sys::SDL_INIT_GAMEPAD;
         if audio {
             flags |= sys::SDL_INIT_AUDIO;
         }
@@ -263,6 +265,10 @@ impl<'s> Window<'s> {
 
     /// Typed text comes in as [`Event::Text`]; on a touch screen this opens the soft keyboard.
     pub fn start_text_input(&self) {
+        // On the Vita this opens the modal system keyboard, which stops the game; it stays closed there.
+        if cfg!(target_os = "vita") {
+            return;
+        }
         // SAFETY: a live window.
         unsafe { sys::SDL_StartTextInput(self.raw) };
     }
@@ -851,7 +857,62 @@ pub enum Event {
     /// The system's on-screen keyboard was shown (`true`) or hidden (`false`), by us or by the user (its own hide key,
     /// Android's Back); SDL sends these on iOS and Android.
     ScreenKeyboard(bool),
+    /// A gamepad was plugged in (and opened) or taken away (and closed), by SDL's number for it.
+    PadAdded(u32),
+    PadRemoved(u32),
+    /// A gamepad button, by SDL's number (`SDL_GamepadButton`: 0 south, 1 east, 2 west, 3 north, ...).
+    PadButton {
+        pad: u32,
+        button: u8,
+        down: bool,
+    },
+    /// A gamepad axis, by SDL's number (`SDL_GamepadAxis`), from -32768 to 32767 (a trigger from 0).
+    PadAxis {
+        pad: u32,
+        axis: u8,
+        value: i16,
+    },
     Other,
+}
+
+/// The gamepads open, by SDL's number. SDL sends a pad's events only while it is open.
+struct Pads(Vec<(u32, *mut sys::SDL_Gamepad)>);
+
+impl Drop for Pads {
+    fn drop(&mut self) {
+        for (_, g) in self.0.drain(..) {
+            // SAFETY: each was opened by `SDL_OpenGamepad` and is closed once.
+            unsafe { sys::SDL_CloseGamepad(g) };
+        }
+    }
+}
+
+thread_local! {
+    /// Events are polled on the main thread only, so the open pads live there.
+    static PADS: std::cell::RefCell<Pads> = const { std::cell::RefCell::new(Pads(Vec::new())) };
+}
+
+/// Opens a pad SDL just found; `false` if it can't be opened (its events will not come).
+fn open_pad(id: u32) -> bool {
+    // SAFETY: SDL gives a null pointer for a pad it can't open; a valid one is kept until the pad goes.
+    let g = unsafe { sys::SDL_OpenGamepad(sys::SDL_JoystickID(id)) };
+    if g.is_null() {
+        return false;
+    }
+    PADS.with(|p| p.borrow_mut().0.push((id, g)));
+    true
+}
+
+fn close_pad(id: u32) {
+    PADS.with(|p| {
+        p.borrow_mut().0.retain(|&(n, g)| {
+            if n == id {
+                // SAFETY: opened by `open_pad`, closed once.
+                unsafe { sys::SDL_CloseGamepad(g) };
+            }
+            n != id
+        })
+    });
 }
 
 /// The next event waiting, if any.
@@ -918,6 +979,21 @@ pub fn poll() -> Option<Event> {
                     y: e.tfinger.y,
                 }
             }
+            sys::SDL_EVENT_GAMEPAD_ADDED if open_pad(e.gdevice.which.0) => Event::PadAdded(e.gdevice.which.0),
+            sys::SDL_EVENT_GAMEPAD_REMOVED => {
+                close_pad(e.gdevice.which.0);
+                Event::PadRemoved(e.gdevice.which.0)
+            }
+            sys::SDL_EVENT_GAMEPAD_BUTTON_DOWN | sys::SDL_EVENT_GAMEPAD_BUTTON_UP => Event::PadButton {
+                pad: e.gbutton.which.0,
+                button: e.gbutton.button,
+                down: e.gbutton.down,
+            },
+            sys::SDL_EVENT_GAMEPAD_AXIS_MOTION => Event::PadAxis {
+                pad: e.gaxis.which.0,
+                axis: e.gaxis.axis,
+                value: e.gaxis.value,
+            },
             sys::SDL_EVENT_SCREEN_KEYBOARD_SHOWN => Event::ScreenKeyboard(true),
             sys::SDL_EVENT_SCREEN_KEYBOARD_HIDDEN => Event::ScreenKeyboard(false),
             sys::SDL_EVENT_DROP_FILE if !e.drop.data.is_null() => Event::Drop(PathBuf::from(
@@ -1081,4 +1157,50 @@ pub extern "C" fn SDL_main(argc: c_int, argv: *mut *mut std::ffi::c_char) -> c_i
         args.push("tidewater".into());
     }
     crate::app::android_main(args)
+}
+
+/// Test aid: SDL with only its gamepads, a virtual gamepad plugged in that presses and lets go of south, pushes the left
+/// stick right and is taken away, and every event `poll` handed on meanwhile.
+#[cfg(test)]
+pub fn virtual_pad_events() -> Vec<Event> {
+    let mut out = Vec::new();
+    let drain = |out: &mut Vec<Event>| {
+        // SAFETY: SDL is up; this applies the virtual pad's new state and queues its events.
+        unsafe { sys::SDL_UpdateJoysticks() };
+        for _ in 0..4 {
+            // SAFETY: as above.
+            unsafe { sys::SDL_PumpEvents() };
+            while let Some(e) = poll() {
+                out.push(e);
+            }
+        }
+    };
+    // SAFETY: the test calls this once, before any other SDL call; everything is undone before it returns.
+    unsafe {
+        assert!(sys::SDL_Init(sys::SDL_INIT_GAMEPAD), "{}", error("SDL_Init"));
+        let desc = sys::SDL_VirtualJoystickDesc {
+            r#type: sys::SDL_JOYSTICK_TYPE_GAMEPAD.0 as u16,
+            naxes: 6,
+            nbuttons: 15,
+            button_mask: (1 << 15) - 1,
+            axis_mask: (1 << 6) - 1,
+            name: c"Tidewater test pad".as_ptr(),
+            ..Default::default()
+        };
+        let id = sys::SDL_AttachVirtualJoystick(&desc);
+        assert_ne!(id.0, 0, "{}", error("SDL_AttachVirtualJoystick"));
+        drain(&mut out);
+        let joystick = PADS.with(|p| p.borrow().0.first().map(|&(_, g)| sys::SDL_GetGamepadJoystick(g)));
+        let joystick = joystick.expect("poll opened the pad");
+        sys::SDL_SetJoystickVirtualButton(joystick, 0, true);
+        drain(&mut out);
+        sys::SDL_SetJoystickVirtualButton(joystick, 0, false);
+        drain(&mut out);
+        sys::SDL_SetJoystickVirtualAxis(joystick, 0, 32767);
+        drain(&mut out);
+        sys::SDL_DetachVirtualJoystick(id);
+        drain(&mut out);
+        sys::SDL_Quit();
+    }
+    out
 }

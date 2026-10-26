@@ -56,6 +56,8 @@ targets:
           - arm64
         # The app uses only the system's own encryption (none of its own), which TestFlight asks about.
         ITSAppUsesNonExemptEncryption: false
+        # SDL's controller support links CoreBluetooth (for Bluetooth LE controllers), which needs this text.
+        NSBluetoothAlwaysUsageDescription: "Tidewater uses Bluetooth to talk to game controllers."
     settings:
       base:
         TARGETED_DEVICE_FAMILY: "1,2"
@@ -83,6 +85,8 @@ targets:
       - sdk: CoreMotion.framework
       - sdk: CoreHaptics.framework
       - sdk: GameController.framework
+      # SDL's HIDAPI controller drivers (Steam Controller over Bluetooth LE); see docs/design/gamepad.md.
+      - sdk: CoreBluetooth.framework
       - sdk: OpenGLES.framework
       - sdk: UniformTypeIdentifiers.framework
 schemes:

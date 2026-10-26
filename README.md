@@ -7,7 +7,7 @@
 ## What you need
 
 - **Your own copy of the game.** Tidewater needs *Warcraft II: Battle.net Edition* (for example the GOG release, or the Battle.net Edition CD). No game data is included. The 1995 DOS edition is not supported.
-- **A desktop computer.** macOS, Windows and Linux builds are made and checked in CI. Day-to-day play testing has been on macOS. iOS and Android apps exist as early builds (see [iPhone and iPad](#iphone-and-ipad-early) and [Android](#android-early)).
+- **A desktop computer.** macOS, Windows and Linux builds are made and checked in CI. Day-to-day play testing has been on macOS. iOS, Android and PS Vita apps exist as early builds (see [iPhone and iPad](#iphone-and-ipad-early), [Android](#android-early) and [PS Vita](#ps-vita-early)).
 - **A download, or a build toolchain.** Prebuilt downloads are on the [releases page](../../releases/latest); otherwise [build from source](#build-from-source).
 
 ## Install
@@ -21,6 +21,7 @@ Download the file for your system from the [latest release](../../releases/lates
 | **Linux** (x64) | `tidewater-<version>-linux-x64.tar.gz` | Unpack it and run `tidewater`. The archive has a `tidewater.desktop` menu entry to adapt and a `README.txt`. |
 | **Android** (7.0 or newer, early) | `tidewater-<version>-android.apk` | Download it on the device and open it; Android asks to allow installs from that browser or file manager, so allow it for that app. It is not on Google Play and does not update itself: to update, download the newer APK and install it over the old one (your game files and settings stay). Then [get your game files onto it](#android-early). A release may lack the APK until its signing key is set up. |
 | **iPhone and iPad** (iOS 15 or newer, early) | `tidewater-<version>-ios.ipa` | Not signed and not on the App Store: sideload it with your own Apple ID using AltStore, SideStore or Sideloadly (a free Apple ID needs a re-sign every 7 days). Steps: [Install the unsigned IPA](docs/design/ios.md#install-the-unsigned-ipa). |
+| **PS Vita** (custom firmware, early) | `tidewater-<version>-vita.vpk` | Install it with VitaShell, then copy your game files to `ux0:data/Tidewater`. Not tried on a real Vita; its buttons and sticks use the controller support, untested there. Steps: [PS Vita](#ps-vita-early). |
 
 ## Import your game files
 
@@ -63,6 +64,7 @@ Tidewater looks for a newer release in the background when it starts (one reques
 | **macOS** | Replaces the app and restarts it. This needs the app in a folder you can write to, such as Applications: run from the disk image or straight from Downloads, the main menu says "Move Tidewater to Applications to enable updates." once, and Update now opens the release page. |
 | **Linux** | Opens the release page; download the new archive and unpack it over the old one. |
 | **Android, iOS** | Opens the release page; download the new APK or IPA and install it over the old one (your game files and saves stay). |
+| **PS Vita** | No check; install the newer VPK over the old one (your game files and saves stay). |
 
 Downloads are checked against the size the release lists; they are not signed. A failed check is ignored without a message, and development builds never check. Turn the check off with `update_check=0` in `settings.txt` or `--no-update-check` for one run. The main menu's version line and `tidewater --version` show the release you have. Branches, versioning and cutting a release: [docs/release.md](docs/release.md).
 
@@ -163,6 +165,42 @@ there is no Exit Program (the system closes apps), and Android's Back button is 
 finger (Alt+Shift: beside the first, Alt+Ctrl: a third). How it works, and the measurements it uses, is in
 [`docs/design/touch.md`](docs/design/touch.md).
 
+### Controllers
+
+A gamepad works on its own or together with the mouse and a touchscreen (the original has no controller support;
+like touch, the pad only presses the buttons and keys a player could, so the rules don't change). Plug one in or pair
+it any time; SDL knows the common pads (Xbox, PlayStation, Switch, the Steam Deck's own controls, the PS Vita's).
+
+**Default mapping.** The Xbox labels are shown; on a PlayStation pad A, B, X, Y are Cross, Circle, Square,
+Triangle and LB/RB/LT/RT are L1/R1/L2/R2. On a Switch pad the face buttons go by place, so B (bottom) clicks and A
+(right) right-clicks unless you turn on **Swap confirm and back**.
+
+| Xbox | PlayStation | In a game | In the menus |
+|---|---|---|---|
+| Left stick | Left stick | Move the pointer (small push: slow, full push: fast) | The same |
+| A | Cross | Left click; hold and move to drag a selection box | Left click |
+| B | Circle | Right click (move, attack, harvest) | Right click |
+| X | Square | Command buttons: the d-pad steps between them, A presses, B goes back | - |
+| Y | Triangle | The pointer to the minimap, and back | - |
+| LB | L1 | Shift, held (add to or remove from the selection) | The same |
+| RB | R1 | Ctrl, held (all of that type on screen) | The same |
+| LT | L2 | The pointer twice as fast, held | The same |
+| RT | R2 | Alt, held | The same |
+| D-pad | D-pad | Control groups 1 to 4 (up, right, down, left): recall, twice to centre; RB held: set; RT held: centre and recall | Arrow keys |
+| Right stick | Right stick | Scroll the map | Scroll lists |
+| Menu (☰) | Options | Game menu (F10); Esc while a menu is open | Enter |
+| View (⧉) | Create | Pause and resume | Esc |
+| Left stick press | L3 | The system keyboard, for chat and save names | The same |
+| Right stick press | R3 | Next idle worker (F6, with the `idle-worker` option) | - |
+
+The control groups are the Enhanced rules' (the default; Classic is opt-in and multiplayer only). The Vita has no
+L2, R2 or stick presses. The full table, by pad maker, is in [`docs/design/gamepad.md`](docs/design/gamepad.md).
+
+Whichever you used last has the pointer: the stick moves on from where the mouse or a finger left it, and moving the
+mouse takes it back. While a pad is connected the touch side bars hide. The Settings screen's Controller page (shown
+once a pad is connected) sets the pointer speed, acceleration, the dead zone, swapping South and East for Nintendo's
+layout, and the side bars. Details: [`docs/design/gamepad.md`](docs/design/gamepad.md).
+
 ### iPhone and iPad (early)
 
 Tidewater builds as an iOS app that runs in the Simulator (a real device needs your own signing; not tried on a device yet). It is the same program: touch is on from the start, the picture fits inside the safe area, and the game pauses when you leave the app. Details, signing and limits: [`docs/design/ios.md`](docs/design/ios.md).
@@ -194,6 +232,17 @@ adb shell am start -n dev.tidewater.client/.TidewaterActivity
 `--abi arm64-v8a` builds one ABI; `--libs-only` stops before Gradle. This debug APK is signed with Gradle's debug key. The releases' APK is signed with a release key once the maintainer has set it up (see [docs/release.md](docs/release.md#android-apk)); `platform/android/build.sh --release --version X.Y.Z` builds that kind.
 
 **Get the game files onto it.** Either copy a game folder (a GOG install, or the folder holding `War2Dat.mpq`) or a CD image (`.iso`, `.bin`/`.cue`, `.mdf`, `.nrg`) into the app's folder with a computer, for example `adb push Warcraft2 /sdcard/Android/data/dev.tidewater.client/files/` (open the app once first so the folder exists), then tap Scan again on the first-run screen; or tap "Choose game folder..." or "Choose CD image..." to pick from the phone's storage, which Tidewater copies into its cache first. **A GOG installer (`.exe`) does not work on Android**, because unpacking it needs `innoextract`: unpack it on a computer, or install the game and copy the folder.
+
+### PS Vita (early)
+
+Tidewater builds as a PS Vita app that starts in the Vita3K emulator (it is not yet tried on a Vita, and the buttons and sticks are not read yet). The build uses a pinned nightly Rust toolchain and the [Vita SDK](https://vitasdk.org). Details and limits: [`docs/design/vita.md`](docs/design/vita.md).
+
+```sh
+export VITASDK=/path/to/vitasdk
+platform/vita/build.sh             # platform/vita/build/tidewater.vpk
+```
+
+**Install it** by opening the VPK in VitaShell. **Get the game files onto it:** copy a game folder or a CD image into `ux0:data/Tidewater` (VitaShell's FTP or USB), then choose Scan again on the first-run screen.
 
 ### How faithful it is
 
@@ -279,6 +328,11 @@ The idle-worker key is F6; keys can be rebound on the Settings screen's Keys pag
 | `touch-buttons` | `--extra-touch-buttons VALUE` | medium, small, large | medium | Touch only. The size of the side bars' buttons: `medium` 9 mm, `small` 7 mm, `large` 11 mm (smaller when a bar is too narrow) |
 | `touch-swap-bars` | `--extra-touch-swap-bars` | on, off | off | Touch only. The control-group buttons go on the left and the menu, pause and modifier buttons on the right |
 | `touch-menu-tap` | `--extra-touch-menu-tap VALUE` | on, off | on | Touch only. A tap of three fingers at once opens the game menu (the Menu button always does) |
+| `pad-speed` | `--extra-pad-speed VALUE` | normal, slow, fast | normal | Controller only. How fast the left stick moves the pointer (holding the left trigger doubles it) |
+| `pad-acceleration` | `--extra-pad-acceleration VALUE` | on, off | on | Controller only. A small push on the left stick moves the pointer slowly for aiming and a full push fast; it also slows over units and buttons. `off`: the speed follows the push evenly |
+| `pad-dead-zone` | `--extra-pad-dead-zone VALUE` | normal, small, large | normal | Controller only. How far a stick moves before it counts: raise it if the pointer drifts on its own |
+| `pad-swap` | `--extra-pad-swap` | on, off | off | Controller only. The right face button clicks and the bottom one right-clicks, for pads with Nintendo's layout |
+| `pad-hide-touch` | `--extra-pad-hide-touch VALUE` | on, off | on | Controller and touch. While a controller is connected the touch screen's side bars hide (taps still work, and the shoulder buttons are Shift and Ctrl) |
 
 **C+L** marks an option that gives you an edge (health bars, smart attack-move, widescreen). In a game with other players the host chooses it in the lobby's "Extras" box (from the command line, `--lobby extras=health-bars=always/widescreen=16:9`; the host's own settings stand for the ones not named) and every player, observers included, plays with the host's choice, whatever their own setting. In single-player games and replays you get your own. **S** marks an option that changes the simulation (rally points, the production queue, shift-queued orders,
 the selection limit and the extra speed levels): the flag or the setting starts a single-player game with it, and in a
