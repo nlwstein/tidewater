@@ -51,7 +51,8 @@ The same shell and core as every other platform (see [client-core.md](client-cor
   toolchain in `rust-toolchain.toml`. SDL 3 is built from source with the Vita SDK's CMake toolchain, as for the other
   targets.
 - **Packaging.** The script turns the ELF into a `.velf`, then `eboot.bin`, writes `param.sfo` and packs the VPK with
-  the icon (`platform/vita/sce_sys/icon0.png`, drawn by `packaging/icon/render.sh`). The title id is `TDWT00001`.
+  the icon (`platform/vita/sce_sys/icon0.png`, drawn by `packaging/icon/render.sh` as an 8-bit indexed PNG: a real Vita
+  refuses any other LiveArea image at install with error 0x8010113D, which Vita3K does not check; a `twtool` test guards it). The title id is `TDWT00001`.
   `ATTRIBUTE2=12` asks for extended memory, which the 88 to 155 MB in-game footprint needs.
 - **C stub** (`platform/vita/stub.c`). It answers `getpwuid_r` with "no such user", which Rust's standard library
   asks for and the Vita's C library lacks. It also sets `sceUserMainThreadStackSize` to 8 MB: the default main stack
@@ -109,7 +110,8 @@ pixel, and the Vita's window is always the whole 960 by 544 screen, so it never 
 
 ## Limits
 
-- **Not tried on a Vita.** Memory, speed, touch and the extended-memory request are all untested on hardware.
+- **Not run on a Vita yet.** The first hardware install, of v0.9.0, failed with error 0x8010113D (the icon was a 32-bit
+  PNG; fixed). Memory, speed, touch and the extended-memory request are all untested on hardware.
 - **Controls tried only in Vita3K.** SDL's Vita backend presents the buttons and sticks as a gamepad, which the
   gamepad support reads like any other; which buttons the Vita lacks is in [gamepad.md](gamepad.md).
 - **Speed.** The compositor draws a 640 by 480 picture on the CPU each frame. We expect about 30 fps. Ideas, cheapest

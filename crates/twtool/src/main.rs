@@ -247,6 +247,9 @@ enum Cmd {
         /// Write the PNG without an alpha channel.
         #[arg(long)]
         opaque: bool,
+        /// Write an opaque PNG with a palette of at most 256 colours (the PS Vita's LiveArea images must be one).
+        #[arg(long)]
+        indexed: bool,
     },
     /// Compare our simulation cycle by cycle against a trace of the original game (`.jsonl` or `.jsonl.gz`, format
     /// `docs/specs/oracle/trace-format.md`) and report the first record that differs. The trace's header gives the
@@ -316,12 +319,14 @@ fn main() -> Result<()> {
             scale,
             shape,
             opaque,
+            indexed,
         } => icon::run(
             &icon::Spec {
                 layers: &layers,
                 scale,
                 shape,
                 opaque,
+                indexed,
             },
             &sizes,
             &out,

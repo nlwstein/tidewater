@@ -14,6 +14,10 @@
 //!   `ic10` (1024, 512@2x), `ic11` (32, 16@2x), `ic12` (64, 32@2x), `ic13` (256, 128@2x) and `ic14` (512, 256@2x)
 //!   hold PNG data. Source: the "Apple Icon Image format" article on Wikipedia, which lists the element types and the
 //!   compression; `iconutil -c iconset` reads the result back.
+//! - Indexed PNG (`--indexed`): colour type 3 with a `PLTE` chunk of at most 256 entries and 8-bit indices, no `tRNS`.
+//!   A real PS Vita refuses to install a VPK whose LiveArea images (`sce_sys/icon0.png`) are in any other form, with
+//!   error 0x8010113D (GitHub issue #2: our RGBA icon; the Vita homebrew community's LiveArea guidance asks for 8-bit
+//!   indexed PNGs). The palette comes from a median cut over the opaque image (see [`quantize`]).
 
 use std::path::Path;
 
@@ -38,6 +42,8 @@ pub struct Spec<'a> {
     pub scale: f32,
     pub shape: Shape,
     pub opaque: bool,
+    /// An opaque PNG with a palette of at most 256 colours (the Vita's LiveArea images).
+    pub indexed: bool,
 }
 
 /// The rounded square's side as a share of the image (macOS app icon grid: 824 of 1024).
@@ -68,7 +74,12 @@ pub fn run(spec: &Spec, sizes: &[u32], out: &Path) -> Result<()> {
             let [size] = sizes else {
                 bail!("a PNG takes exactly one --size");
             };
-            png_bytes(&draw(&trees, spec, *size), *size, spec.opaque)?
+            let rgba = draw(&trees, spec, *size);
+            if spec.indexed {
+                indexed_png_bytes(&rgba, *size)?
+            } else {
+                png_bytes(&rgba, *size, spec.opaque)?
+            }
         }
         "ico" => ico(&trees, spec, sizes)?,
         "icns" => icns(&trees, spec, sizes)?,
@@ -158,6 +169,79 @@ fn png_bytes(rgba: &[u8], px: u32, opaque: bool) -> Result<Vec<u8>> {
         }
     }
     Ok(out)
+}
+
+/// An opaque indexed PNG of the `px` × `px` RGBA image (alpha dropped), with a palette from [`quantize`].
+fn indexed_png_bytes(rgba: &[u8], px: u32) -> Result<Vec<u8>> {
+    let rgb: Vec<[u8; 3]> = rgba.chunks_exact(4).map(|p| [p[0], p[1], p[2]]).collect();
+    let (palette, indices) = quantize(&rgb, 256);
+    let mut out = Vec::new();
+    {
+        let mut enc = png::Encoder::new(&mut out, px, px);
+        enc.set_color(png::ColorType::Indexed);
+        enc.set_depth(png::BitDepth::Eight);
+        enc.set_palette(palette.concat());
+        enc.write_header()?.write_image_data(&indices)?;
+    }
+    Ok(out)
+}
+
+/// Picks at most `max` colours for `pixels` by median cut (split the box with the widest channel range at its median
+/// until there are `max` boxes; each box's colour is its mean) and maps every pixel to its nearest palette entry.
+/// Returns the palette and one index per pixel.
+fn quantize(pixels: &[[u8; 3]], max: usize) -> (Vec<[u8; 3]>, Vec<u8>) {
+    let mut unique = pixels.to_vec();
+    unique.sort_unstable();
+    unique.dedup();
+    let palette: Vec<[u8; 3]> = if unique.len() <= max {
+        unique
+    } else {
+        let mut boxes: Vec<Vec<[u8; 3]>> = vec![pixels.to_vec()];
+        while boxes.len() < max {
+            let range = |b: &[[u8; 3]], c: usize| {
+                let (lo, hi) = b.iter().fold((255, 0), |(lo, hi), p| (p[c].min(lo), p[c].max(hi)));
+                hi - lo
+            };
+            let Some((i, c, r)) = boxes
+                .iter()
+                .enumerate()
+                .flat_map(|(i, b)| (0..3).map(move |c| (i, c, range(b, c))))
+                .max_by_key(|&(_, _, r)| r)
+            else {
+                break;
+            };
+            if r == 0 {
+                break;
+            }
+            let mut b = boxes.swap_remove(i);
+            b.sort_unstable_by_key(|p| p[c]);
+            let upper = b.split_off(b.len() / 2);
+            boxes.push(b);
+            boxes.push(upper);
+        }
+        boxes
+            .iter()
+            .map(|b| {
+                let n = b.len() as u32;
+                let sum = b.iter().fold([0u32; 3], |s, p| {
+                    [s[0] + u32::from(p[0]), s[1] + u32::from(p[1]), s[2] + u32::from(p[2])]
+                });
+                sum.map(|v| ((v + n / 2) / n) as u8)
+            })
+            .collect()
+    };
+    let indices = pixels
+        .iter()
+        .map(|p| {
+            let dist = |q: &[u8; 3]| (0..3).map(|c| (i32::from(p[c]) - i32::from(q[c])).pow(2)).sum::<i32>();
+            palette
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, q)| dist(q))
+                .map_or(0, |(i, _)| i as u8)
+        })
+        .collect();
+    (palette, indices)
 }
 
 /// A 32-bit DIB for an ICO entry: header, BGRA rows bottom-up, then the 1-bit AND mask (all zero: the alpha decides).
@@ -307,6 +391,7 @@ mod tests {
             scale: 1.0,
             shape: Shape::Square,
             opaque: false,
+            indexed: false,
         };
         let sq = draw(&trees, &spec, 32);
         assert!(sq.chunks_exact(4).all(|p| p == [255, 0, 0, 255]));
@@ -325,6 +410,7 @@ mod tests {
             scale: 1.0,
             shape: Shape::Square,
             opaque: false,
+            indexed: false,
         };
         let ico_path = dir.path().join("a.ico");
         run(&spec, &[16, 256], &ico_path).unwrap();
@@ -359,11 +445,70 @@ mod tests {
             scale: 1.0,
             shape: Shape::Square,
             opaque: true,
+            indexed: false,
         };
         let out = dir.path().join("a.png");
         run(&spec, &[8], &out).unwrap();
         let dec = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(&out).unwrap()));
         let reader = dec.read_info().unwrap();
         assert_eq!(reader.info().color_type, png::ColorType::Rgb);
+    }
+
+    #[test]
+    fn indexed_png_has_a_palette_of_at_most_256_colours() {
+        let pixels: Vec<[u8; 3]> = (0..4096u32)
+            .map(|i| [(i % 64 * 4) as u8, (i / 64 * 4) as u8, 128])
+            .collect();
+        let (palette, indices) = quantize(&pixels, 256);
+        assert_eq!(palette.len(), 256);
+        assert_eq!(indices.len(), pixels.len());
+        let worst = pixels
+            .iter()
+            .zip(&indices)
+            .map(|(p, &i)| {
+                (0..3)
+                    .map(|c| i32::from(p[c]).abs_diff(i32::from(palette[usize::from(i)][c])))
+                    .max()
+                    .unwrap()
+            })
+            .max()
+            .unwrap();
+        assert!(worst <= 16, "every pixel is near its palette colour (worst {worst})");
+
+        let few = [[1, 2, 3], [9, 9, 9], [1, 2, 3]];
+        let (palette, indices) = quantize(&few, 256);
+        assert_eq!(palette, vec![[1, 2, 3], [9, 9, 9]], "few colours are kept exactly");
+        assert_eq!(indices, vec![0, 1, 0]);
+
+        let dir = tempfile::tempdir().unwrap();
+        let (layers, _) = spec_with(dir.path(), Shape::Square);
+        let spec = Spec {
+            layers: &layers,
+            scale: 1.0,
+            shape: Shape::Square,
+            opaque: false,
+            indexed: true,
+        };
+        let out = dir.path().join("a.png");
+        run(&spec, &[8], &out).unwrap();
+        let info = png_info(&out);
+        assert_eq!((info.0, info.1), (png::ColorType::Indexed, png::BitDepth::Eight));
+    }
+
+    fn png_info(path: &Path) -> (png::ColorType, png::BitDepth) {
+        let dec = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(path).unwrap()));
+        let reader = dec.read_info().unwrap();
+        (reader.info().color_type, reader.info().bit_depth)
+    }
+
+    /// The Vita refuses a VPK whose LiveArea images are not 8-bit indexed PNGs (error 0x8010113D at install).
+    #[test]
+    fn the_vita_icon_is_an_8_bit_indexed_png() {
+        let icon = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../platform/vita/sce_sys/icon0.png");
+        assert_eq!(
+            png_info(&icon),
+            (png::ColorType::Indexed, png::BitDepth::Eight),
+            "redraw it with packaging/icon/render.sh"
+        );
     }
 }

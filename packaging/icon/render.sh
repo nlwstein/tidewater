@@ -16,7 +16,7 @@
 #   packaging/windows/tidewater.ico                                              Windows: 16 to 256, rounded
 #   packaging/linux/tidewater.png                                                Linux: 256, rounded
 #   crates/client/assets/icon/window.png                                         the desktop window: 256, rounded
-#   platform/vita/sce_sys/icon0.png                                              Vita: 128, square (the Vita rounds it)
+#   platform/vita/sce_sys/icon0.png                                              Vita: 128, square (the Vita rounds it), 8-bit indexed
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -49,4 +49,4 @@ icon "$root/packaging/windows/tidewater.ico" --shape rounded --size 16 --size 20
     --size 48 --size 64 --size 256
 icon "$root/packaging/linux/tidewater.png" --shape rounded --size 256
 icon "$root/crates/client/assets/icon/window.png" --shape rounded --size 256
-icon "$root/platform/vita/sce_sys/icon0.png" --size 128
+icon "$root/platform/vita/sce_sys/icon0.png" --size 128 --indexed
