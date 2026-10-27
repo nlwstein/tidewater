@@ -221,8 +221,8 @@ pub(crate) fn map_bytes(store: &Store, install: &mut Install, map: &str) -> Resu
 /// This program's identity over the installation's data tables, and over the import manifest next to them when the
 /// installation was imported (`manifest.json`: its edition and archive hashes).
 pub fn identity(install: &mut Install, store: &Store) -> Result<Identity> {
-    let hash = data_hash(|n| Ok(install.read(n)?))?;
-    let id = Identity::ours(hash);
+    let hash = data_hash(|n| install.read(n))?;
+    let id = Identity::ours(hash).with_mods(install.mods_hash(), install.mod_tags());
     let manifest = store
         .install(tidewater_import::manifest::FILE_NAME)
         .ok()

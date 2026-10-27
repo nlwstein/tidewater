@@ -1393,6 +1393,7 @@ mod tests {
             },
             start_cheats: 0,
             local: 0,
+            data: None,
         };
         let replay = ReplaySession::new(Replay::new(header));
         let lobby = replay.lobby_client_extras();

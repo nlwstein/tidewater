@@ -7,8 +7,9 @@
 //! including the 404 an unpublished repository gives, is logged at debug level (shown with `TIDEWATER_DEBUG=1`) and otherwise ignored.
 //!
 //! "Update now" per platform: Windows downloads the Inno Setup installer and starts it silently; macOS downloads the
-//! disk image and swaps the running `.app` bundle; Linux has no download to install (the release is a tar.gz
-//! to unpack by hand), so it opens the release page. The page opens in the browser wherever the above doesn't apply too
+//! disk image and swaps the running `.app` bundle; Linux run from an AppImage (`$APPIMAGE` is set) downloads the
+//! new AppImage, writes it next to the running one and renames it over, then starts it. Linux run from the tar.gz has no
+//! download to install (it is unpacked by hand), so it opens the release page. The page opens in the browser wherever the above doesn't apply too
 //! (a bundle in a read-only place, a build run from a source tree). On the phones (the Android APK is sideloaded, so no
 //! store updates it) the check runs the same way and "Update now" hands the release page to the shell to open. A download's size is checked against the size the release lists; there is no other signing.
 //!
@@ -76,6 +77,8 @@ pub fn enabled(version: Option<&str>, no_flag: bool, setting: bool, scripted: bo
 pub enum Platform {
     Windows,
     MacOs,
+    /// Linux run from an AppImage: the file to replace is `$APPIMAGE`.
+    LinuxAppImage,
 }
 
 impl Platform {
@@ -85,19 +88,41 @@ impl Platform {
             Some(Self::Windows)
         } else if cfg!(target_os = "macos") {
             Some(Self::MacOs)
+        } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) && appimage_path().is_some() {
+            Some(Self::LinuxAppImage)
         } else {
             None
         }
     }
 
-    /// The end of the asset name this system installs from (`tidewater-<version>-<this>`). Linux has none:
-    /// its release is a tar.gz for the user to unpack, so Linux builds open the release page.
+    /// The end of the asset name this system installs from (`tidewater-<version>-<this>`). Linux run from the tar.gz
+    /// has none: it is unpacked by hand, so it opens the release page.
     fn suffix(self) -> &'static str {
         match self {
             Self::Windows => "-windows-x64-setup.exe",
             Self::MacOs => "-macos.dmg",
+            Self::LinuxAppImage => "-linux-x86_64.AppImage",
         }
     }
+}
+
+/// The AppImage file the program is running from, if it is: `$APPIMAGE` as the AppImage runtime sets it.
+fn appimage_path() -> Option<std::path::PathBuf> {
+    appimage_from(std::env::var_os("APPIMAGE").as_deref())
+}
+
+/// [`appimage_path`] for a given value of `$APPIMAGE`: only an absolute path to a named file counts, so a stray or
+/// relative value never makes the program write somewhere unexpected.
+fn appimage_from(value: Option<&std::ffi::OsStr>) -> Option<std::path::PathBuf> {
+    let path = std::path::Path::new(value.filter(|v| !v.is_empty())?);
+    (path.is_absolute() && path.file_name().is_some()).then(|| path.to_path_buf())
+}
+
+/// Where the new AppImage is written while it downloads: beside the file it replaces (so the final rename stays on one
+/// file system and is atomic), hidden, and never over a file that is there already.
+fn appimage_staging(target: &std::path::Path, pid: u32) -> Option<std::path::PathBuf> {
+    let name = target.file_name()?.to_string_lossy();
+    Some(target.with_file_name(format!(".{name}.update-{pid}")))
 }
 
 /// A release's download for this system.
@@ -408,6 +433,7 @@ mod net {
                 Ok(true)
             }
             Platform::MacOs => install_mac(&asset.url, asset.size, &asset.name),
+            Platform::LinuxAppImage => install_appimage(&asset.url, asset.size),
         }
     }
 
@@ -519,6 +545,65 @@ mod net {
         Ok(true)
     }
 
+    /// Downloads the new AppImage next to the running one, makes it executable, renames it over the running file and
+    /// starts it. Running from a folder we can't write to is `Ok(false)` (the release page opens instead).
+    #[cfg(unix)]
+    fn install_appimage(url: &str, size: u64) -> Result<bool> {
+        let Some(target) = super::appimage_path() else {
+            return Ok(false);
+        };
+        if !allowed(url) {
+            bail!("unexpected download address");
+        }
+        if !replace_appimage(&target, url, size)? {
+            return Ok(false);
+        }
+        // Start the new copy a moment after this one has ended, so the settings written at exit are the ones it reads.
+        std::process::Command::new("sh")
+            .args(["-c", "sleep 1; exec \"$0\""])
+            .arg(&target)
+            .spawn()
+            .context("starting the new version")?;
+        Ok(true)
+    }
+
+    /// The file steps of [`install_appimage`]: download beside `target`, check, make executable, rename over it.
+    /// `Ok(false)` if the folder can't be written to; on any failure the half-written file is removed.
+    #[cfg(unix)]
+    pub(super) fn replace_appimage(target: &Path, url: &str, size: u64) -> Result<bool> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let Some(staging) = super::appimage_staging(target, std::process::id()) else {
+            return Ok(false);
+        };
+        // Probe for write access with the file itself: the folder may be read-only (a mounted share).
+        if std::fs::File::create(&staging).is_err() {
+            return Ok(false);
+        }
+        let installed = (|| -> Result<()> {
+            fetch(url, size, &staging)?;
+            let mut magic = [0u8; 4];
+            std::fs::File::open(&staging)?.read_exact(&mut magic)?;
+            if &magic != b"\x7fELF" {
+                bail!("the download is not a program");
+            }
+            std::fs::set_permissions(&staging, std::fs::Permissions::from_mode(0o755))?;
+            // A rename over the running file is safe on Linux: the running copy keeps its old contents open.
+            std::fs::rename(&staging, target)?;
+            Ok(())
+        })();
+        if let Err(e) = installed {
+            let _ = std::fs::remove_file(&staging);
+            return Err(e);
+        }
+        Ok(true)
+    }
+
+    #[cfg(not(unix))]
+    fn install_appimage(_url: &str, _size: u64) -> Result<bool> {
+        Ok(false)
+    }
+
     /// Opens a web page in the browser (only ever the release page, whose address was checked).
     pub(super) fn open_page(url: &str) {
         if !allowed(url) {
@@ -556,7 +641,9 @@ mod tests {
         {"name": "tidewater-1.4.0-macos.dmg", "size": 22,
          "browser_download_url": "https://github.com/owner/tidewater/releases/download/v1.4.0/tidewater-1.4.0-macos.dmg"},
         {"name": "tidewater-1.4.0-windows-x64-setup.exe", "size": 33,
-         "browser_download_url": "https://github.com/owner/tidewater/releases/download/v1.4.0/tidewater-1.4.0-windows-x64-setup.exe"}
+         "browser_download_url": "https://github.com/owner/tidewater/releases/download/v1.4.0/tidewater-1.4.0-windows-x64-setup.exe"},
+        {"name": "tidewater-1.4.0-linux-x86_64.AppImage", "size": 44,
+         "browser_download_url": "https://github.com/owner/tidewater/releases/download/v1.4.0/tidewater-1.4.0-linux-x86_64.AppImage"}
       ]
     }"#;
 
@@ -582,10 +669,45 @@ mod tests {
         assert_eq!((a.name.as_str(), a.size), ("tidewater-1.4.0-windows-x64-setup.exe", 33));
         let m = parse_latest(SAMPLE, REPO, "1.3.0", Some(Platform::MacOs)).unwrap();
         assert_eq!(m.asset.unwrap().size, 22);
-        // Linux (and any other system) has no download to install: the release page is all there is.
+        let l = parse_latest(SAMPLE, REPO, "1.3.0", Some(Platform::LinuxAppImage)).unwrap();
+        let a = l.asset.unwrap();
+        assert_eq!((a.name.as_str(), a.size), ("tidewater-1.4.0-linux-x86_64.AppImage", 44));
+        // Linux from the tarball (and any other system) has no download to install: the release page is all there is.
         let none = parse_latest(SAMPLE, REPO, "1.3.0", None).unwrap();
         assert_eq!(none.asset, None);
         assert_eq!(none.page, "https://github.com/owner/tidewater/releases/tag/v1.4.0");
+    }
+
+    #[test]
+    fn the_appimage_is_found_only_from_a_usable_path() {
+        use std::ffi::OsStr;
+        use std::path::Path;
+        let ok = appimage_from(Some(OsStr::new("/opt/games/Tidewater.AppImage")));
+        assert_eq!(ok.as_deref(), Some(Path::new("/opt/games/Tidewater.AppImage")));
+        assert_eq!(appimage_from(None), None);
+        assert_eq!(appimage_from(Some(OsStr::new(""))), None);
+        assert_eq!(appimage_from(Some(OsStr::new("Tidewater.AppImage"))), None);
+        assert_eq!(appimage_from(Some(OsStr::new("/"))), None);
+    }
+
+    #[test]
+    fn the_new_appimage_is_staged_beside_the_old_one() {
+        use std::path::Path;
+        let target = Path::new("/opt/games/Tidewater.AppImage");
+        let staged = appimage_staging(target, 77).unwrap();
+        assert_eq!(staged.parent(), target.parent());
+        assert_eq!(staged.file_name().unwrap(), ".Tidewater.AppImage.update-77");
+        assert_ne!(staged, target);
+    }
+
+    #[test]
+    fn the_tarball_and_the_appimage_are_told_apart_by_name() {
+        // The AppImage asset is never picked for the tarball's listing, nor the tarball for the AppImage.
+        let only_tar = SAMPLE.replace("linux-x86_64.AppImage", "linux-x64.tar.gz");
+        let r = parse_latest(&only_tar, REPO, "1.3.0", Some(Platform::LinuxAppImage)).unwrap();
+        assert_eq!(r.asset, None);
+        let w = parse_latest(SAMPLE, REPO, "1.3.0", Some(Platform::Windows)).unwrap();
+        assert_eq!(w.asset.unwrap().size, 33);
     }
 
     #[test]
@@ -714,6 +836,57 @@ mod tests {
         let err = net::fetch(&format!("http://127.0.0.1:{port}/f"), 9, &dir.path().join("f"));
         assert!(err.is_err());
         server.join().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_appimage_update_replaces_the_file_atomically_and_only_with_a_program() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::os::unix::fs::PermissionsExt;
+        let mut elf = b"\x7fELF".to_vec();
+        elf.extend_from_slice(&[1u8; 100]);
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let url = format!("http://127.0.0.1:{port}/f");
+        let served = elf.clone();
+        let server = std::thread::spawn(move || {
+            // The first request gets a program, the second a page of text of the same size.
+            for i in 0..2 {
+                let (mut c, _) = listener.accept().unwrap();
+                let mut buf = [0u8; 2048];
+                let _ = c.read(&mut buf).unwrap();
+                let body = if i == 0 {
+                    served.clone()
+                } else {
+                    vec![b'x'; served.len()]
+                };
+                write!(
+                    c,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                )
+                .unwrap();
+                c.write_all(&body).unwrap();
+            }
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("Tidewater.AppImage");
+        std::fs::write(&target, b"old").unwrap();
+
+        assert!(net::replace_appimage(&target, &url, elf.len() as u64).unwrap());
+        assert_eq!(std::fs::read(&target).unwrap(), elf);
+        assert_eq!(std::fs::metadata(&target).unwrap().permissions().mode() & 0o777, 0o755);
+
+        // Not a program: refused, the installed file stays, and no staging file is left behind.
+        assert!(net::replace_appimage(&target, &url, elf.len() as u64).is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), elf);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        server.join().unwrap();
+
+        // A folder that can't be written to is not an error: the release page opens instead.
+        let missing = dir.path().join("nowhere").join("Tidewater.AppImage");
+        assert!(!net::replace_appimage(&missing, &url, 1).unwrap());
     }
 
     #[test]

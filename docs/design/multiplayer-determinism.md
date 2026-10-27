@@ -82,12 +82,21 @@ local player gave to `Session::submit`, then asks `Session::ready_commands(tick)
 
 ## The replay format
 
-A `.twrep` file (`crates/replay`) is: the magic `TWREPLAY`, a `u16` format version (`tidewater_replay::format::VERSION`, currently 6), the body length as `u64`, the
+A `.twrep` file (`crates/replay`) is: the magic `TWREPLAY`, a `u16` format version (`tidewater_replay::format::VERSION`, currently 7; version 6 files still load), the body length as `u64`, the
 body, and an FNV-64 checksum of everything before it (all little-endian). The body is a `postcard` encoding of
 `Replay`: a header (sim build, map file name, FNV-64 of the map bytes, seed, setup, lobby, rules, start cheats, local
-slot), the commands by cycle, the checkpoints (`state_hash` after every 100th cycle) and notes about out-of-band
+slot, game data identity), the commands by cycle, the checkpoints (`state_hash` after every 100th cycle) and notes about out-of-band
 events. A cycle is named by `World::tick` before the step. The map hash is only 64 bits, enough to catch the wrong file
 but not an attacker; a stronger hash is a version bump away.
+
+**Game data identity (format version 7).** The header also records which game data the game ran on
+(`tidewater_formats::identity::DataIdentity`): the FNV-64 data hash the multiplayer lobby compares
+(`unitdata.dat`, `upgrades.dat`, `script.bin` and `ai.bin`, each with its name and length), and the active mods (their names, versions and the hash of every file, `tidewater_formats::mods`, [mods.md](../mods.md)). Playing a replay compares the recorded identity with the installation's first (`Header::check_data`, run by
+`new_world`, `twtool replay` and `tidewater --replay`) and stops with "this replay was recorded with different game
+files" and which part differs: the data hash (other game version or edition: the tables are not the same) or the mod
+set. Without that check the only symptom is an opaque out-of-sync report at the first checkpoint. `twtool replay
+--force` and `tidewater --force-replay` play it anyway, with a warning. A version 6 file has no identity; it loads with
+the identity unknown, nothing is compared, and the checkpoints decide as before. New replays always record it.
 
 ## Finding a desync
 

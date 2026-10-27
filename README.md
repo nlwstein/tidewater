@@ -7,7 +7,7 @@
 ## What you need
 
 - **Your own copy of the game.** Tidewater needs *Warcraft II: Battle.net Edition* (for example the GOG release, or the Battle.net Edition CD). No game data is included. The 1995 DOS edition is not supported.
-- **A desktop computer.** macOS, Windows and Linux builds are made and checked in CI. Day-to-day play testing has been on macOS. iOS, Android and PS Vita apps exist as early builds (see [iPhone and iPad](#iphone-and-ipad-early), [Android](#android-early) and [PS Vita](#ps-vita-early)).
+- **A desktop computer.** macOS, Windows and Linux builds are made and checked in CI. Day-to-day play testing has been on macOS. The Linux AppImage is meant for the Steam Deck too (see [Steam Deck](#linux-and-the-steam-deck-being-tested)); that is being tested. iOS, Android and PS Vita apps exist as early builds (see [iPhone and iPad](#iphone-and-ipad-early), [Android](#android-early) and [PS Vita](#ps-vita-early)).
 - **A download, or a build toolchain.** Prebuilt downloads are on the [releases page](../../releases/latest); otherwise [build from source](#build-from-source).
 
 ## Install
@@ -18,10 +18,22 @@ Download the file for your system from the [latest release](../../releases/lates
 |---|---|---|
 | **Windows** (x64) | `tidewater-<version>-windows-x64-setup.exe` | Run it. It installs for your user only, so it needs no administrator, and adds a Start menu entry (and, if you tick it, a desktop shortcut) and an uninstaller. Uninstalling removes the program only: your imported game files and your saved games and settings (see [Where your files go](#import-your-game-files)) stay, so a reinstall picks up where you left off; delete those folders by hand if you want them gone. Windows may say "Windows protected your PC" because the installer is not signed: choose **More info**, then **Run anyway**. |
 | **macOS** (Apple silicon and Intel) | `tidewater-<version>-macos.dmg` | Open it and **drag Tidewater to Applications**, then eject the disk image. The app is not signed, so the first time **right-click it, choose Open and confirm**. If macOS offers no Open button, open System Settings, Privacy & Security and click **Open Anyway**. After that it opens normally. |
-| **Linux** (x64) | `tidewater-<version>-linux-x64.tar.gz` | Unpack it and run `tidewater`. The archive has a `tidewater.desktop` menu entry to adapt and a `README.txt`. |
+| **Linux and Steam Deck** (x86_64, being tested) | `tidewater-<version>-linux-x86_64.AppImage` | One file, nothing to install. Mark it executable (`chmod +x`, or right-click, Properties, Permissions, "Is executable") and run it. It updates itself in place. Steam Deck steps: [below](#linux-and-the-steam-deck-being-tested). |
+| **Linux** (x64, tarball) | `tidewater-<version>-linux-x64.tar.gz` | Unpack it and run `tidewater`. The archive has a `tidewater.desktop` menu entry to adapt and a `README.txt`. |
 | **Android** (7.0 or newer, early) | `tidewater-<version>-android.apk` | Download it on the device and open it; Android asks to allow installs from that browser or file manager, so allow it for that app. It is not on Google Play and does not update itself: to update, download the newer APK and install it over the old one (your game files and settings stay). Then [get your game files onto it](#android-early). A release may lack the APK until its signing key is set up. |
 | **iPhone and iPad** (iOS 15 or newer, early) | `tidewater-<version>-ios.ipa` | Not signed and not on the App Store: sideload it with your own Apple ID using AltStore, SideStore or Sideloadly (a free Apple ID needs a re-sign every 7 days). Steps: [Install the unsigned IPA](docs/design/ios.md#install-the-unsigned-ipa). |
 | **PS Vita** (custom firmware, early) | `tidewater-<version>-vita.vpk` | Install it with VitaShell, then copy your game files to `ux0:data/Tidewater`. Plays in the Vita3K emulator, buttons and sticks included; not tried on a real Vita. Steps: [PS Vita](#ps-vita-early). |
+
+### Linux and the Steam Deck (being tested)
+
+The AppImage is built for the Steam Deck (SteamOS) as well as other desktop Linux systems. On a Steam Deck (SteamOS, Desktop Mode) it starts, imports the game files, and its scripted test scenes draw and sound frame for frame the same as on macOS. **Playing it by hand, Game Mode and the Deck's controls are still being tested**, so expect rough edges and please report them. It needs glibc 2.35 or newer (Ubuntu 22.04, Debian 12, SteamOS 3).
+
+1. **Download** the `.AppImage` in Desktop Mode (hold the power button, choose Switch to Desktop) with the browser.
+2. **Mark it executable:** right-click the file, Properties, Permissions, tick "Is executable". Or in Konsole: `chmod +x tidewater-*.AppImage`.
+3. **Run it** by double-clicking, then [import your game files](#import-your-game-files). Put the file somewhere you can write to (your home folder), as updates replace it.
+4. **To play in Game Mode,** open Steam in Desktop Mode, choose Games, Add a Non-Steam Game to My Library, Browse, pick the AppImage, and add it. It then appears in your library. The Deck's controls work through Tidewater's gamepad support.
+
+It needs the system's FUSE 2 library to start, which SteamOS has. If your Linux system lacks it, run `tidewater-*.AppImage --appimage-extract-and-run` or install `libfuse2`.
 
 ## Import your game files
 
@@ -44,7 +56,7 @@ The first time you start Tidewater with no game files, it opens an import screen
 | Windows | Game files: `%LOCALAPPDATA%\Tidewater\data`. Saved games and settings: `%APPDATA%\Tidewater\data` (it roams with your account; the game files are too big to). |
 | Linux | `~/.local/share/tidewater` (or under `$XDG_DATA_HOME`) |
 
-Imported files go in `game`, saved games in `Save`, settings in `settings.txt`. `--data-dir <dir>` moves all of it.
+Imported files go in `game`, saved games in `Save`, settings in `settings.txt`, and mods in `mods` (see [Mods](#mods)). `--data-dir <dir>` moves all of it.
 
 **Import again.** Run `tidewater --reimport` to open the import screen even though files are already there, for example to use another copy of the game. A second import replaces the first, and Esc leaves it as it was. Removing the data directory (both of them on Windows) removes everything Tidewater stored.
 
@@ -62,7 +74,8 @@ Tidewater looks for a newer release in the background when it starts (one reques
 |---|---|
 | **Windows** | Downloads the installer, runs it silently and restarts the game. |
 | **macOS** | Replaces the app and restarts it. This needs the app in a folder you can write to, such as Applications: run from the disk image or straight from Downloads, the main menu says "Move Tidewater to Applications to enable updates." once, and Update now opens the release page. |
-| **Linux** | Opens the release page; download the new archive and unpack it over the old one. |
+| **Linux, AppImage** | Downloads the new AppImage, replaces the file you started (in place, so the folder must be writable) and restarts. |
+| **Linux, tarball** | Opens the release page; download the new archive and unpack it over the old one. |
 | **Android, iOS** | Opens the release page; download the new APK or IPA and install it over the old one (your game files and saves stay). |
 | **PS Vita** | No check; install the newer VPK over the old one (your game files and saves stay). |
 
@@ -274,6 +287,7 @@ original's main-menu buttons are unchanged.
 | **Interface** | Health bars, idle worker button, game clock, control group bar, smart attack-move, minimap ping, record replays, magnifying zoom. | At once or from the next game |
 | **Sound** | Unit voices, sound effects and music, 0 to 100 percent in steps of 10. | At once |
 | **Gameplay** | Rally points, production queue, selection limit, extra game speeds, shift-queued orders. These change the game rules: they apply to single-player games you start, and in a multiplayer game the host chooses them in the lobby. | From the next game |
+| **Mods** | Which mods to use and in what order. Shown only when the `mods` folder holds a mod. See [Mods](#mods). | The next start |
 | **Keys** | Every key you can rebind, in a scrolling list, with **Reset keys**. Desktop only (a phone has no keyboard to rebind). | At once |
 | **Touch** | How a drag, a tap, two fingers, the pinch and the holds work, the button size and which side bar is which. Shown where touch is in use. | At once |
 | **Controller** | Pointer speed, acceleration, dead zone, swapping confirm and back, and hiding the touch bars. Shown once a controller has been connected. | At once |
@@ -300,6 +314,10 @@ main menu. It is hidden when the game files are read in place with `--install`.
 folder** finds it) or give a flag. A flag lasts for one run: a choice you make on the screen replaces the run's flag for that
 option, and `--no-mouse-lock`, `--no-intro` and `--no-update-check` still win over the screen's rows for the run.
 `--goto settings` opens the screen directly.
+
+## Mods
+
+A mod is a folder of loose files that replaces some of the game's own files: pictures, sounds, maps and data tables. Put it in the `mods` folder of the data directory (next to `game`), turn it on in the **Mods** page of Settings (which appears once there is a mod), and restart. Everyone in a network game needs the same mods, and a replay records which mods it was recorded with. Mods are data only: no scripting and no new kinds of units yet, and desktop only for now. Enhanced rules are the default whatever the mods; Classic is an opt-in for multiplayer only. See [docs/mods.md](docs/mods.md) for the folder layout, `mod.toml`, the limits and the plans. `tidewater --mod NAME` turns a mod on for one run.
 
 ## Optional improvements
 
@@ -391,7 +409,8 @@ Run `tidewater --help` for the same list. The optional positional argument is a 
 | `--demo-fight` | Send every player's units against the nearest enemy within 16 tiles. |
 | `--demo-select <N>`, `--demo-type <N>`, `--demo-place <N>`, `--demo-site <X,Y>` | Preselect your first N units, narrow that to one unit type, start in building placement, and click a site. |
 | `--record-replay` | Record the game to a `.twrep` replay in the `replays` folder of your user data (see [Replays](#replays)). Off unless given. |
-| `--replay <FILE>` | Play a recorded game back, as the recording player saw it. Cannot be combined with `<MAP>`, `--record-replay` or the setup options. |
+| `--mod <NAME>` | Turn on the mod in this folder of `<data>/mods` for one run, after the ones Settings enables; repeat for several. See [Mods](#mods). |
+| `--replay <FILE>` | Play a recorded game back, as the recording player saw it. Cannot be combined with `<MAP>`, `--record-replay` or the setup options. `--force-replay` plays it even when it was recorded with other game files. |
 | `--host [PORT]`, `--join <ADDR>`, `--lobby <SPEC>`, `--observe`, `--name <NAME>` | Network play without the menus. See [Multiplayer](#multiplayer-early). |
 | `--script <NAME>`, `--script-out <DIR>`, `--headless` | Run a scripted scene for the frame snapshot test or the end-to-end network check (the `mp-*` scenes). `--script` and `--script-out` go together; `--headless` uses no window or GPU. |
 
@@ -421,7 +440,7 @@ Run `tidewater --help` for the same list. The optional positional argument is a 
 | `fell` | Fell trees in a field of one forest shape and print the resulting forest table rows. |
 | `sim` | Run a map headless: give orders, step some ticks, print where units ended up and the state hash. |
 | `snapshot` | Print fingerprints of the simulation over every campaign and custom map; the behaviour snapshot `tests/snapshot.rs` checks. |
-| `replay` | Play a `.twrep` replay headlessly, check every state-hash checkpoint and exit non-zero at the first mismatch. |
+| `replay` | Play a `.twrep` replay headlessly, check every state-hash checkpoint and exit non-zero at the first mismatch. Refuses a replay recorded with other game files or mods (`--force` plays it anyway; `--mods-dir` and `--mod` turn mods on). |
 | `desync-diff` | Play two replays (or one twice with `--local SLOT`) and print the first cycle whose state hash differs and the first differing field. |
 | `app-icon` | Draw the app icon as PNG, ICO and ICNS; `packaging/icon/render.sh` runs it for every platform. |
 | `oracle` | Compare the simulation cycle by cycle with a trace of the original game and report the first record that differs. |
@@ -449,7 +468,7 @@ The default port is 6112: TCP for the game, which the host opens on its firewall
 
 Run with `--record-replay` and the game writes a `.twrep` file to the `replays` folder of your user data (never into the game folder). It holds the map's name and hash, the seed, the setup and the rules, then the commands given each cycle and a state-hash check every 100 cycles. Recording is a flag rather than always on, so nothing is written unless you ask. The `auto-replay` option does the asking for you: `--extra-auto-replay always` (or the `[extras]` setting) writes every game's replay, single-player or network, and `menu` holds the recording in memory and adds a Save Replay button to the in-game menu.
 
-`tidewater --replay FILE` plays it back as the recording player saw it. Your input is ignored except the game menu, pause (Ctrl+P) and speed (`+` and `-`). If the game ever stops matching the recording, playback stops at the first check that fails and says which cycle. `twtool replay FILE` does the same check without a window, and `twtool desync-diff` finds the first cycle and field where two runs differ. A replay is refused on a map that is not the one it was recorded on. Games that were loaded from a save, or that used the `--demo-*` options, are not recorded. A network game records on each side with the same flag.
+`tidewater --replay FILE` plays it back as the recording player saw it. Your input is ignored except the game menu, pause (Ctrl+P) and speed (`+` and `-`). If the game ever stops matching the recording, playback stops at the first check that fails and says which cycle. `twtool replay FILE` does the same check without a window, and `twtool desync-diff` finds the first cycle and field where two runs differ. A replay is refused on a map that is not the one it was recorded on, and on game files that differ from the ones it was recorded with (another game version or edition): it says which part differs instead of going out of sync later. `tidewater --force-replay` and `twtool replay --force` play it anyway. Games that were loaded from a save, or that used the `--demo-*` options, are not recorded. A network game records on each side with the same flag.
 
 ## Roadmap
 

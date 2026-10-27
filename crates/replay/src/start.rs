@@ -8,6 +8,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use tidewater_formats::identity::DataIdentity;
 use tidewater_formats::install::Install;
 use tidewater_formats::pud::Pud;
 use tidewater_formats::tileset::Tileset;
@@ -69,6 +70,28 @@ impl Header {
             rules: rules_tag(world),
             start_cheats,
             local,
+            data: None,
+        }
+    }
+
+    /// This header with the game data the game ran on.
+    pub fn with_data(mut self, data: DataIdentity) -> Header {
+        self.data = Some(data);
+        self
+    }
+
+    /// [`with_data`](Self::with_data) for an identity that may be unknown.
+    pub fn with_data_opt(mut self, data: Option<DataIdentity>) -> Header {
+        self.data = data;
+        self
+    }
+
+    /// Refuses to play a replay on game data other than the data it was recorded on, naming what differs (the mods or
+    /// the tables). A replay that records no identity (format version 6) passes: its checkpoints will say.
+    pub fn check_data(&self, now: &DataIdentity) -> Result<(), ReplayError> {
+        match self.data.as_ref().and_then(|d| d.mismatch(now)) {
+            Some(m) => Err(ReplayError::Data(m)),
+            None => Ok(()),
         }
     }
 
@@ -131,8 +154,15 @@ pub fn build_world(install: &mut Install, pud: &Pud, start: &Start) -> Result<(W
 }
 
 /// The world a replay starts from, ready for its first recorded cycle: checks the map against the header, builds the
-/// world, runs the start-up cycles, starts the cheat flags and checks that the rules came out as recorded.
+/// world, runs the start-up cycles, starts the cheat flags and checks that the rules came out as recorded. A replay
+/// recorded on other game data is refused first, naming the difference ([`Header::check_data`]).
 pub fn new_world(install: &mut Install, map_bytes: &[u8], header: &Header) -> Result<World> {
+    header.check_data(&DataIdentity::of(install)?)?;
+    new_world_unchecked(install, map_bytes, header)
+}
+
+/// [`new_world`] without the game data comparison (`twtool replay --force`): the map and the rules are still checked.
+pub fn new_world_unchecked(install: &mut Install, map_bytes: &[u8], header: &Header) -> Result<World> {
     header.check_map(map_bytes)?;
     let pud = Pud::parse(map_bytes)?;
     let start = choose_start(&pud, &header.setup, header.seed, header.lobby.as_ref())?;

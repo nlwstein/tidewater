@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tidewater_formats::install::{Files, Folder, Install, InstallError};
+use tidewater_formats::mods::{ModInfo, ModSet};
 pub use tidewater_formats::mpq::ReadSeek;
 
 /// Why a saved game couldn't be written.
@@ -32,6 +33,16 @@ pub trait Storage: Send + Sync {
     /// The installation's scenarios: every `.pud` file in its `Maps` folder and the folders below it, as archive-style
     /// names (`Maps\Sub\Name.pud`), in no particular order. Nothing by default (a platform that can't list files).
     fn maps(&self) -> Vec<String> {
+        Vec::new()
+    }
+    /// The enabled mods (`tidewater_formats::mods`), lowest priority first: the installation reads their files before
+    /// its own (`open_install`). None by default.
+    fn mods(&self) -> Arc<ModSet> {
+        Arc::new(ModSet::none())
+    }
+    /// The mods that could be enabled: every valid folder in the mods folder. Nothing by default (a platform without
+    /// a mods folder).
+    fn available_mods(&self) -> Vec<ModInfo> {
         Vec::new()
     }
     /// The names of the files in the save folder, in the folder's own order.
@@ -93,7 +104,7 @@ impl Files for InstallFiles {
 
 /// Opens the installation `storage` gives.
 pub fn open_install(storage: &Arc<dyn Storage>) -> Result<Install, InstallError> {
-    Install::from_files(Box::new(InstallFiles(storage.clone())))
+    Ok(Install::from_files(Box::new(InstallFiles(storage.clone())))?.with_mods(storage.mods()))
 }
 
 /// The PS Vita's folder for everything: saved games, settings and the game files, and where the user copies the game
@@ -160,6 +171,9 @@ pub struct Desktop {
     replays: PathBuf,
     /// A wall clock that stands still (a scripted run's, so its games and saves come out the same every time).
     fixed_clock: Option<u64>,
+    /// The mods folder (`<data>/mods`) and the mods enabled from it.
+    mods_dir: Option<PathBuf>,
+    mods: Arc<ModSet>,
 }
 
 impl Desktop {
@@ -173,6 +187,8 @@ impl Desktop {
             replays: shots.join("replays"),
             shots,
             fixed_clock: None,
+            mods_dir: None,
+            mods: Arc::new(ModSet::none()),
         }
     }
 
@@ -180,6 +196,32 @@ impl Desktop {
     /// Print Screen pictures in `shots`.
     pub fn from_data_dir(data: &Path, saves: PathBuf, settings: PathBuf, shots: PathBuf) -> Self {
         Self::new(tidewater_import::game_dir(data), saves, settings, shots)
+    }
+
+    /// The `.pud` files in the installation's own `Maps` folder.
+    fn installed_maps(&self) -> Vec<String> {
+        let root = self.install.root();
+        // The folder is found in any letter case, as every installation file is.
+        let Some(dir) = std::fs::read_dir(root)
+            .ok()
+            .and_then(|d| {
+                d.flatten()
+                    .find(|e| e.path().is_dir() && e.file_name().to_string_lossy().eq_ignore_ascii_case("maps"))
+            })
+            .map(|e| e.path())
+        else {
+            return Vec::new();
+        };
+        let mut found = Vec::new();
+        list_puds(&dir, crate::customsetup::MAPS_DIR, &mut found);
+        found
+    }
+
+    /// The same storage with the mods folder `dir` and the mods `names` enabled from it, lowest priority first.
+    pub fn with_mods(mut self, dir: PathBuf, names: &[String]) -> Result<Self, tidewater_formats::mods::ModError> {
+        self.mods = Arc::new(ModSet::resolve(&dir, names)?);
+        self.mods_dir = Some(dir);
+        Ok(self)
     }
 
     /// The same storage with a wall clock that always reads `secs`.
@@ -203,21 +245,24 @@ impl Storage for Desktop {
         }
     }
 
+    fn mods(&self) -> Arc<ModSet> {
+        self.mods.clone()
+    }
+
+    fn available_mods(&self) -> Vec<ModInfo> {
+        self.mods_dir
+            .as_deref()
+            .map(tidewater_formats::mods::list)
+            .unwrap_or_default()
+    }
+
     fn maps(&self) -> Vec<String> {
-        let root = self.install.root();
-        // The folder is found in any letter case, as every installation file is.
-        let Some(dir) = std::fs::read_dir(root)
-            .ok()
-            .and_then(|d| {
-                d.flatten()
-                    .find(|e| e.path().is_dir() && e.file_name().to_string_lossy().eq_ignore_ascii_case("maps"))
-            })
-            .map(|e| e.path())
-        else {
-            return Vec::new();
-        };
-        let mut found = Vec::new();
-        list_puds(&dir, crate::customsetup::MAPS_DIR, &mut found);
+        let mut found = self.installed_maps();
+        for m in self.mods.maps() {
+            if !found.iter().any(|f| f.eq_ignore_ascii_case(&m)) {
+                found.push(m);
+            }
+        }
         found
     }
 
@@ -413,5 +458,49 @@ mod tests {
         let t = tempfile::tempdir().unwrap();
         assert_eq!(desktop(t.path()).with_fixed_clock(42).wall_clock_secs(), 42);
         assert!(desktop(t.path()).wall_clock_secs() > 1_000_000_000);
+    }
+
+    #[test]
+    fn mods_override_the_installation_and_add_maps_and_are_listed() {
+        let t = tempfile::tempdir().unwrap();
+        let install = t.path().join("install");
+        std::fs::create_dir_all(&install).unwrap();
+        let archive = tidewater_formats::testmpq::mpq_bytes(&[("rez\\unitdata.dat", b"from the game")]);
+        std::fs::write(install.join("War2Dat.mpq"), archive).unwrap();
+        std::fs::create_dir_all(install.join("Maps")).unwrap();
+        std::fs::write(install.join("Maps").join("Base.pud"), b"x").unwrap();
+        let mods = t.path().join("mods");
+        let m = mods.join("pack");
+        std::fs::create_dir_all(m.join("REZ")).unwrap();
+        std::fs::write(m.join("REZ").join("UnitData.dat"), b"from the mod").unwrap();
+        std::fs::create_dir_all(m.join("maps")).unwrap();
+        std::fs::write(m.join("maps").join("Extra.pud"), b"y").unwrap();
+        std::fs::write(m.join("mod.toml"), b"version = \"3\"\n").unwrap();
+        std::fs::create_dir_all(mods.join("unused")).unwrap();
+
+        // Without the mod enabled: the game's file, and the mod only listed.
+        let plain = desktop(t.path()).with_mods(mods.clone(), &[]).unwrap();
+        let plain: Arc<dyn Storage> = Arc::new(plain);
+        assert_eq!(
+            open_install(&plain).unwrap().read("rez\\unitdata.dat").unwrap(),
+            b"from the game"
+        );
+        let listed: Vec<String> = plain.available_mods().into_iter().map(|m| m.folder).collect();
+        assert_eq!(listed, ["pack", "unused"]);
+        assert_eq!(plain.maps(), ["Maps\\Base.pud"]);
+
+        let modded: Arc<dyn Storage> = Arc::new(
+            desktop(t.path())
+                .with_mods(mods.clone(), &["PACK".to_string()])
+                .unwrap(),
+        );
+        let mut inst = open_install(&modded).unwrap();
+        assert_eq!(inst.read("rez\\unitdata.dat").unwrap(), b"from the mod");
+        assert_eq!(inst.mod_tags()[0].version, "3");
+        let mut maps = modded.maps();
+        maps.sort();
+        assert_eq!(maps, ["Maps\\Base.pud", "Maps\\Extra.pud"]);
+        // A name that is not a plain folder name is refused.
+        assert!(desktop(t.path()).with_mods(mods, &["../x".to_string()]).is_err());
     }
 }

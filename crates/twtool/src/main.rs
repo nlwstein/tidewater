@@ -159,8 +159,8 @@ enum Cmd {
         out: Option<PathBuf>,
     },
     /// Play a recorded game (`.twrep`, from `tidewater --record-replay`) headlessly and check every state-hash
-    /// checkpoint. Exits non-zero, with the cycle, on the first mismatch, a damaged file, or a map that is not the one
-    /// the replay was recorded on.
+    /// checkpoint. Exits non-zero, with the cycle, on the first mismatch, a damaged file, a map that is not the one
+    /// the replay was recorded on, or game files or mods other than the ones it was recorded with (`--force` plays it anyway).
     Replay {
         #[arg(long)]
         install: PathBuf,
@@ -168,6 +168,17 @@ enum Cmd {
         /// The map file, if the replay's map is not a name inside the archives.
         #[arg(long)]
         map: Option<PathBuf>,
+        /// Play it even when it was recorded with other game files or mods than these (it will most likely go out of
+        /// sync; the check exists to say why).
+        #[arg(long)]
+        force: bool,
+        /// The mods folder, for a replay recorded with mods (`<data>/mods` of the game).
+        #[arg(long, requires = "mods")]
+        mods_dir: Option<PathBuf>,
+        /// A mod from `--mods-dir` to enable, in order (repeat for several); the replay's header names the ones it
+        /// was recorded with.
+        #[arg(long = "mod", value_name = "NAME", requires = "mods_dir")]
+        mods: Vec<String>,
     },
     /// Play two replays side by side (or one replay twice, with `--local` making another human the second run's
     /// local player) and print the first cycle where their state hashes differ, then the first differing piece of
@@ -471,7 +482,20 @@ fn main() -> Result<()> {
             let setup = setup.unwrap_or_else(|| tidewater_sim::setup::Setup::for_map(&map));
             sim(&install, &map, &setup, player, (x, y), ticks, seed, mode)?
         }
-        Cmd::Replay { install, file, map } => replays::replay(&file, &install, map.as_deref())?,
+        Cmd::Replay {
+            install,
+            file,
+            map,
+            force,
+            mods_dir,
+            mods,
+        } => replays::replay(
+            &file,
+            &install,
+            map.as_deref(),
+            force,
+            mods_dir.as_deref().map(|d| (d, &mods[..])),
+        )?,
         Cmd::DesyncDiff {
             install,
             a,

@@ -79,7 +79,8 @@ jobs:
   linux:
     needs: plan
     if: needs.plan.outputs.build == 'true'
-    runs-on: ubuntu-24.04
+    # The oldest Ubuntu runner: the tarball and the AppImage need the glibc they were built against (2.35) or newer.
+    runs-on: ubuntu-22.04
     env:
       TIDEWATER_VERSION: ${{ needs.plan.outputs.version }}
     steps:
@@ -100,10 +101,21 @@ jobs:
           mkdir -p dist
           packaging/linux/build-tarball.sh "$TIDEWATER_VERSION" target/release/tidewater \
             "dist/tidewater-${TIDEWATER_VERSION}-linux-x64.tar.gz"
+          # The AppImage (Steam Deck and other Linux systems), built on this runner so its glibc sets the oldest system it runs on.
+          packaging/linux/appimage.sh "$TIDEWATER_VERSION" target/release/tidewater \
+            "dist/tidewater-${TIDEWATER_VERSION}-linux-x86_64.AppImage"
+      - name: Check the AppImage starts
+        run: |
+          # No FUSE on the runner: the AppImage unpacks itself to run.
+          got=$(APPIMAGE_EXTRACT_AND_RUN=1 "dist/tidewater-${TIDEWATER_VERSION}-linux-x86_64.AppImage" --version)
+          echo "$got"
+          [ "$got" = "tidewater $TIDEWATER_VERSION" ] || { echo "expected 'tidewater $TIDEWATER_VERSION'"; exit 1; }
       - uses: actions/upload-artifact@v7
         with:
           name: linux
-          path: dist/*.tar.gz
+          path: |
+            dist/*.tar.gz
+            dist/*.AppImage
           if-no-files-found: error
 
   macos:
@@ -150,6 +162,15 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release --locked -p tidewater-client
+      - name: Check the program has its icon
+        shell: pwsh
+        run: |
+          # ExtractIconEx with index -1 counts the icons in the file's resources: 0 means the build script's icon is missing.
+          Add-Type -Namespace Win32 -Name Icons -MemberDefinition '[DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern uint ExtractIconEx(string file, int index, IntPtr[] large, IntPtr[] small, uint count);'
+          $exe = (Resolve-Path target\release\tidewater.exe).Path
+          $n = [Win32.Icons]::ExtractIconEx($exe, -1, $null, $null, 0)
+          Write-Host "icons in tidewater.exe: $n"
+          if ($n -lt 1) { throw "tidewater.exe has no icon resource" }
       - name: Build the installer
         run: |
           choco install innosetup --no-progress -y

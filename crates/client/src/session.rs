@@ -541,6 +541,7 @@ mod tests {
             },
             start_cheats: 0,
             local: 0,
+            data: None,
         }
     }
 

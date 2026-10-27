@@ -18,6 +18,7 @@ Design documents explain how the code is organised and why. They live in [`desig
 | [Tidewater on iOS](design/ios.md) | Building the iPhone and iPad app, signing through an xcconfig, importing game files on a phone, background pause and resume, and the limits. |
 | [Tidewater on Android](design/android.md) | Building the Android app, importing game files with the system picker, landscape and background pause, and the limits. |
 | [Tidewater on the PS Vita](design/vita.md) | Building and installing the Vita app, where the game files go, and the limits. |
+| [Mods](mods.md) | What a mod is, where the folder goes on each system, how to turn mods on, how multiplayer and replays treat them, the current limits and the plans. |
 | [Cutting a release](release.md) | The develop and main branches, how the version is chosen, what gets published (desktop, iOS, Android and Vita downloads), and how self-update works. |
 
 ## Specifications

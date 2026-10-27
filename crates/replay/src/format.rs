@@ -3,7 +3,7 @@
 //! ```text
 //! offset  size  field
 //! 0       8     magic, the bytes "TWREPLAY"
-//! 8       2     format version, little endian (1)
+//! 8       2     format version, little endian (7)
 //! 10      8     body length in bytes, little endian
 //! 18      n     body: a postcard-encoded [`Replay`]
 //! 18+n    8     FNV-1a 64 of every byte before it, little endian
@@ -20,13 +20,16 @@
 //! cycle 99.
 
 use serde::{Deserialize, Serialize};
+use tidewater_formats::identity::{DataIdentity, DataMismatch};
 use tidewater_sim::setup::{Lobby, Setup};
 use tidewater_sim::{Command, Extras};
 
 /// The first bytes of every replay file.
 pub const MAGIC: [u8; 8] = *b"TWREPLAY";
-/// The format version this build writes and reads. Version 2: the header's extras (`RulesTag::extras`) have fields. Version 3: the extras gain shift-queued orders. Version 4: the diplomacy command exists (`game/diplomacy.md`). Version 5: the Hold workers and Release workers commands exist (`orders/orders.md`) and the speed command carries the new speed. Version 6: the select command names unit slots, empty ones included, instead of unit ids (round 107, `ui/selecting-and-commanding.md`, "What the synced selection holds").
-pub const VERSION: u16 = 6;
+/// The format version this build writes and reads. Version 2: the header's extras (`RulesTag::extras`) have fields. Version 3: the extras gain shift-queued orders. Version 4: the diplomacy command exists (`game/diplomacy.md`). Version 5: the Hold workers and Release workers commands exist (`orders/orders.md`) and the speed command carries the new speed. Version 6: the select command names unit slots, empty ones included, instead of unit ids (round 107, `ui/selecting-and-commanding.md`, "What the synced selection holds"). Version 7: the header names the game data the game ran on ([`Header::data`]); version 6 files still load, with that identity unknown.
+pub const VERSION: u16 = 7;
+/// The oldest format version [`Replay::decode`] still reads.
+pub const OLDEST: u16 = 6;
 /// The file name extension.
 pub const EXTENSION: &str = "twrep";
 /// A checkpoint is recorded every this many cycles (and at the end of a finished game).
@@ -39,7 +42,7 @@ const FIXED: usize = 8 + 2 + 8;
 pub enum ReplayError {
     #[error("not a Tidewater replay (the file does not start with the replay marker)")]
     NotAReplay,
-    #[error("replay format version {found} is not supported (this build reads version {VERSION})")]
+    #[error("replay format version {found} is not supported (this build reads versions {OLDEST} to {VERSION})")]
     Version { found: u16 },
     #[error("the replay file is cut short ({found} bytes, {wanted} expected)")]
     Truncated { found: usize, wanted: usize },
@@ -51,6 +54,8 @@ pub enum ReplayError {
         "this replay was recorded on map {name}, but the map found there is a different file (hash {found:016x}, the replay wants {wanted:016x})"
     )]
     WrongMap { name: String, wanted: u64, found: u64 },
+    #[error("this replay was recorded with different game files: {0}")]
+    Data(DataMismatch),
     #[error(
         "the replay's rules ({recorded}) do not match the game it starts ({built}); is the data or the build different?"
     )]
@@ -103,6 +108,59 @@ pub struct Header {
     pub start_cheats: u32,
     /// The slot the recording player controlled. Playback shows the game as this player saw it.
     pub local: u8,
+    /// The game data the game ran on (`tidewater_formats::identity`): the tables' hash and the mods. `None` in a
+    /// replay of format version 6 or a recording made without it: unknown, so playback does not compare.
+    pub data: Option<DataIdentity>,
+}
+
+/// A header as format version 6 wrote it, before [`Header::data`].
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
+struct HeaderV6 {
+    sim_build: String,
+    map_name: String,
+    map_hash: u64,
+    seed: u32,
+    setup: Setup,
+    lobby: Option<Lobby>,
+    rules: RulesTag,
+    start_cheats: u32,
+    local: u8,
+}
+
+/// A replay as format version 6 wrote it.
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
+struct ReplayV6 {
+    header: HeaderV6,
+    commands: Vec<CycleCommands>,
+    checkpoints: Vec<Checkpoint>,
+    cycles: u32,
+    notes: Vec<String>,
+}
+
+impl From<ReplayV6> for Replay {
+    fn from(r: ReplayV6) -> Replay {
+        let h = r.header;
+        Replay {
+            header: Header {
+                sim_build: h.sim_build,
+                map_name: h.map_name,
+                map_hash: h.map_hash,
+                seed: h.seed,
+                setup: h.setup,
+                lobby: h.lobby,
+                rules: h.rules,
+                start_cheats: h.start_cheats,
+                local: h.local,
+                data: None,
+            },
+            commands: r.commands,
+            checkpoints: r.checkpoints,
+            cycles: r.cycles,
+            notes: r.notes,
+        }
+    }
 }
 
 /// The commands that ran at one cycle, in the order they ran.
@@ -218,7 +276,7 @@ impl Replay {
             });
         }
         let version = u16::from_le_bytes([bytes[8], bytes[9]]);
-        if version != VERSION {
+        if !(OLDEST..=VERSION).contains(&version) {
             return Err(ReplayError::Version { found: version });
         }
         let len = u64::from_le_bytes(bytes[10..18].try_into().expect("8 bytes"));
@@ -239,7 +297,13 @@ impl Replay {
         if fnv64(covered) != u64::from_le_bytes(sum.try_into().expect("8 bytes")) {
             return Err(ReplayError::Checksum);
         }
-        postcard::from_bytes(&covered[FIXED..]).map_err(|e| ReplayError::Decode(e.to_string()))
+        let body = &covered[FIXED..];
+        let decoded = if version == VERSION {
+            postcard::from_bytes(body)
+        } else {
+            postcard::from_bytes::<ReplayV6>(body).map(Replay::from)
+        };
+        decoded.map_err(|e| ReplayError::Decode(e.to_string()))
     }
 }
 
@@ -280,6 +344,11 @@ mod tests {
             },
             start_cheats: 0,
             local: 1,
+            data: Some(DataIdentity {
+                data_hash: 0xabcd,
+                mods_hash: 0,
+                mods: vec![],
+            }),
         }
     }
 
@@ -400,5 +469,85 @@ mod tests {
         let sum = fnv64(&b);
         b.extend_from_slice(&sum.to_le_bytes());
         assert!(matches!(Replay::decode(&b), Err(ReplayError::Decode(_))));
+    }
+
+    /// A file as format version 6 wrote it: the same body without the header's data identity.
+    fn version_6_file(r: &Replay) -> Vec<u8> {
+        let h = &r.header;
+        let old = ReplayV6 {
+            header: HeaderV6 {
+                sim_build: h.sim_build.clone(),
+                map_name: h.map_name.clone(),
+                map_hash: h.map_hash,
+                seed: h.seed,
+                setup: h.setup,
+                lobby: h.lobby.clone(),
+                rules: h.rules,
+                start_cheats: h.start_cheats,
+                local: h.local,
+            },
+            commands: r.commands.clone(),
+            checkpoints: r.checkpoints.clone(),
+            cycles: r.cycles,
+            notes: r.notes.clone(),
+        };
+        let body = postcard::to_stdvec(&old).unwrap();
+        let mut out = Vec::new();
+        out.extend_from_slice(&MAGIC);
+        out.extend_from_slice(&6u16.to_le_bytes());
+        out.extend_from_slice(&(body.len() as u64).to_le_bytes());
+        out.extend_from_slice(&body);
+        let sum = fnv64(&out);
+        out.extend_from_slice(&sum.to_le_bytes());
+        out
+    }
+
+    #[test]
+    fn a_version_6_replay_still_loads_with_unknown_data() {
+        let r = sample();
+        let back = Replay::decode(&version_6_file(&r)).unwrap();
+        assert_eq!(back.header.data, None);
+        let mut expected = r;
+        expected.header.data = None;
+        assert_eq!(back, expected);
+        // An unknown identity never refuses a replay.
+        let now = DataIdentity {
+            data_hash: 1,
+            mods_hash: 2,
+            mods: vec![],
+        };
+        assert_eq!(back.header.check_data(&now), Ok(()));
+    }
+
+    #[test]
+    fn versions_outside_the_supported_range_are_refused() {
+        let mut b = sample().encode();
+        b[8] = 5;
+        assert_eq!(Replay::decode(&b), Err(ReplayError::Version { found: 5 }));
+    }
+
+    #[test]
+    fn a_replay_is_refused_on_other_game_data_and_says_which() {
+        let h = header();
+        let same = h.data.clone().unwrap();
+        assert_eq!(h.check_data(&same), Ok(()));
+        let tables = DataIdentity {
+            data_hash: 1,
+            ..same.clone()
+        };
+        let err = h.check_data(&tables).unwrap_err();
+        assert!(err.to_string().contains("different game files"), "{err}");
+        assert!(err.to_string().contains("data hash differs"), "{err}");
+        let modded = DataIdentity {
+            data_hash: 1,
+            mods_hash: 77,
+            mods: vec![tidewater_formats::identity::ModTag {
+                name: "pack".into(),
+                version: "2".into(),
+            }],
+        };
+        let err = h.check_data(&modded).unwrap_err();
+        assert!(err.to_string().contains("mod set differs"), "{err}");
+        assert!(err.to_string().contains("pack 2"), "{err}");
     }
 }

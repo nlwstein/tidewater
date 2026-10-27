@@ -2461,6 +2461,7 @@ pub(crate) fn enter_settings(c: &mut Core) {
         opts,
         touch,
         pad,
+        store,
         ..
     } = c;
     // Like the Custom Scenario screen: the menu picture is loaded again and fades in, with no version line.
@@ -2473,9 +2474,11 @@ pub(crate) fn enter_settings(c: &mut Core) {
         devices: crate::controls::Devices::of(pad, touch),
         updates: crate::update::build_version().is_some(),
         data: game_files_line(opts),
+        mods: store.available_mods(),
         in_game: false,
     };
-    let values = settings::Values::new(&stored.0, extras, opts.no_intro, opts.no_update_check);
+    let mut values = settings::Values::new(&stored.0, extras, opts.no_intro, opts.no_update_check);
+    values.show_mods(&stored.0.mods, &env.mods);
     let ui = settings::Screen::new(env, values);
     // The panel and the heading are part of the picture and fade in with it; the controls come with the end of the fade.
     let look = customsetup::Look {

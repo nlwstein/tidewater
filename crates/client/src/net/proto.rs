@@ -8,6 +8,7 @@
 use std::io::{self, Read, Write};
 
 use serde::{Deserialize, Serialize};
+pub use tidewater_formats::identity::{ModTag, data_hash, describe_mods, fnv_extend};
 use tidewater_sim::Command;
 use tidewater_sim::setup::{Lobby, Setup};
 
@@ -22,8 +23,9 @@ use tidewater_sim::setup::{Lobby, Setup};
 /// new speed instead of a direction. Version 7: the lobby also carries the host's choice of the client-only options that
 /// give an edge (**C+L**, `crate::extras`: [`GameConfig::client_extras`], [`LobbyView::client_extras`]), so every
 /// player runs the game with the same ones, and the menu lobby has places for observers ([`LobbyView::observers`],
-/// [`LobbyView::watchers`]).
-pub const PROTOCOL: u16 = 8;
+/// [`LobbyView::watchers`]). Version 9: the identity also carries the enabled mods ([`Identity::mods`],
+/// [`Identity::mods_hash`]).
+pub const PROTOCOL: u16 = 9;
 
 /// The first slot number of an observer: a game has eight player slots (0 to 7), so observers are 8, 9 and so on. An
 /// observer's slot only names its connection; it is in no turn and no state.
@@ -61,6 +63,11 @@ pub struct Identity {
     /// A hash of the manifest's archive entries (their names and SHA-256), 0 when there is no manifest. Compared only
     /// when both sides have one: two copies of the same game files hash alike.
     pub archives: u64,
+    /// A hash of every file of the enabled mods, 0 with no mod (`tidewater_formats::mods::ModSet::hash`). Compared
+    /// always: mods change what the game loads even where the tables stay the same (pictures, sounds, maps).
+    pub mods_hash: u64,
+    /// The enabled mods, in order, to name them to the player in a refusal. Not compared on their own: the hash decides.
+    pub mods: Vec<ModTag>,
 }
 
 impl Identity {
@@ -72,7 +79,16 @@ impl Identity {
             data_hash,
             edition: String::new(),
             archives: 0,
+            mods_hash: 0,
+            mods: Vec::new(),
         }
+    }
+
+    /// This identity with the enabled mods: their hash and names.
+    pub fn with_mods(mut self, mods_hash: u64, mods: Vec<ModTag>) -> Identity {
+        self.mods_hash = mods_hash;
+        self.mods = mods;
+        self
     }
 
     /// This identity with what the import manifest says: the edition, and `archives` (see
@@ -101,8 +117,15 @@ impl Identity {
                 self.sim_build, other.sim_build
             ));
         }
+        if self.mods_hash != other.mods_hash {
+            return Some(format!(
+                "different game data or mods (host mods: {}; joiner mods: {})",
+                describe_mods(&self.mods),
+                describe_mods(&other.mods)
+            ));
+        }
         if self.data_hash != other.data_hash {
-            return Some("different game data (the unit, upgrade, script or AI tables differ)".to_string());
+            return Some("different game data or mods (the unit, upgrade, script or AI tables differ)".to_string());
         }
         if !self.edition.is_empty() && !other.edition.is_empty() && self.edition != other.edition {
             return Some(format!(
@@ -397,33 +420,6 @@ pub fn manifest_archives<'a>(entries: impl Iterator<Item = (&'a str, &'a str)>) 
     h | 1
 }
 
-/// FNV-1a 64 of `bytes`, folded into `h`: the data identity hashes the tables one after another.
-pub fn fnv_extend(mut h: u64, bytes: &[u8]) -> u64 {
-    for &b in bytes {
-        h ^= u64::from(b);
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    h
-}
-
-/// The hash of the data tables the simulation reads, through `read` (an installation's `read`). Each table's name and
-/// length go in with its bytes, so moving bytes between tables changes the hash.
-pub fn data_hash(mut read: impl FnMut(&str) -> anyhow::Result<Vec<u8>>) -> anyhow::Result<u64> {
-    let mut h = 0xcbf2_9ce4_8422_2325u64;
-    for name in [
-        "rez\\unitdata.dat",
-        "rez\\upgrades.dat",
-        "rez\\script.bin",
-        "rez\\ai.bin",
-    ] {
-        let bytes = read(name)?;
-        h = fnv_extend(h, name.as_bytes());
-        h = fnv_extend(h, &(bytes.len() as u64).to_le_bytes());
-        h = fnv_extend(h, &bytes);
-    }
-    Ok(h)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -624,6 +620,33 @@ mod tests {
     }
 
     #[test]
+    fn different_mods_are_refused_with_both_sides_mods_named() {
+        let tag = |n: &str, v: &str| ModTag {
+            name: n.into(),
+            version: v.into(),
+        };
+        let host = Identity::ours(1).with_mods(77, vec![tag("big-axes", "1.2"), tag("sounds", "")]);
+        assert_eq!(host.mismatch(&host.clone()), None);
+        // Same tables, no mods on the joiner's side: the mods are what differs, and the refusal lists them.
+        let why = host.mismatch(&Identity::ours(1)).expect("refused");
+        assert!(why.contains("game data or mods"), "{why}");
+        assert!(
+            why.contains("big-axes 1.2, sounds") && why.contains("joiner mods: none"),
+            "{why}"
+        );
+        // The same names with other content (another hash) are refused too.
+        let other = Identity::ours(1).with_mods(78, host.mods.clone());
+        assert!(host.mismatch(&other).is_some());
+        // Mods or not, different tables are still different game data.
+        assert!(
+            Identity::ours(1)
+                .mismatch(&Identity::ours(2))
+                .unwrap()
+                .contains("game data or mods")
+        );
+    }
+
+    #[test]
     fn the_import_manifest_names_the_edition_and_the_archives_when_both_sides_have_one() {
         let ours = Identity::ours(1).with_manifest("Battle.net Edition", 7);
         let no_manifest = Identity::ours(1);
@@ -686,22 +709,5 @@ mod tests {
             read_hello(&mut other.as_slice()).unwrap(),
             HelloRead::NotHello
         ));
-    }
-
-    #[test]
-    fn the_data_hash_covers_names_and_lengths() {
-        let tables = |a: &[u8], b: &[u8]| {
-            data_hash(|n| {
-                Ok(match n {
-                    "rez\\unitdata.dat" => a.to_vec(),
-                    "rez\\upgrades.dat" => b.to_vec(),
-                    _ => vec![1],
-                })
-            })
-            .unwrap()
-        };
-        assert_eq!(tables(b"ab", b"c"), tables(b"ab", b"c"));
-        assert_ne!(tables(b"ab", b"c"), tables(b"a", b"bc"), "moving a byte between tables");
-        assert_ne!(tables(b"ab", b"c"), tables(b"ab", b"d"));
     }
 }

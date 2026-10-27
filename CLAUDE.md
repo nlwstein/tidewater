@@ -19,7 +19,7 @@ before writing any code, and follow it exactly.
 
 - `crates/formats`: readers for the installation's data (MPQ archives, PUD maps, tilesets, GRP sprites (compressed
   and uncompressed), PCX images, raw interface pictures and cursors (`raw`), fonts (`fnt`), Smacker video (`smk`), string tables, unit and
-  upgrade tables, map restrictions).
+  upgrade tables, map restrictions; `identity`: the game-data fingerprint the lobby and the replay header share; `mods`: mod folders, `mod.toml` and the ordered override list `Install` reads first; `docs/mods.md`).
 - `crates/twtool`: inspection CLI (`import-check`, `disc-list`, `mpq-*`, `render-map`, `render-grp`, `render-pcx`, `smk-frame`, `smk-audio`, `grp-sheet`, `units`, `upgrades`,
   `strings`, `scripts`, `script-ops`, `fell`, `sim`, `oracle`: compare the simulation with a per-cycle trace of the original game, `snapshot`: the
   whole-map behaviour snapshot `tests/snapshot.rs` checks, `replay`: verify a `.twrep`, `desync-diff`: find the first differing cycle and field, `app-icon`: draw the app icon

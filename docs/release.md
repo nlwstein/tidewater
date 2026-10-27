@@ -57,17 +57,18 @@ publishes from `main`.
 |---|---|
 | `tidewater-X.Y.Z-windows-x64-setup.exe` | Inno Setup, `packaging/windows/tidewater.iss`. Per-user install (no administrator), Start menu entry, optional desktop shortcut, uninstaller. The uninstaller removes only the program; imported game files, saves and settings live in the user's data folders and stay. |
 | `tidewater-X.Y.Z-macos.dmg` | `packaging/macos/build-dmg.sh`: `Tidewater.app` (ad-hoc signed), an Applications link and a "Read me first" note. The binary joins the arm64 and x86_64 builds with `lipo`. |
-| `tidewater-X.Y.Z-linux-x64.tar.gz` | `packaging/linux/build-tarball.sh`: the program, `tidewater.desktop` and its icon `tidewater.png`, `README.txt`, the licence files. No AppImage yet. |
+| `tidewater-X.Y.Z-linux-x64.tar.gz` | `packaging/linux/build-tarball.sh`: the program, `tidewater.desktop` and its icon `tidewater.png`, `README.txt`, the licence files. |
+| `tidewater-X.Y.Z-linux-x86_64.AppImage` | `packaging/linux/appimage.sh`: the same program in an AppImage (one executable file) for the Steam Deck and other Linux systems. SDL is linked into the program, so nothing is bundled but the program, `tidewater.desktop`, the icon and the licences; the script refuses a binary that needs any library besides the C library family. glibc is never bundled: the AppImage (and the tarball) is built on the `linux` job's `ubuntu-22.04` runner, the oldest GitHub offers, whose glibc (2.35) is the oldest system it runs on: Ubuntu 22.04, Debian 12, SteamOS 3 and newer. `appimagetool` and the AppImage runtime are downloaded at the versions pinned in the script and checked against their SHA-256 (bump the version and both sums together). The job runs the file with `--version` before uploading; CI builds it on every run as the `tidewater-linux-appimage` artifact. |
 | `tidewater-X.Y.Z-android.apk` | `platform/android/build.sh --release`: one APK with arm64-v8a and x86_64 libraries, signed with the release keystore (see [Android APK](#android-apk)). Left out, with a note in the run summary, while the signing secrets are not set. |
 | `tidewater-X.Y.Z-ios.ipa` | `platform/ios/package-ipa.sh --version X.Y.Z` after `platform/ios/build.sh device`: the Release device build (arm64), **unsigned**, with `Payload/Tidewater.app` at the root. The version goes into `CFBundleShortVersionString` and `CFBundleVersion`. The bundle id stays `dev.tidewater.client`; whoever sideloads it re-signs with their own Apple ID ([docs/design/ios.md](design/ios.md#install-the-unsigned-ipa)). CI builds the same file on every run as the `tidewater-ios-unsigned` artifact. |
 | `tidewater-X.Y.Z-vita.vpk` | `platform/vita/build.sh --version X.Y.Z`: the PS Vita app with a pinned nightly and the Vita SDK ([docs/design/vita.md](design/vita.md)). The version shows as `XX.YY` (major and minor). CI builds the same file on every run as the `tidewater-vita` artifact. |
 | `SHA256SUMS` | `sha256sum` of every file above (`publish` sums `tidewater-*`, which covers the APK and the IPA). |
 
-The asset names are what the update check looks for (`update.rs`), so keep them. The check picks the Windows and macOS files by their endings (`-windows-x64-setup.exe`, `-macos.dmg`); the phones only open the release page, so the `-ios.ipa` name is never matched. Only the program is packaged, never game
+The asset names are what the update check looks for (`update.rs`), so keep them. The check picks the Windows, macOS and AppImage files by their endings (`-windows-x64-setup.exe`, `-macos.dmg`, `-linux-x86_64.AppImage`; the AppImage only when the program runs from one, which the AppImage runtime shows by setting `$APPIMAGE`); the phones only open the release page, so the `-ios.ipa` name is never matched. Only the program is packaged, never game
 data.
 
 To try the packaging on your own machine: `packaging/macos/build-dmg.sh 0.0.0-test target/release/tidewater out.dmg`, or
-`packaging/linux/build-tarball.sh 0.0.0-test target/release/tidewater out.tar.gz`.
+`packaging/linux/build-tarball.sh 0.0.0-test target/release/tidewater out.tar.gz`, or (Linux x86_64 only) `packaging/linux/appimage.sh 0.0.0-test target/release/tidewater out.AppImage`. On a system without FUSE, run the result with `APPIMAGE_EXTRACT_AND_RUN=1`.
 
 ### The app icon
 
@@ -82,8 +83,8 @@ commit what it writes.
 | Android | `platform/android/app/src/main/res/mipmap-*/` | The manifest's `android:icon`. |
 | macOS | `packaging/macos/tidewater.icns` | `build-dmg.sh` puts it in `Tidewater.app/Contents/Resources`; `Info.plist` names it. |
 | Vita | `platform/vita/sce_sys/icon0.png` | 8-bit indexed (`--indexed`), as the Vita's installer requires; `build.sh` packs it into the VPK. |
-| Windows | `packaging/windows/tidewater.ico` | `tidewater.iss`: the installer's own icon, the shortcuts and the Apps list. `tidewater.exe` has no icon resource yet, so Explorer shows a plain program icon for the file itself. |
-| Linux | `packaging/linux/tidewater.png` | The tarball, for `tidewater.desktop`'s `Icon=` line. |
+| Windows | `packaging/windows/tidewater.ico` | `tidewater.iss`: the installer's own icon, the shortcuts and the Apps list. `crates/client/build.rs` also embeds it in `tidewater.exe` (the `winresource` crate, Windows targets only, a no-op everywhere else) so Explorer and the taskbar show it for the file itself; the `windows` job fails if the built program has no icon. |
+| Linux | `packaging/linux/tidewater.png` | The tarball, for `tidewater.desktop`'s `Icon=` line, and the AppImage (its `.DirIcon`, the file manager's thumbnail, and the icon the desktop menu shows). |
 | The window | `crates/client/assets/icon/window.png` | The desktop shell sets it with `SDL_SetWindowIcon` (title bar, taskbar, Dock). |
 
 ## Unsigned: what players see
@@ -95,7 +96,7 @@ what to do.
 |---|---|---|
 | **macOS** | Gatekeeper refuses the first launch. The ad-hoc signature only lets Apple-silicon Macs run the code. | Right-click, Open, Open. On newer macOS: System Settings, Privacy & Security, Open Anyway. Or `xattr -dr com.apple.quarantine Tidewater.app`. |
 | **Windows** | SmartScreen says "Windows protected your PC" for the setup program. | More info, Run anyway. |
-| **Linux** | None. | `chmod +x` if the file manager dropped the executable bit. |
+| **Linux** | None. | `chmod +x` if the file manager dropped the executable bit (always needed for a downloaded AppImage; on the Steam Deck, add it to Steam as a non-Steam game to play from Game Mode). |
 | **iOS** | The file is not signed, so iOS refuses to install it as it is. | Sideload with AltStore, SideStore or Sideloadly, which sign it with your own Apple ID. |
 | **Android** | The system asks to allow installs from the app that opened the APK (the browser or file manager). | Allow it for that app, then install. Not on Google Play. |
 | **PS Vita** | Stock firmware refuses an app Sony did not sign. | Install the VPK with VitaShell on a Vita with custom firmware ([vita.md](design/vita.md#install)). |
@@ -156,7 +157,8 @@ size must match the release's listed size; there is no other signature check.
 |---|---|
 | Windows | Downloads the setup program and runs it silently (`/SILENT`); it starts the game again. |
 | macOS | Downloads the disk image, copies `Tidewater.app` beside the running one, swaps them, relaunches. Files fetched this way carry no quarantine mark, so the new copy opens without the Gatekeeper prompt. |
-| Linux | Opens the release page. |
+| Linux, AppImage | Run from an AppImage (`$APPIMAGE` is set, an absolute path), it downloads the `-linux-x86_64.AppImage` asset next to that file as a hidden `.<name>.update-<pid>` file, checks the size and that it is an ELF program, makes it executable, renames it over the running file (atomic, and safe while the old copy runs), and starts it a second later. A folder it can't write to opens the release page instead. |
+| Linux, tarball | Opens the release page. |
 | Android | Opens the release page (the shell's `SDL_OpenURL`); players download the newer APK and install it over the old one, which keeps their data because the signature matches. The check runs as on the desktop. |
 | iOS | Opens the release page; players sideload the newer IPA over the old one ([ios.md](design/ios.md#install-the-unsigned-ipa)). |
 | PS Vita | No check (`update.rs` skips it); players install the newer VPK by hand. |

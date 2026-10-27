@@ -150,6 +150,24 @@ pub fn first_run_core(
     core
 }
 
+/// The mods to enable: the names the settings give that exist (one that is gone is reported and skipped, so a deleted
+/// folder cannot keep the game from starting), then the names `--mod` gave (one that is wrong is an error).
+fn enabled_mods(dir: &std::path::Path, stored: &[String], flags: &[String]) -> Result<Vec<String>> {
+    use tidewater_formats::mods::ModSet;
+    let mut names = Vec::new();
+    for n in stored {
+        match ModSet::resolve(dir, std::slice::from_ref(n)) {
+            Ok(_) => names.push(n.clone()),
+            Err(e) => eprintln!("settings: [mods] {e}; skipped"),
+        }
+    }
+    for n in flags {
+        ModSet::resolve(dir, std::slice::from_ref(n)).with_context(|| format!("--mod {n}"))?;
+        names.push(n.clone());
+    }
+    Ok(names)
+}
+
 /// Starts the program from its command line: the desktop's storage (`storage::Desktop`), the installation, the
 /// flow's first steps (a map, a `--goto` screen, a scripted scene or the startup sequence) and the stored settings.
 /// A scripted run gets its own save folder and settings, a wall clock that stands still and no mouse lock.
@@ -215,6 +233,16 @@ pub fn launch(mut args: Args) -> Result<Launch> {
     if scripted.is_some() {
         desktop = desktop.with_fixed_clock(script::WALL_SECS);
     }
+    // The mods: those the settings enable, then the `--mod` flags. A scripted run (the frame snapshot) has none, so what
+    // a developer has in the mods folder cannot change its pictures.
+    if scripted.is_none() {
+        let mods_dir = tidewater_formats::mods::dir(&data);
+        let mod_names = enabled_mods(&mods_dir, &prefs::Prefs::load(&desktop).mods, &args.mods)?;
+        desktop = desktop.with_mods(mods_dir, &mod_names)?;
+        for m in storage::Storage::mods(&desktop).roots() {
+            println!("mod: {}", m.info.tag());
+        }
+    }
     let store = Store(Arc::new(desktop));
     if first_run_scene {
         let (scene, out) = scripted.expect("the first-run scene is scripted");
@@ -245,6 +273,22 @@ pub fn launch(mut args: Args) -> Result<Launch> {
                     replay.header.sim_build,
                     tidewater_replay::format::sim_build()
                 );
+            }
+            // A recording made on other game files or mods is refused with the reason, rather than going out of sync at
+            // the first checkpoint; `--force-replay` plays it anyway.
+            if let Some(recorded) = &replay.header.data {
+                let now = tidewater_formats::identity::DataIdentity::of(&mut front.install)?;
+                if let Some(m) = recorded.mismatch(&now) {
+                    if args.force_replay {
+                        eprintln!(
+                            "warning: this replay was recorded with different game files: {m}; playing it anyway"
+                        );
+                    } else {
+                        anyhow::bail!(
+                            "this replay was recorded with different game files: {m} (--force-replay plays it anyway, but expect it to go out of sync)"
+                        );
+                    }
+                }
             }
             Some(replay)
         }

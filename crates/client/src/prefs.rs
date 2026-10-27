@@ -78,6 +78,9 @@ pub struct Prefs {
     pub keys: crate::keymap::KeyMap,
     /// What was wrong in the `[keys]` section when it was read, one message a line.
     pub key_problems: Vec<String>,
+    /// The enabled mods' folder names in the `[mods]` section, one a line, lowest priority first (a later mod overrides
+    /// an earlier one; `tidewater_formats::mods`, `docs/mods.md`). They apply from the next start.
+    pub mods: Vec<String>,
     /// The multiplayer menus' memory (`mpmenu`): the player's name, the connection method last used (0 Battle.net,
     /// 1 Direct IP, 2 Local Network), the Direct IP Mode (Answer rather than Call), the address and the port.
     pub mp_name: String,
@@ -118,6 +121,7 @@ impl Default for Prefs {
             extras: crate::extras::ClientExtras::default(),
             keys: crate::keymap::KeyMap::default(),
             key_problems: Vec::new(),
+            mods: Vec::new(),
             mp_name: String::new(),
             mp_method: 1,
             mp_answer: false,
@@ -172,12 +176,21 @@ impl Prefs {
         // A `[extras]` or `[keys]` line starts that section, which goes to the next section line or the file's end.
         let mut in_extras = false;
         let mut in_keys = false;
+        let mut in_mods = false;
         let mut key_lines: Vec<String> = Vec::new();
         for line in s.lines() {
             let line = line.trim();
             if line.starts_with('[') {
                 in_extras = line == "[extras]";
                 in_keys = line == "[keys]";
+                in_mods = line == "[mods]";
+                continue;
+            }
+            if in_mods {
+                // A name per line; a comment, an empty line or a name that could not be a mod's is skipped.
+                if tidewater_formats::mods::valid_name(line) && !p.mods.iter().any(|m| m.eq_ignore_ascii_case(line)) {
+                    p.mods.push(line.to_string());
+                }
                 continue;
             }
             if in_keys {
@@ -247,8 +260,16 @@ impl Prefs {
             u8::from(self.fullscreen),
             u8::from(self.mouse_lock),
             self.extras.section_text(),
-            self.keys.section_text()
+            self.mods_section_text() + &self.keys.section_text()
         )
+    }
+
+    /// The `[mods]` section, empty when no mod is enabled.
+    fn mods_section_text(&self) -> String {
+        if self.mods.is_empty() {
+            return String::new();
+        }
+        format!("[mods]\n{}\n", self.mods.join("\n"))
     }
 
     pub fn has(&self, bit: u32) -> bool {
@@ -429,6 +450,26 @@ mod tests {
         assert!(text.starts_with("game_speed=5\n"));
         assert!(text.contains("\n[extras]\n"));
         assert!(Prefs::from_text(&text).extras.is_default());
+    }
+
+    #[test]
+    fn the_mods_section_keeps_the_order_and_drops_what_cannot_be_a_mod() {
+        assert!(Prefs::default().mods.is_empty());
+        assert!(!Prefs::default().to_text().contains("[mods]"));
+        let p = Prefs::from_text(
+            "game_speed=7\n[extras]\nhealth-bars=always\n[mods]\nbase pack\n# off\n..\n../x\nsounds\nBase Pack\n[keys]\npause=ctrl+u\n",
+        );
+        assert_eq!(
+            p.mods,
+            ["base pack", "sounds"],
+            "order kept, a repeat and path names dropped"
+        );
+        assert_eq!(p.extras.health_bars(), crate::extras::HealthBars::Always);
+        assert!(!p.keys.is_default(), "a section after [mods] still reads");
+        assert_eq!(p.game_speed, 7);
+        let again = Prefs::from_text(&p.to_text());
+        assert_eq!(again, p);
+        assert!(p.to_text().contains("[mods]\nbase pack\nsounds\n"));
     }
 
     #[test]

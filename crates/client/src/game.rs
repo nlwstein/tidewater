@@ -471,6 +471,12 @@ fn load_game(c: &mut Core, map: &str, setup: Option<tidewater_sim::setup::Setup>
         };
     }
     start_world(&mut scene.world, resume.as_deref(), wall, c.flow.cheat_used)?;
+    // The game data a recording notes in its header (`tidewater_formats::identity`).
+    let data_id = if record {
+        Some(tidewater_formats::identity::DataIdentity::of(&mut install)?)
+    } else {
+        None
+    };
     // Where the game's commands come from: a recording, the player (recorded if asked), or the player.
     let session: Box<dyn Session> = match replay {
         Some(r) => {
@@ -500,7 +506,8 @@ fn load_game(c: &mut Core, map: &str, setup: Option<tidewater_sim::setup::Setup>
                     &scene.world,
                     0,
                     scene.human,
-                );
+                )
+                .with_data_opt(data_id.clone());
                 // Each side's file carries its own slot in the name, so two machines sharing a folder keep both.
                 let name = format!("p{}-{}", n.me + 1, Recorder::file_name(&args.map, wall));
                 let recorder = Recorder::new(header, store.clone(), name);
@@ -543,7 +550,8 @@ fn load_game(c: &mut Core, map: &str, setup: Option<tidewater_sim::setup::Setup>
                     &scene.world,
                     start_cheats,
                     scene.human,
-                );
+                )
+                .with_data_opt(data_id.clone());
                 let name = Recorder::file_name(&args.map, wall);
                 let recorder = Recorder::new(header, store.clone(), name);
                 Box::new(LocalSession::recording(if held { recorder.held() } else { recorder }))

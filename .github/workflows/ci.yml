@@ -51,7 +51,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-24.04
+          # The oldest Ubuntu runner, so the Linux build's glibc floor (2.35) stays low (docs/release.md).
+          - os: ubuntu-22.04
             name: linux
             exe: ""
           - os: macos-26
@@ -77,6 +78,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build the client and twtool
         run: cargo build --locked --release -p tidewater-client -p twtool
+      - name: Pack and check the AppImage
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist
+          packaging/linux/appimage.sh 0.0.0-ci target/release/tidewater dist/tidewater-linux-x86_64.AppImage
+          # No FUSE on the runner: the AppImage unpacks itself to run.
+          APPIMAGE_EXTRACT_AND_RUN=1 dist/tidewater-linux-x86_64.AppImage --version
+      - uses: actions/upload-artifact@v7
+        if: runner.os == 'Linux'
+        with:
+          name: tidewater-linux-appimage
+          path: dist/tidewater-linux-x86_64.AppImage
+          if-no-files-found: error
       - uses: actions/upload-artifact@v7
         with:
           name: tidewater-${{ matrix.name }}

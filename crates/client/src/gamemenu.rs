@@ -1469,6 +1469,7 @@ pub(crate) fn run_settings(c: &mut Core) {
     let pad = c.pad.seen;
     let devices = crate::controls::Devices::of(&c.pad, &c.touch);
     let data = frontend::game_files_line(&c.opts);
+    let mods = c.store.available_mods();
     let Core {
         commands,
         menu: Some(m),
@@ -1493,9 +1494,11 @@ pub(crate) fn run_settings(c: &mut Core) {
             devices,
             updates: crate::update::build_version().is_some(),
             data,
+            mods,
             in_game: true,
         };
         let mut values = settings::Values::new(&stored.0, extras, no_intro, no_check);
+        values.show_mods(&stored.0.mods, &env.mods);
         values.show_game_rules(&sim.world.rules.extras);
         m.settings = Some(InGameSettings {
             ui: settings::Screen::new(env, values),

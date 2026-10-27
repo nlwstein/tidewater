@@ -39,6 +39,14 @@ pub struct Args {
     /// by that name in the current folder.
     #[arg(long, value_name = "FILE", conflicts_with_all = ["map", "record_replay", "setup"])]
     pub replay: Option<PathBuf>,
+    /// Development: enable the mod in this folder name of `<data>/mods` for this run, after the mods the settings enable
+    /// (repeat for several; later ones override earlier ones). `docs/mods.md`.
+    #[arg(long = "mod", value_name = "NAME")]
+    pub mods: Vec<String>,
+    /// Play a `--replay` even when it was recorded with other game files or mods than these (it will most likely go out
+    /// of sync; without this the game stops and says what differs).
+    #[arg(long, requires = "replay")]
+    pub force_replay: bool,
     /// Host a network game of MAP on PORT (6112 without one) and wait for the players of `--lobby` to `--join` it
     /// (`docs/design/network.md`). Write the map before it (`tidewater MAP --host`): a bare `--host` followed by a
     /// word would read the word as a port. The lobby's other choices are `--setup` and `--lobby`.

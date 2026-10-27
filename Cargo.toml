@@ -27,6 +27,8 @@ resvg = { version = "0.49", default-features = false }
 # SDL 3 built from its source (CMake and a C compiler; no SDL install needed) and linked in, with only the audio,
 # video, render, dialog and gamepad (joystick, HIDAPI) subsystems. Only the shell (`crates/client/src/shell/`) uses it.
 sdl3-sys = { version = "0.7", features = ["build-from-source", "link-static", "no-default-subsystems", "sdl-audio", "sdl-render", "sdl-dialog", "sdl-joystick", "sdl-hidapi"] }
+# The Windows icon resource in tidewater.exe (`crates/client/build.rs`); a no-op on every other target.
+winresource = "0.1"
 tidewater-client = { path = "crates/client" }
 tidewater-formats = { path = "crates/formats" }
 tidewater-import = { path = "crates/import" }

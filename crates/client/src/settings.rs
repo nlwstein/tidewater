@@ -24,17 +24,23 @@
 //! gives a row its original key back and **Reset keys** every row. The screen edits the `[keys]` section's lines; OK
 //! stores them in the prefs' keys, so `settings.txt` holds them as the file's own text.
 //!
+//! **The Mods page** (`tidewater_formats::mods`, `docs/mods.md`) is shown only when the mods folder holds a mod
+//! (`Env::mods`). It has six rows, [`Item::ModSlot`], each choosing one mod or None from the folders there are; a later
+//! row overrides an earlier one. OK writes the rows' mods, in order and once each, as the `[mods]` section; they apply
+//! from the next start, because the installation is opened once at start-up.
+//!
 //! **What OK does.** The screen edits a [`Values`] copy. OK ([`commit`]) writes only the rows that were changed (or
 //! reset by Defaults) into the settings file's view and into the run's live values, so an option the command line set
 //! for this run stays as it is unless the player chose it here; the frontend then writes `settings.txt` at once.
 //! Cancel and Esc throw the copy away.
 //!
-//! Choices of ours where nothing else says (the screen is ours): the tabs are the pages (five; the Keys page is not on a phone), the selected one drawn
+//! Choices of ours where nothing else says (the screen is ours): the tabs are the pages (five; the Keys page is not on a phone, and the Mods page shows only with a mod to enable), the selected one drawn
 //! pressed; Up and Down move the focus like Tab and Shift+Tab; Left and Right change the focused drop-down's value, move
 //! between the tabs, or between OK, Cancel and Defaults; PageUp and PageDown change page; O, C and D press the
 //! bottom buttons.
 
 use tidewater_formats::fnt::Font;
+use tidewater_formats::mods::ModInfo;
 
 use crate::audio::Audio;
 use crate::customsetup::{DropState, Input, Look};
@@ -58,17 +64,20 @@ pub(crate) enum Page {
     Interface,
     Sound,
     Gameplay,
+    /// The mods to enable (`tidewater_formats::mods`); shown only when there is a mod to enable.
+    Mods,
     Keys,
     Touch,
     Controller,
 }
 
 impl Page {
-    pub(crate) const ALL: [Page; 7] = [
+    pub(crate) const ALL: [Page; 8] = [
         Page::General,
         Page::Interface,
         Page::Sound,
         Page::Gameplay,
+        Page::Mods,
         Page::Keys,
         Page::Touch,
         Page::Controller,
@@ -80,6 +89,7 @@ impl Page {
             Page::Interface => "Interface",
             Page::Sound => "Sound",
             Page::Gameplay => "Gameplay",
+            Page::Mods => "Mods",
             Page::Keys => "Keys",
             Page::Touch => "Touch",
             Page::Controller => "Controller",
@@ -96,6 +106,10 @@ impl Page {
                 "How loud the unit voices, the sound effects and the music are, as a share of the game's own volume."
             }
             Page::Gameplay => "Rule changes for the games you start. Point at a row to read what it does.",
+            Page::Mods => {
+                "Mods change the game's files: pictures, sounds, maps and data. Choose which to use; each row below \
+                 overrides the ones above it."
+            }
             Page::Keys => {
                 "The keys of the game screen. Choose an action and press Enter, or click it, then press the new key. \
                  Backspace puts the original key back."
@@ -113,6 +127,7 @@ pub(crate) fn pages(env: &Env) -> Vec<Page> {
         .into_iter()
         .filter(|&p| match p {
             Page::Keys => !env.touch,
+            Page::Mods => !env.mods.is_empty(),
             Page::Touch => env.touch || env.touch_input,
             Page::Controller => env.pad,
             _ => true,
@@ -158,10 +173,26 @@ pub(crate) enum Item {
     IntroVideo,
     /// The check for a newer release at start-up (`Prefs::update_check`).
     UpdateCheck,
+    /// The mod used in place `n` of the Mods page (0 is the first, overridden by the places after it).
+    ModSlot(u8),
 }
 
+/// How many mods the Mods page can enable (more can be listed in `settings.txt`).
+pub(crate) const MOD_SLOTS: u8 = 6;
+
 /// The rows that are not registry options, after the registry's.
-const OTHER_ITEMS: [Item; 4] = [Item::Window, Item::MouseLock, Item::IntroVideo, Item::UpdateCheck];
+const OTHER_ITEMS: [Item; 4 + MOD_SLOTS as usize] = [
+    Item::Window,
+    Item::MouseLock,
+    Item::IntroVideo,
+    Item::UpdateCheck,
+    Item::ModSlot(0),
+    Item::ModSlot(1),
+    Item::ModSlot(2),
+    Item::ModSlot(3),
+    Item::ModSlot(4),
+    Item::ModSlot(5),
+];
 
 /// How many settings the screen edits.
 const ITEMS: usize = extras::COUNT + OTHER_ITEMS.len();
@@ -197,6 +228,9 @@ pub(crate) fn items_on(page: Page) -> Vec<Item> {
     if page == Page::General {
         v.extend([Item::MouseLock, Item::IntroVideo, Item::UpdateCheck]);
     }
+    if page == Page::Mods {
+        v.extend((0..MOD_SLOTS).map(Item::ModSlot));
+    }
     v
 }
 
@@ -216,6 +250,9 @@ pub(crate) struct Env {
     /// The line about the imported game files, `None` when there is nothing to manage (`--install` reads the files in
     /// place): without it there are no game-files row and no "Import game files again..." button.
     pub data: Option<String>,
+    /// The mods that could be enabled (`Storage::available_mods`), by folder name. The Mods page shows when there are
+    /// any.
+    pub mods: Vec<ModInfo>,
     /// The screen is open over a running game (`gamemenu`): the Gameplay page shows the rules the game started with and
     /// cannot change them, and there is no "Import game files again...".
     pub in_game: bool,
@@ -227,6 +264,7 @@ pub(crate) fn shown(item: Item, env: &Env) -> bool {
         Item::Extra(_) | Item::IntroVideo => true,
         Item::Window | Item::MouseLock => !env.touch,
         Item::UpdateCheck => env.updates,
+        Item::ModSlot(_) => !env.mods.is_empty(),
     }
 }
 
@@ -299,6 +337,7 @@ fn default_of(item: Item) -> u8 {
         Item::Extra(id) => id.spec().default,
         Item::Window => 0,
         Item::MouseLock | Item::IntroVideo | Item::UpdateCheck => 1,
+        Item::ModSlot(_) => 0,
     }
 }
 
@@ -329,12 +368,44 @@ pub(crate) fn options(item: Item, current: u8) -> Vec<(u8, String)> {
         },
         Item::Window => vec![(0, "Window".to_string()), (1, "Full screen".to_string())],
         Item::MouseLock | Item::IntroVideo | Item::UpdateCheck => on_off(),
+        // The mods are the environment's: see [`mod_options`].
+        Item::ModSlot(_) => vec![(0, "None".to_string())],
+    }
+}
+
+/// What a Mods page row offers: "None", then every mod there is (value `n` is `mods[n - 1]`).
+fn mod_options(env: &Env) -> Vec<(u8, String)> {
+    std::iter::once((0, "None".to_string()))
+        .chain(
+            env.mods
+                .iter()
+                .take(usize::from(u8::MAX))
+                .enumerate()
+                .map(|(i, m)| (i as u8 + 1, mod_words(m))),
+        )
+        .collect()
+}
+
+/// A mod in the drop-down: its title and version, cut to fit the box.
+fn mod_words(m: &ModInfo) -> String {
+    let full = if m.version.is_empty() {
+        m.display().to_string()
+    } else {
+        format!("{} {}", m.display(), m.version)
+    };
+    if full.chars().count() > 24 {
+        format!("{}..", full.chars().take(22).collect::<String>())
+    } else {
+        full
     }
 }
 
 /// The values a drop-down offers now: [`options`] without the choices of `controls` whose devices are not there
 /// (`controls::Devices::available`). Every other row offers everything.
 pub(crate) fn offered(item: Item, current: u8, env: &Env) -> Vec<(u8, String)> {
+    if matches!(item, Item::ModSlot(_)) {
+        return mod_options(env);
+    }
     let mut v = options(item, current);
     if item == Item::Extra(Id::Controls) {
         v.retain(|(n, _)| env.devices.available(crate::controls::Mode::from_index(*n)));
@@ -346,6 +417,20 @@ pub(crate) fn offered(item: Item, current: u8, env: &Env) -> Vec<(u8, String)> {
 /// choice cannot be used because its devices are not there.
 fn describe_now(item: Item, current: u8, env: &Env) -> String {
     let mut text = describe(item);
+    if matches!(item, Item::ModSlot(_))
+        && let Some(m) = usize::from(current).checked_sub(1).and_then(|i| env.mods.get(i))
+    {
+        let mut about = format!("{}: ", m.display());
+        about.push_str(if m.description.is_empty() {
+            "no description."
+        } else {
+            &m.description
+        });
+        if !m.authors.is_empty() {
+            about.push_str(&format!(" By {}.", m.authors.join(", ")));
+        }
+        text = format!("{about} {text}");
+    }
     if item == Item::Extra(Id::Controls) && !env.devices.available(crate::controls::Mode::from_index(current)) {
         text.push_str(" Its device is not here now, so Automatic is in use until it is back.");
     }
@@ -360,6 +445,8 @@ pub(crate) struct Values {
     /// The `[keys]` section's lines as the Keys page edits them, and whether it changed them.
     keys: Vec<String>,
     keys_touched: bool,
+    /// The folder names of the mods the Mods page offers (value `n` of a mod row is `mod_folders[n - 1]`).
+    mod_folders: Vec<String>,
 }
 
 impl Values {
@@ -380,6 +467,23 @@ impl Values {
             touched: [false; ITEMS],
             keys: prefs.keys.lines().to_vec(),
             keys_touched: false,
+            mod_folders: Vec::new(),
+        }
+    }
+
+    /// Puts the enabled mods `enabled` (folder names, lowest priority first) in the Mods page's rows, out of the
+    /// mods there are.
+    pub(crate) fn show_mods(&mut self, enabled: &[String], available: &[ModInfo]) {
+        self.mod_folders = available.iter().map(|m| m.folder.clone()).collect();
+        let places = enabled
+            .iter()
+            .filter_map(|e| self.mod_folders.iter().position(|f| f.eq_ignore_ascii_case(e)))
+            .take(usize::from(MOD_SLOTS));
+        for k in 0..MOD_SLOTS {
+            self.v[index(Item::ModSlot(k))] = 0;
+        }
+        for (k, place) in places.enumerate() {
+            self.v[index(Item::ModSlot(k as u8))] = place as u8 + 1;
         }
     }
 
@@ -436,7 +540,21 @@ impl Values {
                 Item::MouseLock => stored.mouse_lock = v != 0,
                 Item::IntroVideo => stored.set(bit::OPENING_FILM, v != 0),
                 Item::UpdateCheck => stored.update_check = v != 0,
+                Item::ModSlot(_) => {}
             }
+        }
+        // The mods are one list: any row changed writes all of them, in order, each mod once.
+        if (0..MOD_SLOTS).any(|k| self.touched[index(Item::ModSlot(k))]) {
+            let mut names: Vec<String> = Vec::new();
+            for k in 0..MOD_SLOTS {
+                let n = usize::from(self.v[index(Item::ModSlot(k))]);
+                if let Some(f) = n.checked_sub(1).and_then(|i| self.mod_folders.get(i))
+                    && !names.contains(f)
+                {
+                    names.push(f.clone());
+                }
+            }
+            stored.mods = names;
         }
     }
 }
@@ -453,6 +571,10 @@ pub(crate) fn commit(values: &Values, stored: &mut Prefs, live: &mut ClientExtra
 
 /// The note on the Gameplay page during a game.
 pub(crate) const GAMEPLAY_NOTE_IN_GAME: &str = "Fixed for this game: they were set when it started.";
+
+/// The note on the Mods page.
+const MODS_NOTE: &str = "Mods live in the mods folder next to the game files (see docs/mods.md). They apply from the next \
+                        start, and a replay or network game needs the same ones.";
 
 /// The note on the Gameplay page.
 const GAMEPLAY_NOTE: &str = "These options change the game rules. They apply to single-player games you start; in a \
@@ -479,6 +601,9 @@ pub(crate) fn describe(item: Item) -> String {
         }
         Item::UpdateCheck => "Look for a newer Tidewater release when it starts and offer it on the main menu. Takes \
                               effect the next time it starts."
+            .to_string(),
+        Item::ModSlot(_) => "Mods apply the next time Tidewater starts. A mod in a lower row overrides the ones above it \
+                             and the game's own files. In a network game everyone needs the same mods."
             .to_string(),
     }
 }
@@ -685,6 +810,12 @@ fn layout(page: Page, env: &Env) -> Layout {
             ));
         }
     }
+    if page == Page::Mods {
+        texts.push((
+            MODS_NOTE.to_string(),
+            Rect::new(LABEL_X, y + 6, ROW_W - 16, 3 * TEXT_LINE as u32),
+        ));
+    }
     if page == Page::Gameplay {
         texts.push((
             if env.in_game {
@@ -698,6 +829,16 @@ fn layout(page: Page, env: &Env) -> Layout {
     }
     Layout { targets, texts }
 }
+
+/// The Mods page's row labels.
+const MOD_LABELS: [&str; MOD_SLOTS as usize] = [
+    "First mod",
+    "Second mod",
+    "Third mod",
+    "Fourth mod",
+    "Fifth mod",
+    "Sixth mod",
+];
 
 /// The text of `s` in lines no wider than `max` pixels in `font` (spaces leaving [`menuscreen::SPACE_10X`] pixels).
 pub(crate) fn wrap(font: &Font, s: &str, max: u32) -> Vec<String> {
@@ -1285,6 +1426,7 @@ impl Screen {
                         Item::MouseLock => "Mouse lock",
                         Item::IntroVideo => "Intro video",
                         Item::UpdateCheck => "Check for updates",
+                        Item::ModSlot(k) => MOD_LABELS[usize::from(k).min(MOD_LABELS.len() - 1)],
                     };
                     let b = drop_rect(r);
                     let at = (LABEL_X, b.y + (DROP_H as i32 - look.font.height as i32) / 2);
@@ -1294,11 +1436,15 @@ impl Screen {
                         look.label(&mut p, at, label);
                     }
                     let cur = self.values.get(item);
-                    let word = options(item, cur)
-                        .into_iter()
-                        .find(|(n, _)| *n == cur)
-                        .map(|(_, w)| w)
-                        .unwrap_or_default();
+                    let word = (if matches!(item, Item::ModSlot(_)) {
+                        mod_options(&self.env)
+                    } else {
+                        options(item, cur)
+                    })
+                    .into_iter()
+                    .find(|(n, _)| *n == cur)
+                    .map(|(_, w)| w)
+                    .unwrap_or_default();
                     let mut ds = DropState::of(
                         !modal && self.ptr.is_hot(t),
                         !modal && self.focus == t,
@@ -1484,8 +1630,98 @@ mod tests {
             },
             updates: !touch,
             data: (!touch).then(|| "Game files: GOG installer, 156 files, 41 maps, imported 2026-10-23".to_string()),
+            mods: Vec::new(),
             in_game: false,
         }
+    }
+
+    fn mod_info(folder: &str, title: &str) -> ModInfo {
+        ModInfo {
+            folder: folder.into(),
+            title: title.into(),
+            version: "1.0".into(),
+            description: "Harder hits.".into(),
+            authors: vec!["Ann".into()],
+        }
+    }
+
+    fn env_with_mods() -> Env {
+        Env {
+            mods: vec![
+                mod_info("axes", "Big Axes"),
+                mod_info("sounds", ""),
+                mod_info("zed", ""),
+            ],
+            ..env(false)
+        }
+    }
+
+    fn mods_screen(enabled: &[&str]) -> Screen {
+        let env = env_with_mods();
+        let mut v = Values::new(&Prefs::default(), &ClientExtras::default(), false, false);
+        v.show_mods(&enabled.iter().map(|s| s.to_string()).collect::<Vec<_>>(), &env.mods);
+        Screen::new(env, v)
+    }
+
+    #[test]
+    fn the_mods_page_shows_only_when_there_is_a_mod_to_enable() {
+        assert!(!pages(&env(false)).contains(&Page::Mods));
+        assert!(!pages(&env(true)).contains(&Page::Mods));
+        assert!(pages(&env_with_mods()).contains(&Page::Mods));
+        assert!(layout(Page::Mods, &env(false)).targets.is_empty());
+        let rows = layout(Page::Mods, &env_with_mods());
+        assert_eq!(rows.targets.len(), usize::from(MOD_SLOTS));
+        assert_eq!(rows.texts[0].0, MODS_NOTE);
+    }
+
+    #[test]
+    fn the_mods_rows_show_the_enabled_mods_in_order_and_offer_every_mod() {
+        let s = mods_screen(&["zed", "AXES", "gone"]);
+        assert_eq!(s.values.get(Item::ModSlot(0)), 3);
+        assert_eq!(s.values.get(Item::ModSlot(1)), 1);
+        assert_eq!(
+            s.values.get(Item::ModSlot(2)),
+            0,
+            "a mod that is not there is not shown"
+        );
+        let words: Vec<String> = offered(Item::ModSlot(0), 0, &s.env)
+            .into_iter()
+            .map(|(_, w)| w)
+            .collect();
+        assert_eq!(words, ["None", "Big Axes 1.0", "sounds 1.0", "zed 1.0"]);
+        let d = describe_now(Item::ModSlot(1), 1, &s.env);
+        assert!(d.starts_with("Big Axes: Harder hits. By Ann."), "{d}");
+        assert!(
+            d.contains("next time Tidewater starts") || d.contains("next time"),
+            "{d}"
+        );
+    }
+
+    #[test]
+    fn choosing_mods_and_ok_store_the_list_in_order_once_each() {
+        let mut s = mods_screen(&[]);
+        click(&mut s, Target::Tab(Page::Mods));
+        assert_eq!(s.page(), Page::Mods);
+        pick(&mut s, Item::ModSlot(0), 2);
+        pick(&mut s, Item::ModSlot(1), 1);
+        pick(&mut s, Item::ModSlot(2), 2);
+        let (mut stored, mut live, mut audio) = (Prefs::default(), ClientExtras::default(), Audio::default());
+        commit(s.values(), &mut stored, &mut live, &mut audio);
+        assert_eq!(
+            stored.mods,
+            ["sounds", "axes"],
+            "a mod chosen twice counts once, at its first place"
+        );
+        assert!(Prefs::from_text(&stored.to_text()).mods == stored.mods);
+        // Rows left alone leave the stored list alone; Defaults turns every mod off.
+        let mut other = mods_screen(&["axes"]);
+        let mut again = Prefs::default();
+        again.mods = vec!["axes".into()];
+        commit(other.values(), &mut again, &mut live, &mut audio);
+        assert_eq!(again.mods, ["axes"]);
+        click(&mut other, Target::Defaults);
+        commit(other.values(), &mut again, &mut live, &mut audio);
+        assert!(again.mods.is_empty());
     }
 
     fn screen_with(env: Env) -> Screen {
@@ -2004,6 +2240,12 @@ mod tests {
                 data: Some("x".into()),
                 ..env(true)
             },
+            env_with_mods(),
+            Env {
+                pad: true,
+                touch_input: true,
+                ..env_with_mods()
+            },
         ];
         let inside = |r: Rect, outer: Rect| {
             r.x >= outer.x
@@ -2122,7 +2364,10 @@ mod tests {
 
     #[test]
     fn the_keys_page_is_a_fifth_tab_that_a_phone_does_not_have() {
-        assert_eq!(pages(&env(false)), Page::ALL[..5]);
+        assert_eq!(
+            pages(&env(false)),
+            [Page::General, Page::Interface, Page::Sound, Page::Gameplay, Page::Keys]
+        );
         assert_eq!(
             pages(&env(true)),
             [Page::General, Page::Interface, Page::Sound, Page::Gameplay, Page::Touch]
@@ -2146,12 +2391,12 @@ mod tests {
                 .iter()
                 .all(|(t, _)| !matches!(t, Target::Tab(Page::Keys)))
         );
-        // A computer with touch in use and a controller connected has all seven, and they fit the panel without
-        // touching.
+        // A computer with touch in use, a controller connected and a mod to enable has all eight, and they fit the
+        // panel without touching.
         let all = pages(&Env {
             touch_input: true,
             pad: true,
-            ..env(false)
+            ..env_with_mods()
         });
         assert_eq!(all, Page::ALL);
         for (i, a) in all.iter().enumerate() {

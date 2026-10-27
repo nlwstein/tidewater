@@ -182,7 +182,8 @@ The `Hello` carries an Identity. The host compares it with its own and refuses w
 |---|---|
 | Protocol | "different network protocol versions (host N, joiner M)" |
 | Simulation build | "different game builds" |
-| Data tables | "different game data (the unit, upgrade, script or AI tables differ)" |
+| Mods | "different game data or mods (host mods: ...; joiner mods: ...)" |
+| Data tables | "different game data or mods (the unit, upgrade, script or AI tables differ)" |
 | Edition | "different game editions" |
 | Archives | "different game files (the two installations' archives differ)" |
 
@@ -190,6 +191,10 @@ The `Hello` carries an Identity. The host compares it with its own and refuses w
   `tidewater_import::Manifest`): its edition name, and a hash of the path and SHA-256 of every `.mpq` it lists. It is
   never 0 and is compared only when both sides have a manifest, so an installation without one is judged by the data
   tables alone.
+- **Mods** (protocol 9). The identity carries a hash of every file of the enabled mods (`ModSet::hash`: names, lengths
+  and bytes, in mod order; 0 with no mod) and the mods' names and versions. The hash is always compared and the names
+  only appear in the message. The data-table hash reads through the same reader as the game, so a table mod changes it
+  too; the mods difference is reported first because it explains the table difference. See [../mods.md](../mods.md).
 - **The refusal reaches the person.** The joiner's menu shows the host's message in the error box; a command-line
   joiner prints it.
 

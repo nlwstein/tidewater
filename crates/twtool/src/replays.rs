@@ -3,10 +3,11 @@
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
+use tidewater_formats::identity::DataIdentity;
 use tidewater_formats::install::Install;
 use tidewater_replay::run::{first_desync, verify};
-use tidewater_replay::start::new_world;
-use tidewater_replay::{Header, Replay};
+use tidewater_replay::start::{new_world, new_world_unchecked};
+use tidewater_replay::{Header, Replay, ReplayError};
 use tidewater_sim::World;
 
 /// Reads and checks a replay file.
@@ -39,9 +40,20 @@ fn start(install: &mut Install, header: &Header, over: Option<&Path>) -> Result<
 }
 
 /// `twtool replay`: plays the replay headlessly and checks every checkpoint.
-pub fn replay(file: &Path, install: &Path, map: Option<&Path>) -> Result<()> {
+pub fn replay(
+    file: &Path,
+    install: &Path,
+    map: Option<&Path>,
+    force: bool,
+    mods: Option<(&Path, &[String])>,
+) -> Result<()> {
     let r = read_replay(file)?;
     let mut inst = Install::open(install)?;
+    if let Some((dir, names)) = mods {
+        inst = inst.with_mods(std::sync::Arc::new(tidewater_formats::mods::ModSet::resolve(
+            dir, names,
+        )?));
+    }
     println!(
         "{}: map {}, seed {}, {}, {} cycles, {} checkpoints, recorded by {}",
         file.display(),
@@ -52,10 +64,26 @@ pub fn replay(file: &Path, install: &Path, map: Option<&Path>) -> Result<()> {
         r.checkpoints.len(),
         r.header.sim_build
     );
+    if let Some(d) = r.header.data.as_ref().filter(|d| !d.mods.is_empty()) {
+        println!("mods: {}", tidewater_formats::identity::describe_mods(&d.mods));
+    }
     for n in &r.notes {
         println!("note: {n}");
     }
-    let mut world = start(&mut inst, &r.header, map)?;
+    let mut world = if force {
+        if let Some(d) = &r.header.data
+            && let Some(m) = d.mismatch(&DataIdentity::of(&mut inst)?)
+        {
+            println!("warning: recorded with different game files: {m}; playing anyway (--force)");
+        }
+        let bytes = map_bytes(&mut inst, &r.header, map)?;
+        new_world_unchecked(&mut inst, &bytes, &r.header)?
+    } else {
+        start(&mut inst, &r.header, map).map_err(|e| match e.downcast_ref::<ReplayError>() {
+            Some(ReplayError::Data(_)) => e.context("use --force to play it anyway"),
+            _ => e,
+        })?
+    };
     match verify(&mut world, &r) {
         Ok(rep) => {
             println!(

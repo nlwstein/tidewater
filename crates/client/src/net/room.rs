@@ -1523,8 +1523,12 @@ mod tests {
         wait(&mut room, |_| t.is_finished());
         match t.join().unwrap().unwrap() {
             Msg::Refuse { reason } => {
-                assert_eq!(reason, Identity::protocol_reason(8, 7));
-                assert!(reason.contains("host 8") && reason.contains("joiner 7"), "{reason}");
+                assert_eq!(reason, Identity::protocol_reason(super::super::proto::PROTOCOL, 7));
+                assert!(
+                    reason.contains(&format!("host {}", super::super::proto::PROTOCOL)),
+                    "{reason}"
+                );
+                assert!(reason.contains("joiner 7"), "{reason}");
             }
             other => panic!("{other:?}"),
         }
