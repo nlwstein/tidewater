@@ -280,6 +280,15 @@ impl<'s> Window<'s> {
         unsafe { sys::SDL_ScreenKeyboardShown(self.raw) }
     }
 
+    /// Where the text being typed is, in window points (`None`: nowhere in particular): the system keeps it clear of
+    /// its keyboard.
+    pub fn set_text_input_area(&self, area: Option<(i32, i32, i32, i32)>) {
+        let r = area.map(|(x, y, w, h)| sys::SDL_Rect { x, y, w, h });
+        let p = r.as_ref().map_or(std::ptr::null(), |r| r as *const sys::SDL_Rect);
+        // SAFETY: a live window; `p` is null or points at `r`, which outlives the call (SDL copies it).
+        unsafe { sys::SDL_SetTextInputArea(self.raw, p, 0) };
+    }
+
     /// Closes the soft keyboard (and stops [`Event::Text`]).
     pub fn stop_text_input(&self) {
         // SAFETY: a live window.

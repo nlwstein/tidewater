@@ -16,12 +16,12 @@ shot	28	menu	ac7337a45275d79d
 frames	13-28	ac7337a45275d79d
 frames	29-29	1d91c679828eec63
 frames	30-31	7243f44be11062e2
-shot	33	page	7117859f078584eb
-frames	32-34	7117859f078584eb
-frames	35-35	e4b27498f56db11c
-frames	36-36	0ece2a9bb9c2b044
-shot	38	page-2	ea658eb9503e39eb
-frames	37-39	ea658eb9503e39eb
-frames	40-41	b718e38ea5901cac
+shot	33	page	7215bb5e5c79514f
+frames	32-34	7215bb5e5c79514f
+frames	35-35	97b20ce0a323a8d8
+frames	36-36	8759710a463aa974
+shot	38	page-2	85b0f3b1c68346fb
+frames	37-39	85b0f3b1c68346fb
+frames	40-41	4bc684f54ada321c
 shot	43	closed	1d91c679828eec63
 frames	42-43	1d91c679828eec63

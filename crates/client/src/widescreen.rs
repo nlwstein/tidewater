@@ -27,11 +27,10 @@
 //! 640 × 480 and the window keeps whatever width a game gave it.
 //!
 //! **Touch.** On a touch device the pillarbox beside a 4:3 picture holds the touch buttons (`chrome`), so the option
-//! is ignored while they show ([`width`]'s `touch`, from [`crate::controls::blocks_widescreen`]): on a phone or tablet
-//! ([`crate::touch::TouchState::touch_only`], set by the shell on iOS and Android), while touch is in use on a computer
-//! with a touch screen (it switches back the moment a mouse is used again), and always with `--touch-emulation`. When
-//! a controller hides the buttons (`pad-hide-touch`), or the `controls` option leaves touch out, the pillarbox is
-//! empty and the option applies.
+//! picks between them and the wider map: a game screen wider than 640 hides the buttons (`crate::touch::step`), and
+//! `off` (or `auto` in a 4:3 window) keeps them. Without them a player loses the control groups, the Shift, Ctrl and
+//! Alt latches, Pause and the keyboard button; the game menu is still the interface's Menu button and the keyboard
+//! opens by itself for a text box (`crate::touch`, "keyboard").
 
 use crate::display::SCREEN;
 use crate::extras::Widescreen;
@@ -46,11 +45,8 @@ pub const WIDTH_16_10: u32 = SCREEN.0 + 4 * TILE;
 /// The game screen's width for a setting.
 ///
 /// `window` is the window's usable size in physical pixels (what `auto` matches; `None` without a window counts as
-/// 4:3). `touch`: touch is the main input and its buttons show, so the pillarbox stays and the option is ignored.
-pub fn width(mode: Widescreen, window: Option<(u32, u32)>, touch: bool) -> u32 {
-    if touch {
-        return SCREEN.0;
-    }
+/// 4:3).
+pub fn width(mode: Widescreen, window: Option<(u32, u32)>) -> u32 {
     match mode {
         Widescreen::Off => SCREEN.0,
         Widescreen::Ratio16x10 => WIDTH_16_10,
@@ -78,9 +74,9 @@ mod tests {
 
     #[test]
     fn the_widths_are_whole_tiles_past_640() {
-        assert_eq!(width(Widescreen::Off, None, false), 640);
-        assert_eq!(width(Widescreen::Ratio16x10, None, false), 768);
-        assert_eq!(width(Widescreen::Ratio16x9, None, false), 864);
+        assert_eq!(width(Widescreen::Off, None), 640);
+        assert_eq!(width(Widescreen::Ratio16x10, None), 768);
+        assert_eq!(width(Widescreen::Ratio16x9, None), 864);
         for w in [WIDTH_16_10, MAX_WIDTH] {
             assert_eq!((w - 640) % TILE, 0);
             // The view (less the 176-pixel panel and the 16-pixel bar) is whole tiles too.
@@ -93,7 +89,7 @@ mod tests {
 
     #[test]
     fn auto_matches_the_window_up_to_16_9() {
-        let auto = |w, h| width(Widescreen::Auto, Some((w, h)), false);
+        let auto = |w, h| width(Widescreen::Auto, Some((w, h)));
         assert_eq!(auto(1280, 960), 640, "4:3 is the original screen");
         assert_eq!(auto(1280, 800), 768, "16:10");
         assert_eq!(auto(1920, 1200), 768);
@@ -109,7 +105,7 @@ mod tests {
         );
         assert_eq!(auto(1600, 1000), 768, "1.6 is 768 pixels exactly");
         assert_eq!(auto(0, 0), 640, "no shape to match");
-        assert_eq!(width(Widescreen::Auto, None, false), 640, "no window");
+        assert_eq!(width(Widescreen::Auto, None), 640, "no window");
     }
 
     #[test]
@@ -119,18 +115,6 @@ mod tests {
             let x = width_for_shape(w, 1000);
             assert!(x >= last && (640..=864).contains(&x));
             last = x;
-        }
-    }
-
-    #[test]
-    fn touch_turns_every_setting_off() {
-        for mode in [
-            Widescreen::Off,
-            Widescreen::Ratio16x10,
-            Widescreen::Ratio16x9,
-            Widescreen::Auto,
-        ] {
-            assert_eq!(width(mode, Some((1920, 1080)), true), 640, "{mode:?}");
         }
     }
 }

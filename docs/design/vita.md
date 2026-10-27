@@ -39,7 +39,7 @@ Copy a game folder (a GOG install, or the folder holding `War2Dat.mpq`) or a CD 
 On the first-run screen, choose **Scan again**: it lists what it found, and choosing one copies the files once into
 `ux0:data/Tidewater/game`. You can delete your copy afterwards.
 
-Plan for about 700 MB of free space for the import, and the same again while your copy is still there.
+Plan for about 500 MB of free space for the import, and the same again while your copy is still there.
 
 ## How it is put together
 
@@ -111,8 +111,7 @@ pixel, and the Vita's window is always the whole 960 by 544 screen, so it never 
 
 - **Not tried on a Vita.** Memory, speed, touch and the extended-memory request are all untested on hardware.
 - **Controls tried only in Vita3K.** SDL's Vita backend presents the buttons and sticks as a gamepad, which the
-  gamepad support ([gamepad.md](gamepad.md)) reads like any other. The Vita has no L2, R2 or stick presses, so Alt,
-  the faster pointer, the system keyboard and the idle-worker button are not on its pad.
+  gamepad support reads like any other; which buttons the Vita lacks is in [gamepad.md](gamepad.md).
 - **Speed.** The compositor draws a 640 by 480 picture on the CPU each frame. We expect about 30 fps. Ideas, cheapest
   first: run at 30 fps (the simulation's fixed step is unaffected), raise the CPU clock to 444 MHz, compose only the
   changed regions, convert an indexed frame on the GPU.

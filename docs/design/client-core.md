@@ -4,13 +4,13 @@
 `advance(real_time_elapsed, platform) -> &Frame`. The shell only shows the frame (640 × 480, or wider in a game with
 the `widescreen` option), hands over input, pulls mixed audio, provides the files, and knows the time. **SDL 3 is the
 only shell**: the `tidewater` binary is the core in an SDL 3 window, through our own thin wrapper over `sdl3-sys`, and
-the iOS and Android apps run the same shell code. Every build needs CMake and a C compiler (see the
+the iOS, Android and PS Vita apps run the same shell code. Every build needs CMake and a C compiler (see the
 [README](../../README.md#build-from-source)).
 
 ## Decisions
 
-- **One shell, SDL 3.** It covers desktop, iOS and Android with one loop, and it is the only candidate that also reaches
-  console-style Linux handhelds and the PlayStation Vita. Our own wrapper (`shell/sdl.rs`) holds every `unsafe` block
+- **One shell, SDL 3.** It covers desktop, iOS, Android and the PlayStation Vita with one loop, and it also reaches
+  console-style Linux handhelds such as the Steam Deck. Our own wrapper (`shell/sdl.rs`) holds every `unsafe` block
   of the program; no third-party SDL wrapper crate is used.
 - **The frame is RGBA.** The interface and the flow's screens use their own colours (button fills, outlines) and grey
   fades that are not palette entries, so an indexed frame would change those pixels. Revisit after a spec read of
@@ -229,15 +229,10 @@ follows the screen; a window that fills at any size (`--extra-scaling sharp`, to
 full screen) only changes its letterbox. After a
 game ends the 640 screen sits in the middle of the wider window with black beside it.
 
-**Touch.** On a touch device the pillarbox beside the 4:3 picture holds the touch buttons (`chrome`), so the option
-is ignored while they show and the screen stays 640 wide: on a phone or tablet (`TouchState::touch_only`, set by the
-shell on iOS and Android), with `--touch-emulation` (which forces it off even before a finger has touched) and while
-touch is in use on a computer with a touch screen (`TouchState::blocks_widescreen`; it comes back the moment the mouse
-is used again, and the layout is made again). When the buttons are hidden the pillarbox is empty and the option
-applies: a controller hides them by default (`pad-hide-touch`; `controls::blocks_widescreen`), and so do the
-Controller and Keyboard and mouse modes of the `controls` option (`gamepad.md`, "Control modes"). A handheld with a
-built-in pad therefore gets a wide screen in Automatic; the gesture machine and the chrome's layout work in the
-letterbox's screen, whatever its width, so fingers map correctly on it.
+**Touch.** On a touch device a game screen wider than 640 hides the touch buttons that sit in the pillarbox
+(`touch::chrome_hidden`); the choice, and what is lost without them, is in `touch.md`, "Widescreen or the side
+buttons". The gesture machine and the chrome's layout work in the letterbox's screen, whatever its width, so fingers map
+correctly on it.
 
 **Tests.** The width rules (`widescreen`'s tests), the letterbox with a wide screen (`display`), the clipping of a wide
 frame (`compose`), the layout (`hud`), the view's pointer mapping (`mapview`), the minimap rectangle (`minimap`), the
@@ -349,5 +344,5 @@ Each hook is a plain function (`core::run_hook`), and its deferred changes take 
 |---|---|
 | `--zoom` above 1 in a big window | The map is composed at screen resolution, so zooming out at 3× shows no extra detail. Development aid only. |
 | A hook or system that cannot run | The plain functions return early on a missing part and log nothing. |
-| Memory on handhelds | The core uses about 145 MB in a mission on a desktop; check it against a handheld's memory before porting. |
-| A full 640 × 480 RGBA composition per frame on handhelds | On a desktop the whole frame, upload and draw take 2.4 to 2.6 ms; a slower CPU may need changed-layer composition or an indexed frame. Measure on the device. |
+| Memory on handhelds | The core uses about 145 MB in a mission on a desktop. The Vita build asks for extended memory ([vita.md](vita.md)); check any other handheld against its memory. |
+| A full 640 × 480 RGBA composition per frame on handhelds | On a desktop the whole frame, upload and draw take 2.4 to 2.6 ms; a slower CPU may need changed-layer composition or an indexed frame (the Vita is expected to hold about 30 fps, see [vita.md](vita.md)). Measure on the device. |

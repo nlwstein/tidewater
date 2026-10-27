@@ -1,8 +1,8 @@
 # Tidewater on iOS
 
 **Bottom line.** Tidewater builds as an iPhone and iPad app from the same shell code as the desktop program. It runs in
-the Simulator with touch, the safe area, background pause and a first-run import from the app's shared folder. It is
-not yet tried on a device, and signing is yours to add.
+the Simulator with touch, the safe area, background pause and a first-run import from the app's shared folder, and on
+an iPad mini (6th generation) with real fingers. Signing is yours to add.
 
 The gestures are in [touch.md](touch.md) and the import in [import.md](import.md); the Android version is [android.md](android.md).
 
@@ -10,8 +10,9 @@ The gestures are in [touch.md](touch.md) and the import in [import.md](import.md
 
 | Area | State |
 |---|---|
-| Build for the Simulator and a device | Works. Simulator checked; the device library builds but is not run. |
-| Touch, chrome buttons, safe area | On from the first frame; the picture fits inside the safe area. One-finger pan, hold-then-drag box, smart tap and the control-group bar ([touch.md](touch.md)); checked with `--touch-emulation` and the Simulator build, not on a device. |
+| Build for the Simulator and a device | Works. Simulator checked; a signed Release build runs on an iPad mini (6th generation). |
+| Touch, chrome buttons, safe area | On from the first frame; the picture fits inside the safe area. One-finger pan, hold-then-drag box, smart tap and the control-group bar ([touch.md](touch.md)); checked with `--touch-emulation`, the Simulator build and on the iPad. |
+| Widescreen, soft keyboard | On the iPad: a wider game screen hides the side bars; the keyboard opens for chat (a tap on the status bar) and the save name, keeps the box above it, and closes with a tap elsewhere ([touch.md](touch.md), "Text boxes"). |
 | Touch Controls help | Shows by itself at the first game, then under Help and on the main menu. |
 | Exit Program | Not offered (greyed out on the main menu, not in End Scenario, Ctrl+X does nothing): iOS closes apps itself. |
 | Background and foreground | The game pauses, sound stops, settings are written. |
@@ -136,7 +137,6 @@ platforms always use. Touch is active from the first frame.
 ## Limits
 
 - **No GOG installer.** `innoextract` is a separate program and iOS apps cannot start programs.
-- **Not tried on a device.** The device library builds; signing, the picker and real fingers are untried.
-- **The picker is untried.** The Simulator run had no way to tap (no UI automation tool was available).
-- **Memory.** Imported files are about 500 MB; the app needs that much free storage and the original is not removed.
+- **The document picker is untried.** The Simulator run had no way to tap (no UI automation tool was available).
+- **Storage.** Imported files are about 500 MB; the app needs that much free storage and the original is not removed.
 - **Network play** is untried on the phone.

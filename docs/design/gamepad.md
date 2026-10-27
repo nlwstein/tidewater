@@ -143,9 +143,9 @@ machine see them (`touch::park`); the left button, latched Shift, Ctrl and Alt, 
 that was in use comes back when fingers are on again. With `--touch-emulation` the shell sends the mouse's buttons
 as plain mouse buttons in a mode without fingers (`Core::fingers_enabled`).
 
-**Widescreen.** The `widescreen` option is ignored only while the side bars show (the Touch mode, or Controller and
-touch with `pad-hide-touch` off, on a touch device). With the bars hidden the pillarbox is empty, so on a handheld
-with a built-in pad Automatic allows widescreen; with no pad it is as before.
+**Widescreen.** The `widescreen` option applies in every mode and hides the touch side bars while a wider game screen
+shows ([touch.md](touch.md#widescreen-or-the-side-buttons)); with a pad they are hidden anyway unless `pad-hide-touch`
+is off.
 
 ## Options
 

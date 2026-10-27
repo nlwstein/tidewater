@@ -302,7 +302,7 @@ pub const REGISTRY: [Spec; COUNT] = [
         kind: Kind::Choice(WIDESCREEN_MODES),
         default: 0,
         scope: Scope::ClientLobby,
-        description: "A wider game screen, the extra width being map: 16:10, 16:9, or auto to match the window (ignored while the touch side bars show; menus and videos stay 4:3)",
+        description: "A wider game screen, the extra width being map: 16:10, 16:9, or auto to match the window (on touch it hides the side buttons, groups and Shift/Ctrl/Alt among them; menus and videos stay 4:3)",
     },
     Spec {
         id: Id::MapZoom,

@@ -10,7 +10,7 @@ turn touch on from the first frame.
 
 | Module | Job |
 |---|---|
-| `input` | `Touch { id, phase, pos }` (window points) and `WindowGeom`, which now also carries the safe area, the density and whether the fit is fractional. |
+| `input` | `Touch { id, phase, pos }` (window points) and `WindowGeom`, which carries the safe area, the density and whether the fit is fractional. |
 | `gesture` | The state machine: fingers in, mouse frames and view intents out. No clock, no engine. |
 | `chrome` | The on-screen controls: layout in the pillarbox, hit tests, the overlay picture. |
 | `touchemu` | The mouse as fingers for `--touch-emulation`. |
@@ -43,9 +43,7 @@ more.
 short hold first: still for 300 ms, the finger arms (the same ring as a long press, smaller as it starts), and a drag
 after that is the left button's. Kept still to 450 ms it also becomes the long press, but nothing is clicked
 while the finger stays down: lifting it there right-clicks, and a drag (however long the hold) still draws the box.
-An earlier version right-clicked at 450 ms with the finger down, so a hold held a moment too long before the drag
-sent the selection away. Outside the map view (the
-minimap, the panel, the menus) a drag is the left button's at once, as before. A flick glides on and slows (a time
+Outside the map view (the minimap, the panel, the menus) a drag is the left button's at once. A flick glides on and slows (a time
 constant of 325 ms, from 30 mm/s down to 8 mm/s); any new finger stops it.
 
 **Placing and targeting.** While a building is being placed or a command's target chosen, a finger on the map moves
@@ -89,7 +87,7 @@ box, a drag or a mouse click never snaps.
 ## The chrome
 
 A touchscreen has no Shift, Ctrl or Alt, no pause key and no number keys. The chrome puts them in the black bars
-beside the picture (in the safe area). The left bar holds the tools, the right bar the control groups (the option
+beside the 4:3 picture (in the safe area); a wider game screen hides them (see "Widescreen or the side buttons"). The left bar holds the tools, the right bar the control groups (the option
 `touch-swap-bars` swaps them):
 
 | Control | Icon | Does |
@@ -130,9 +128,44 @@ height allows), and the buttons are laid out in a grid of 9 mm squares (7 or 11 
 a narrow bar but never under 30 points; if only one bar is wide enough it takes every control, and a window with none
 gets the two lists over the picture's left and right edges. A control acts when its finger lifts inside it, except a
 held group button, which acts at 450 ms. The chrome is an
-RGBA overlay of the window's size that the shell blends over the picture; it is never part of the frame (640 x 480; the game screen is never wider on a touch device, because the `widescreen`
-option is ignored there while the chrome shows: the pillarbox is where the chrome lives, see `client-core.md`, "Widescreen"; with a controller hiding it the option applies), so frames and
+RGBA overlay of the window's size that the shell blends over the picture; it is never part of the frame (the chrome shows only beside a 640 x 480 screen; see "Widescreen or the side buttons"), so frames and
 snapshots do not depend on it.
+
+### Widescreen or the side buttons
+
+The bars live in the pillarbox beside the 4:3 picture, so a wider game screen has no room for them. The `widescreen`
+option is the choice between the two: `off` keeps the bars, and a game screen wider than 640 (`16:10`, `16:9`, or
+`auto` in a window wider than 4:3) hides them while it shows (`touch::chrome_hidden`). Outside a game the screen is
+640 wide again and the keyboard button comes back.
+
+| Without the bars | What still works |
+|---|---|
+| Control groups (Ctrl and a digit) | Select units with taps and boxes instead. |
+| Shift, Ctrl and Alt latches | Two taps select every unit of a type; there is no add-to-selection or queued order. |
+| Pause | The interface's own Pause button, shown with the Enhanced rules (the default; Classic is opt-in and multiplayer only), and the Menu button, whose game menu stops a single-player game. |
+| Keyboard button | The keyboard opens by itself for a text box (see "Text boxes"). |
+
+Latches held when the bars hide let go, since nothing could tap them off. The Touch Controls help's Buttons page
+says so too. A controller hides the bars whatever the width (`pad-hide-touch`); see `gamepad.md`.
+
+### Text boxes
+
+While a box wants typing and touch is in use, the soft keyboard opens by itself (`touch::text_box`): the in-game
+chat line, the save dialog's name, the multiplayer menus' name, address and port boxes, and the lobby's chat line. It
+closes again when the box is done, unless the player had opened it with the keyboard button. This is what makes the
+keyboard reachable with the bars hidden, and it saves a tap with them shown.
+
+| Doing | Does |
+|---|---|
+| Return | Enter: saves, sends the line or confirms the box, which then closes the keyboard. |
+| A tap outside the box and the bars | Closes the keyboard and nothing else; the box stays. Not every keyboard has a hide key (an iPhone's has none), so this is the way out everywhere. |
+| A tap on the box | Opens the keyboard again. |
+| The system's hide key, Back | Closes it until the next box, or a tap on this one. |
+| A tap on the status bar in a game | Opens the chat line (also for cheats), as Enter does: without the bars there is no Enter until the keyboard is up. Touch only; a mouse click there does nothing, as in the original. |
+
+**Keeping the box in view.** The core hands the box's place in window points to the shell
+(`Core::text_input_area`), which gives it to SDL (`SDL_SetTextInputArea`). On iOS, SDL then slides the view up so the
+box sits just above the keyboard; the rest of a dialog may be under it, but what is typed shows.
 
 ## Scaling
 

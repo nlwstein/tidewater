@@ -282,6 +282,14 @@ impl Core {
         self.stored.0.fullscreen && !self.touch.touch_only && self.script.is_none()
     }
 
+    /// The text box being typed into, in window points rounded out (left, top, width, height), for the shell to keep
+    /// clear of the soft keyboard; `None` while no box wants typing (`touch::text_area`).
+    pub fn text_input_area(&self) -> Option<(i32, i32, i32, i32)> {
+        let (x, y, w, h) = crate::touch::text_area(self, self.input.window?)?;
+        let (x0, y0) = (x.floor() as i32, y.floor() as i32);
+        Some((x0, y0, (x + w).ceil() as i32 - x0, (y + h).ceil() as i32 - y0))
+    }
+
     /// The addresses the core asked the system to open since the last call (`file://` URLs of folders).
     pub fn take_open_requests(&mut self) -> Vec<String> {
         std::mem::take(&mut self.open_requests)
@@ -638,11 +646,7 @@ pub(crate) fn screen_size(c: &Core, window: Option<WindowGeom>) -> (u32, u32) {
         return original;
     }
     let area = window.map(|w| (w.safe.2, w.safe.3));
-    let width = crate::widescreen::width(
-        game::extras(c).widescreen(),
-        area,
-        crate::controls::blocks_widescreen(c),
-    );
+    let width = crate::widescreen::width(game::extras(c).widescreen(), area);
     (width, original.1)
 }
 

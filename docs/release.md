@@ -1,7 +1,7 @@
 # Releasing
 
 **In short:** work lands on `develop`. To release, merge `develop` into `main`. The push to `main` works out the version
-from the commit messages, builds the Windows, macOS, Linux, iOS and Android downloads, and publishes a GitHub release. Nothing else to do.
+from the commit messages, builds the Windows, macOS, Linux, iOS, Android and PS Vita downloads, and publishes a GitHub release. Nothing else to do.
 
 ## Branches
 
@@ -81,6 +81,7 @@ commit what it writes.
 | iOS | `platform/ios/Sources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png` | `project.yml` (`ASSETCATALOG_COMPILER_APPICON_NAME`). |
 | Android | `platform/android/app/src/main/res/mipmap-*/` | The manifest's `android:icon`. |
 | macOS | `packaging/macos/tidewater.icns` | `build-dmg.sh` puts it in `Tidewater.app/Contents/Resources`; `Info.plist` names it. |
+| Vita | `platform/vita/sce_sys/icon0.png` | `build.sh` packs it into the VPK. |
 | Windows | `packaging/windows/tidewater.ico` | `tidewater.iss`: the installer's own icon, the shortcuts and the Apps list. `tidewater.exe` has no icon resource yet, so Explorer shows a plain program icon for the file itself. |
 | Linux | `packaging/linux/tidewater.png` | The tarball, for `tidewater.desktop`'s `Icon=` line. |
 | The window | `crates/client/assets/icon/window.png` | The desktop shell sets it with `SDL_SetWindowIcon` (title bar, taskbar, Dock). |
@@ -97,6 +98,7 @@ what to do.
 | **Linux** | None. | `chmod +x` if the file manager dropped the executable bit. |
 | **iOS** | The file is not signed, so iOS refuses to install it as it is. | Sideload with AltStore, SideStore or Sideloadly, which sign it with your own Apple ID. |
 | **Android** | The system asks to allow installs from the app that opened the APK (the browser or file manager). | Allow it for that app, then install. Not on Google Play. |
+| **PS Vita** | Stock firmware refuses an app Sony did not sign. | Install the VPK with VitaShell on a Vita with custom firmware ([vita.md](design/vita.md#install)). |
 
 ## Android APK
 
@@ -156,6 +158,8 @@ size must match the release's listed size; there is no other signature check.
 | macOS | Downloads the disk image, copies `Tidewater.app` beside the running one, swaps them, relaunches. Files fetched this way carry no quarantine mark, so the new copy opens without the Gatekeeper prompt. |
 | Linux | Opens the release page. |
 | Android | Opens the release page (the shell's `SDL_OpenURL`); players download the newer APK and install it over the old one, which keeps their data because the signature matches. The check runs as on the desktop. |
+| iOS | Opens the release page; players sideload the newer IPA over the old one ([ios.md](design/ios.md#install-the-unsigned-ipa)). |
+| PS Vita | No check (`update.rs` skips it); players install the newer VPK by hand. |
 
 **macOS: App Translocation.** An app run from the disk image, or from Downloads while still quarantined, runs from a
 read-only or randomised path (`/Volumes/...`, `.../AppTranslocation/...`) and can't replace itself. The main menu then says

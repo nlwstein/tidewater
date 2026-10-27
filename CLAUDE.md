@@ -47,8 +47,8 @@ before writing any code, and follow it exactly.
   `firstrun.rs` is the first-run import screen shown when there are no game files (`AppState::FirstRun`; its own font
   in `firstrun/font.rs`, the automatic search in `firstrun/search.rs`; `docs/design/import.md`).
   Touch (`docs/design/touch.md`): `gesture.rs` is the state machine turning fingers into mouse frames, pan and zoom,
-  `chrome.rs` the on-screen buttons in the pillarbox (menu, pause, Shift/Ctrl/Alt latches, plain click, keyboard, control groups),
-  `touchemu.rs` the mouse as fingers (`--touch-emulation`), `touchhelp.rs` the Touch Controls help page and `touch.rs` the core's glue (`Core::touch`).
+  `chrome.rs` the on-screen buttons in the pillarbox (menu, pause, Shift/Ctrl/Alt latches, plain click, keyboard, control groups; a wider `widescreen` game screen hides them),
+  `touchemu.rs` the mouse as fingers (`--touch-emulation`), `touchhelp.rs` the Touch Controls help page and `touch.rs` the core's glue (`Core::touch`; it also opens the soft keyboard for a text box).
   Gamepads (`docs/design/gamepad.md`): `pad.rs` turns a pad into the pointer, buttons and keys (`Core::pad`; panel mode, the minimap jump);
   `controls.rs` is the `controls` option's modes (which of pad and fingers work, and the side bars) and the rule resolving them.
   `session.rs` is the `Session` trait between the game screen and the sim (`LocalSession`, `ReplaySession`); `net/` is network play (`proto`: messages and identity, `tcp`, `lockstep`: `NetSession`, `lobby`: the command-line host and join, `room`: the menu lobby's host and guest ends with map transfer, `beacon`: the LAN game-list UDP packet; `docs/design/network.md`).
@@ -77,6 +77,9 @@ before writing any code, and follow it exactly.
 - `platform/android`: the Gradle project around it (SDL's `android-project` layout): `TidewaterActivity.java` (arguments
   and the Storage Access Framework picker), the manifest, the Gradle wrapper, `build.sh` (cargo-ndk, copies SDL's Java
   sources from the `sdl3-src` crate at build time, runs Gradle); `docs/design/android.md`.
+- `platform/vita`: the PS Vita app: `build.sh` (a pinned nightly Rust with `-Z build-std`, the Vita SDK, packs the `.vpk`),
+  `stub.c` (C symbols the Vita's libc lacks), `sce_sys/` (the icon); it builds the `tidewater` binary itself,
+  with no crate of its own; `docs/design/vita.md`.
 - `docs/specs/`: reviewed behaviour specifications, the only source for engine behaviour.
 
 ## Workflow
@@ -84,7 +87,7 @@ before writing any code, and follow it exactly.
 - The toolchain is pinned in `rust-toolchain.toml`; dependencies track their newest releases.
 - Building needs CMake and a C compiler besides Rust (SDL 3 is built from source). GitHub Actions
   (`.github/workflows/ci.yml`) runs fmt, clippy and the tests without game data, plus release builds on Linux, macOS
-  and Windows, the iOS Simulator and Android libraries and an unsigned iOS `.ipa`; the full check with game data and oracle traces is still
+  and Windows, the iOS Simulator and Android libraries, an unsigned iOS `.ipa` and the PS Vita `.vpk`; the full check with game data and oracle traces is still
   run locally. `.github/workflows/release.yml` builds the downloads (`docs/release.md`).
 - The multiplayer end-to-end test (`crates/client/tests/mp_e2e.rs`) needs `TIDEWATER_INSTALL` and port 6112; see `docs/design/network.md`, "Running the end-to-end check".
 - Before every commit run `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`.

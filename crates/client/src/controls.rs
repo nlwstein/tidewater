@@ -122,16 +122,6 @@ pub fn mode(c: &Core) -> Mode {
     Devices::of(&c.pad, &c.touch).resolve(crate::game::extras(c).controls())
 }
 
-/// Whether the touch side bars show this frame (they hold the pillarbox, so `widescreen` is ignored then).
-pub fn chrome_shown(c: &Core) -> bool {
-    mode(c).chrome_shown(crate::game::extras(c).pad().hide_touch)
-}
-
-/// Whether the `widescreen` option is ignored: touch is the main input and its side bars show.
-pub fn blocks_widescreen(c: &Core) -> bool {
-    c.touch.blocks_widescreen(chrome_shown(c))
-}
-
 /// Notes a finger that came in this frame, before the modes are read, so the first finger of a run is never dropped
 /// for want of being seen.
 pub fn note_fingers(c: &mut Core) {
@@ -143,7 +133,6 @@ pub fn note_fingers(c: &mut Core) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::extras::Widescreen;
 
     const ALL: [Mode; 5] = [Mode::Auto, Mode::Mouse, Mode::Touch, Mode::Pad, Mode::PadTouch];
 
@@ -253,28 +242,28 @@ mod tests {
     }
 
     #[test]
-    fn widescreen_works_on_a_touch_device_once_a_pad_hides_the_bars() {
-        let width = |mode: Mode, hide: bool, d: Devices, t: &TouchState| {
-            let shown = d.resolve(mode).chrome_shown(hide);
-            crate::widescreen::width(Widescreen::Ratio16x9, Some((1920, 1080)), t.blocks_widescreen(shown))
-        };
-        let mut phone = TouchState::new(false);
-        phone.touch_only = true;
-        phone.active = true;
+    fn the_bars_hide_for_a_pad_or_a_wide_screen() {
+        let hidden = |mode: Mode, hide: bool, d: Devices, w: u32| crate::touch::chrome_hidden(d.resolve(mode), hide, w);
         let with_pad = dev(true, true, false);
         let without = dev(false, true, false);
-        // Automatic with a pad: the bars hide, the option applies.
-        assert_eq!(width(Mode::Auto, true, with_pad, &phone), 864);
-        // The same with `pad-hide-touch` off: the bars show, 640.
-        assert_eq!(width(Mode::Auto, false, with_pad, &phone), 640);
-        // No pad: as before, 640.
-        assert_eq!(width(Mode::Auto, true, without, &phone), 640);
-        // Explicit choices.
-        assert_eq!(width(Mode::Touch, true, with_pad, &phone), 640);
-        assert_eq!(width(Mode::Pad, true, with_pad, &phone), 864);
-        assert_eq!(width(Mode::PadTouch, true, with_pad, &phone), 864);
-        // The keyboard and mouse chosen on a phone whose mouse has been used.
-        assert_eq!(width(Mode::Mouse, true, dev(false, true, true), &phone), 864);
+        // A 4:3 game screen: as the mode says.
+        assert!(hidden(Mode::Auto, true, with_pad, 640), "a pad hides them");
+        assert!(
+            !hidden(Mode::Auto, false, with_pad, 640),
+            "unless pad-hide-touch is off"
+        );
+        assert!(!hidden(Mode::Auto, true, without, 640), "touch alone shows them");
+        assert!(!hidden(Mode::Touch, true, with_pad, 640));
+        assert!(hidden(Mode::Pad, true, with_pad, 640));
+        // A wider screen (option `widescreen`) takes the pillarbox in every mode.
+        for (mode, d) in [
+            (Mode::Auto, without),
+            (Mode::Touch, with_pad),
+            (Mode::PadTouch, with_pad),
+        ] {
+            assert!(hidden(mode, false, d, 768), "{mode:?}");
+            assert!(hidden(mode, false, d, 864), "{mode:?}");
+        }
     }
 
     // The steps at the core level: a core on the first-run screen (no game files needed), driven frame by frame.

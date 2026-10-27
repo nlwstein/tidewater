@@ -256,6 +256,7 @@ fn run(l: host::Launch) -> Result<()> {
         mods: (false, false, false),
         left_down: false,
         keyboard: !MOBILE,
+        text_area: None,
         fit: if MOBILE {
             display::Fit::Sharp
         } else {
@@ -338,6 +339,12 @@ fn run(l: host::Launch) -> Result<()> {
             } else if MOBILE {
                 window.stop_text_input();
             }
+        }
+        // The box being typed into, which the system keeps above its keyboard (iOS slides the view up for it).
+        let area = core.text_input_area();
+        if area != shell.text_area {
+            shell.text_area = area;
+            window.set_text_input_area(area);
         }
         for kind in core.take_pick_requests() {
             match kind {
@@ -479,6 +486,8 @@ struct Shell<'a> {
     left_down: bool,
     /// The soft keyboard (or the desktop's text input) is open.
     keyboard: bool,
+    /// The text box last given to SDL to keep clear of the soft keyboard, in window points.
+    text_area: Option<(i32, i32, i32, i32)>,
     /// How the picture fits the safe area (`display`).
     fit: display::Fit,
     /// Points to the inch (physical pixels per inch is this times the density), or physical pixels per inch itself when

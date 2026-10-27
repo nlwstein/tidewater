@@ -34,7 +34,8 @@ const LIST: Rect = Rect {
 pub const ROW_H: i32 = 22;
 /// Rows the list shows at once.
 pub const ROWS: usize = (LIST.h as i32 / ROW_H) as usize;
-const FIELD: Rect = Rect {
+/// The name field, where a save dialog takes typing.
+pub(crate) const FIELD: Rect = Rect {
     x: 140,
     y: 284,
     w: 360,

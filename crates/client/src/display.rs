@@ -515,7 +515,7 @@ mod tests {
         let area = (3024, 1900);
         let lb_of = |w: u32| Letterbox::fit_with(area, (0, 0, area.0, area.1), Fit::Auto, (w, 480));
         // `auto` widescreen takes the window's shape: 768 x 480 (16:10), width-limited at 3.9375 (3024 / 768).
-        let w = width(Widescreen::Auto, Some(area), false);
+        let w = width(Widescreen::Auto, Some(area));
         assert_eq!(w, 768);
         let lb = lb_of(w);
         assert!((lb.scale - 3024.0 / 768.0).abs() < 1e-6);

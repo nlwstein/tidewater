@@ -31,7 +31,7 @@ chooses it in the lobby and it travels with the game, saves and replays (see "Si
 | `minimap-ping` | `--extra-minimap-ping` | on, off | C | off | Alt-click on the minimap pings that place on your allies' minimaps, and shows their pings on yours |
 | `shift-queue` | `--extra-shift-queue` | on, off | S | off | Hold Shift while giving a move, attack, attack-move, patrol, repair, harvest or build order to add it to the unit's order queue (up to 8) instead of replacing its order |
 | `auto-replay` | `--extra-auto-replay VALUE` | off, menu, always | C | off | Record every game: `menu` keeps the recording so the game menu can save it, `always` also writes each game's replay to the replays folder of the data directory as it is played |
-| `widescreen` | `--extra-widescreen VALUE` | off, 16:10, 16:9, auto | C+L | off | A wider game screen, the extra width being map: 16:10, 16:9, or auto to match the window (ignored while the touch side bars show; menus and videos stay 4:3) |
+| `widescreen` | `--extra-widescreen VALUE` | off, 16:10, 16:9, auto | C+L | off | A wider game screen, the extra width being map: 16:10, 16:9, or auto to match the window (on touch it hides the side buttons, groups and Shift/Ctrl/Alt among them; menus and videos stay 4:3) |
 | `map-zoom` | `--extra-map-zoom VALUE` | off, wheel | C | off | `wheel`: the mouse wheel over the map view magnifies it up to 4 times around the pointer and back to the normal view, never showing more map than the original does (on touch devices the pinch is `touch-pinch`) |
 | `touch-drag` | `--extra-touch-drag VALUE` | pan, pan-no-glide, box | C | pan | Touch only. A finger dragged on the map scrolls it (`pan` glides on after a flick, `pan-no-glide` stops where the finger lifts); hold it still a moment first to draw a selection box instead. `box`: a drag draws the box at once, as the mouse does |
 | `touch-smart-tap` | `--extra-touch-smart-tap VALUE` | on, off | C | on | Touch only. With your units selected, a tap on the ground, an enemy or a resource orders them there, as a right click does; a tap on your own unit or building selects it. `off`: every tap is a left click |
@@ -203,8 +203,8 @@ without new screen code. The file and the flags still work and are for power use
   to a whole tile) and `auto` the tile multiple nearest the window's shape, from 640 to 864. The screen stays 480 lines
   high, so the interface art keeps its pixel size and the map view only gains width: 18 or 21 tiles across instead of
   14, nothing zoomed out and nothing more shown above or below. Menus, briefings, videos, the score screen and the game
-  menu stay 640 x 480 in the middle with black beside them. The option is ignored on a phone or tablet, with
-  `--touch-emulation`, and while touch is in use, where the pillarbox holds the touch buttons. Because the wider view
+  menu stay 640 x 480 in the middle with black beside them. On a touch device it replaces the side buttons
+  (the wider map takes the pillarbox they sit in; `off` keeps them, see `docs/design/touch.md`, "Widescreen or the side buttons"). Because the wider view
   is an edge, the lobby's value is used for everyone in a game with other players. The widths, the layout and the
   pointer mapping are in `docs/design/client-core.md`, "Widescreen"; the code is `widescreen.rs`.
 - **Magnifying zoom** (`map-zoom`, C). Off by default, which leaves the mouse wheel doing nothing over the map view, as in

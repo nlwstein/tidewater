@@ -1702,6 +1702,7 @@ pub(crate) fn key_char(k: Key) -> Option<char> {
 pub(crate) fn panel_input(c: &mut Core) {
     let idle_on = c.extras.idle_worker();
     let group_bar_on = c.extras.group_bar();
+    let touching = c.touch.active;
     let now = (c.time.elapsed_secs_f64() * 1000.0) as u64;
     let Core {
         stored,
@@ -1763,6 +1764,18 @@ pub(crate) fn panel_input(c: &mut Core) {
         } else {
             ui.menu_requested = true;
         }
+        ui.consumed = true;
+        return;
+    }
+    // Touch: a tap on the status line opens the chat line, as Enter does, since a touch screen has no Enter until the
+    // keyboard is up; the keyboard then opens for it (`touch::text_box`; `docs/design/touch.md`, "Text boxes").
+    if pressed
+        && touching
+        && scr.status.chat.is_none()
+        && let (Some(c), Some(l)) = (hud.cursor(input), hud.layout)
+        && l.bottom.contains(c.x, c.y)
+    {
+        scr.status.chat = Some(String::new());
         ui.consumed = true;
         return;
     }

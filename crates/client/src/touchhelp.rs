@@ -50,6 +50,7 @@ pub(crate) const PAGES: [Page; 2] = [
             row("Hold, then lift", "Right click"),
             row("Two fingers", "Scroll; pinch to zoom on a phone"),
             row("Three fingers", "Open the game menu"),
+            row("Status bar", "Tap to type a message"),
             row("Minimap", "Tap or drag to look, hold to order"),
             row("Building", "Drag the outline, tap it to place"),
             row("Settings", "The Touch page changes all this"),
@@ -98,8 +99,8 @@ pub(crate) const PAGES: [Page; 2] = [
             ),
         ],
         tip: &[
-            ("Pick units one by one: ", "double-tap Shift to lock it,"),
-            ("", "then tap units to add or remove them."),
+            ("Pick units one by one: ", "lock Shift, then tap them."),
+            ("Widescreen ", "(Settings, General) hides these buttons."),
         ],
     },
 ];

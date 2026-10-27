@@ -649,8 +649,14 @@ impl Lobby {
         }
     }
 
-    fn text_focused(&self) -> bool {
+    /// Whether the player's chat line has the focus, so typing goes into it.
+    pub(crate) fn text_focused(&self) -> bool {
         self.notice.is_none() && self.popup.is_none() && self.focus == T::Say
+    }
+
+    /// The player's chat line while it has the focus.
+    pub(crate) fn text_rect(&self) -> Option<Rect> {
+        self.text_focused().then(|| chat_rect(self.me))
     }
 
     fn keys(&mut self, input: &Input, ctx: &mut Ctx) -> Outcome {

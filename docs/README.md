@@ -13,11 +13,12 @@ Design documents explain how the code is organised and why. They live in [`desig
 | [Network play](design/network.md) | Lockstep over TCP: the menus, running a host and joiners (`--host`, `--join`), the turn engine, the sync check, leaving and dropping, the host handing over, observers, the protocol, and the spec gaps. |
 | [Multiplayer determinism](design/multiplayer-determinism.md) | What keeps the simulation identical on every machine in a lockstep game, the rules new sim code must follow, and which local-player reads are still open questions. Also the session layer and the `.twrep` replay format. |
 | [Optional improvements](design/extras.md) | The registry of optional extras, the Settings screen and rebindable keys, how the settings file, flags and lobby carry them, and how to add one. |
-| [Touch input](design/touch.md) | Gestures, the on-screen controls, scaling, and desktop touch emulation. |
+| [Touch input](design/touch.md) | Gestures, the on-screen controls (and how a wide screen replaces them), the soft keyboard for text boxes, scaling, and desktop touch emulation. |
+| [Gamepad input](design/gamepad.md) | The default button mapping by pad maker, panel mode, the minimap jump, menu focus, and the Controls setting that picks which devices work. |
 | [Tidewater on iOS](design/ios.md) | Building the iPhone and iPad app, signing through an xcconfig, importing game files on a phone, background pause and resume, and the limits. |
 | [Tidewater on Android](design/android.md) | Building the Android app, importing game files with the system picker, landscape and background pause, and the limits. |
 | [Tidewater on the PS Vita](design/vita.md) | Building and installing the Vita app, where the game files go, and the limits. |
-| [Cutting a release](release.md) | The develop and main branches, how the version is chosen, what gets published, and how self-update works. |
+| [Cutting a release](release.md) | The develop and main branches, how the version is chosen, what gets published (desktop, iOS, Android and Vita downloads), and how self-update works. |
 
 ## Specifications
 

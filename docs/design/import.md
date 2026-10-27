@@ -70,7 +70,7 @@ every screen of the original stays as it was.
 - **Tests.** The rules are tested through the core's input with a fake `Backend`; the scripted scene `firstrun` (a
   demo backend and a fake list of installs, so it needs no game data) has a frame snapshot in
   `tests/snapshots/firstrun.txt`.
-- **Phones.** iOS and Android use a shared folder and their own pickers instead of SDL's dialogs: [ios.md](ios.md), [android.md](android.md).
+- **Phones and the Vita.** iOS and Android use a shared folder and their own pickers instead of SDL's dialogs ([ios.md](ios.md), [android.md](android.md)); the Vita scans its data folder and has no picker ([vita.md](vita.md)).
 
 ## Progress
 
@@ -94,10 +94,6 @@ of the step's total and the file it is on. A step with no size (`Checking`) slid
 line under the bar says what the step does (reading a CD image "can take a minute or two"). The animation runs from the
 frame count, so it moves even while no report comes (a file in a disc's installer archive is unpacked whole when it
 opens), and scripted scenes stay the same every run.
-
-**Why it was needed.** The CD image's files used to be staged with no progress, and the bar showed only the copy that
-followed. On a phone reading the image is the slow part, so the bar stood at 0% for about a minute and then filled in
-moments.
 
 ## GOG installer
 

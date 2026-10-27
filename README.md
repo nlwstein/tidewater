@@ -100,7 +100,7 @@ Downloads are checked against the size the release lists; they are not signed. A
 | **Sound, music, video** | Unit and event sounds, the music jukebox, the intro and story videos (Smacker), and palette effects such as colour cycling and fades. |
 | **Multiplayer** | Early LAN and Direct IP games for two to eight players, with observers (see [Multiplayer](#multiplayer-early)). |
 | **Cheats** | The original cheat codes, typed into the chat line. |
-| **Display** | A 640 x 480 picture drawn in software, with a black border. By default it is shown at the largest whole-number scale that fits, or scaled to fill the screen with crisp pixels when a whole number would leave much of it empty (Settings, Scaling). `--ui-scale N` picks the window's size. |
+| **Display** | A 640 x 480 picture drawn in software, with a black border (wider in a game with the `widescreen` option). By default it is shown at the largest whole-number scale that fits, or scaled to fill the screen with crisp pixels when a whole number would leave much of it empty (Settings, Scaling). `--ui-scale N` picks the window's size. |
 
 ### Playing a custom game
 
@@ -145,7 +145,12 @@ touchscreen or use `--touch-emulation`.
 | Two fingers: drag; pinch | Scroll the map; zoom (on phones; a setting on tablets) |
 | Three fingers: tap | Open the game menu |
 
-**The side bars.** The left bar holds, from the top: Menu (three lines), Pause (two bars; a play triangle while
+**The side bars.** The bars sit in the black border beside the 4:3 picture, so they show only while the game screen is
+640 wide. The `widescreen` option (Settings, General) is your choice between them and a wider map: `off` keeps the bars, and
+`16:10`, `16:9` or `auto` in a wide window hides them. Without the bars there are no control groups and no Shift, Ctrl or
+Alt latches (two taps still select all of a type); Pause and Menu are the interface's own buttons, and the keyboard
+opens by itself for the chat line, a save name and the multiplayer boxes (a tap on the status bar opens the chat line;
+a tap outside the box closes the keyboard). The left bar holds, from the top: Menu (three lines), Pause (two bars; a play triangle while
 paused), the Shift (⇧), Ctrl (⌃) and Alt (⌥) latches (held for your next click), a plain-click latch (a pointer
 with a click mark: the next tap selects, never orders) and the keyboard. The right bar holds the control groups,
 numbered 1 to 9: a tap recalls a group, two taps centre on it, and holding one makes the selection that group. With
@@ -205,7 +210,7 @@ layout, and the side bars. Details: [`docs/design/gamepad.md`](docs/design/gamep
 
 ### iPhone and iPad (early)
 
-Tidewater builds as an iOS app that runs in the Simulator (a real device needs your own signing; not tried on a device yet). It is the same program: touch is on from the start, the picture fits inside the safe area, and the game pauses when you leave the app. Details, signing and limits: [`docs/design/ios.md`](docs/design/ios.md).
+Tidewater builds as an iOS app that runs in the Simulator and, signed with your own Apple ID, on an iPad mini (not yet tried on an iPhone). It is the same program: touch is on from the start, the picture fits inside the safe area, and the game pauses when you leave the app. Details, signing and limits: [`docs/design/ios.md`](docs/design/ios.md).
 
 **Build it.** You need Xcode, [xcodegen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`), CMake and rustup:
 
@@ -265,11 +270,13 @@ original's main-menu buttons are unchanged.
 
 | Page | What it holds | Takes effect |
 |---|---|---|
-| **General** | Window or full screen (desktop), Scaling, Widescreen, Mouse lock (desktop), Intro video, Check for updates (desktop release builds), the imported game files with **Import game files again...**, and **Open settings folder** (desktop). | Window, Scaling and Mouse lock at once; Widescreen from the next game; Intro video and Check for updates the next time Tidewater starts |
+| **General** | Window or full screen (desktop), Scaling, Widescreen, Controls, Mouse lock (desktop), Intro video, Check for updates (desktop release builds), the imported game files with **Import game files again...**, and **Open settings folder** (desktop). | Window, Scaling, Controls and Mouse lock at once; Widescreen from the next game; Intro video and Check for updates the next time Tidewater starts |
 | **Interface** | Health bars, idle worker button, game clock, control group bar, smart attack-move, minimap ping, record replays, magnifying zoom. | At once or from the next game |
 | **Sound** | Unit voices, sound effects and music, 0 to 100 percent in steps of 10. | At once |
 | **Gameplay** | Rally points, production queue, selection limit, extra game speeds, shift-queued orders. These change the game rules: they apply to single-player games you start, and in a multiplayer game the host chooses them in the lobby. | From the next game |
 | **Keys** | Every key you can rebind, in a scrolling list, with **Reset keys**. Desktop only (a phone has no keyboard to rebind). | At once |
+| **Touch** | How a drag, a tap, two fingers, the pinch and the holds work, the button size and which side bar is which. Shown where touch is in use. | At once |
+| **Controller** | Pointer speed, acceleration, dead zone, swapping confirm and back, and hiding the touch bars. Shown once a controller has been connected. | At once |
 
 **During a game, press Ctrl+G** (F2 is the first remembered view there) **or tap "Settings (Ctrl+G)" in the Options dialog**
 (F10, Options). It opens over the game, which stops while it is open, as for the game menu; in a network game it keeps
@@ -297,8 +304,8 @@ option, and `--no-mouse-lock`, `--no-intro` and `--no-update-check` still win ov
 ## Optional improvements
 
 Tidewater adds a few optional improvements that the original game does not have. **With none switched on, the game looks,
-sounds and plays as the original does.** Turn them on in the [Settings screen](#settings) (the Interface, Sound and Gameplay
-pages, and Scaling and Widescreen on General). Power users can also use the `[extras]` section of the
+sounds and plays as the original does.** Turn them on in the [Settings screen](#settings) (the Interface, Sound, Gameplay,
+Touch and Controller pages, and Scaling, Widescreen and Controls on General). Power users can also use the `[extras]` section of the
 settings file (`settings.txt`), or for one run a flag; `--no-extra-NAME` puts an option back to its default.
 The idle-worker key is F6; keys can be rebound on the Settings screen's Keys page. How the options work, the `[keys]` file format and how to add an option is in [`docs/design/extras.md`](docs/design/extras.md).
 
@@ -320,7 +327,7 @@ The idle-worker key is F6; keys can be rebound on the Settings screen's Keys pag
 | `minimap-ping` | `--extra-minimap-ping` | on, off | off | Alt-click on the minimap pings that place on your allies' minimaps, and shows their pings on yours |
 | `shift-queue` | `--extra-shift-queue` | on, off | off | Hold Shift while giving a move, attack, attack-move, patrol, repair, harvest or build order to add it to the unit's order queue (up to 8) instead of replacing its order (S) |
 | `auto-replay` | `--extra-auto-replay VALUE` | off, menu, always | off | Record every game: `menu` keeps the recording so the game menu can save it, `always` also writes each game's replay to the replays folder of the data directory as it is played |
-| `widescreen` | `--extra-widescreen VALUE` | off, 16:10, 16:9, auto | off | A wider game screen, the extra width being map: 16:10, 16:9, or auto to match the window (ignored while the touch side bars show; menus and videos stay 4:3) (C+L) |
+| `widescreen` | `--extra-widescreen VALUE` | off, 16:10, 16:9, auto | off | A wider game screen, the extra width being map: 16:10, 16:9, or auto to match the window (on touch it hides the side buttons, groups and Shift/Ctrl/Alt among them; menus and videos stay 4:3) (C+L) |
 | `map-zoom` | `--extra-map-zoom VALUE` | off, wheel | off | `wheel`: the mouse wheel over the map view magnifies it up to 4 times around the pointer and back to the normal view, never showing more map than the original does (on touch devices the pinch is `touch-pinch`) (C) |
 | `touch-drag` | `--extra-touch-drag VALUE` | pan, pan-no-glide, box | pan | Touch only. A finger dragged on the map scrolls it (`pan` glides on after a flick, `pan-no-glide` stops where the finger lifts); hold it still a moment first to draw a selection box instead. `box`: a drag draws the box at once, as the mouse does |
 | `touch-smart-tap` | `--extra-touch-smart-tap VALUE` | on, off | on | Touch only. With your units selected, a tap on the ground, an enemy or a resource orders them there, as a right click does; a tap on your own unit or building selects it. `off`: every tap is a left click |
@@ -416,6 +423,7 @@ Run `tidewater --help` for the same list. The optional positional argument is a 
 | `snapshot` | Print fingerprints of the simulation over every campaign and custom map; the behaviour snapshot `tests/snapshot.rs` checks. |
 | `replay` | Play a `.twrep` replay headlessly, check every state-hash checkpoint and exit non-zero at the first mismatch. |
 | `desync-diff` | Play two replays (or one twice with `--local SLOT`) and print the first cycle whose state hash differs and the first differing field. |
+| `app-icon` | Draw the app icon as PNG, ICO and ICNS; `packaging/icon/render.sh` runs it for every platform. |
 | `oracle` | Compare the simulation cycle by cycle with a trace of the original game and report the first record that differs. |
 
 ## Multiplayer (early)
@@ -451,7 +459,7 @@ What is done, what is early and what is not built. Not built: Battle.net and mod
 |---|---|---|
 | **Lockstep multiplayer** | Local Network and Direct IP games over TCP. The simulation is deterministic so that this is possible. | Early: menus, lobby, LAN game list, map transfer, chat and pause counts, the game going on when the host leaves, observers (our own addition); no Battle.net or modem |
 | **Custom games against the computer** | The Custom Scenario screen: race, opponents, resources, terrain, units and a map list. | Done |
-| **Touch controls and phones** | Touch input on desktop, iOS and Android. PlayStation Vita support is under evaluation. | Early: tried in the iOS Simulator and the Android emulator only, not on a device |
+| **Touch, controllers and handhelds** | Touch input on desktop, iOS and Android; gamepads; a PS Vita app. | Early: tried on an iPad, an Android handheld, the iOS Simulator, the Android emulator and Vita3K; not yet on an Android phone or a real Vita |
 | **Optional modern improvements** | Quality-of-life additions, all off by default so the default game matches the original. | Done: see [Optional improvements](#optional-improvements) |
 
 ## How it is built
@@ -468,7 +476,7 @@ The code is a Cargo workspace:
 | `crates/sim` | The deterministic game simulation, with no engine types. |
 | `crates/client` | The game client: an engine-neutral core that composes each frame, and the `tidewater` binary, the SDL 3 shell. |
 | `crates/twtool` | The inspection and verification tool. |
-| `crates/ios`, `crates/android` | The phone apps' native libraries; the Xcode and Gradle projects are in `platform/`. |
+| `crates/ios`, `crates/android` | The phone apps' native libraries; the Xcode and Gradle projects are in `platform/`. The Vita app is the `tidewater` binary built by `platform/vita/build.sh`. |
 
 ## Development
 
@@ -482,7 +490,7 @@ cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
 
 **Multiplayer end to end.** `TIDEWATER_INSTALL=<data>/game cargo test --release -p tidewater-client --test mp_e2e` starts two or three `tidewater` programs on this machine and plays seven games through the menus (Local Network, Direct IP, Classic, an observer, three players where the host leaves first, you alone against a Computer, two players and a Computer), then checks that every side saw the same game. It takes about 30 seconds in a release build and uses port 6112; details in [docs/design/network.md](docs/design/network.md#running-the-end-to-end-check).
 
-**CI.** [GitHub Actions](.github/workflows/ci.yml) runs on pull requests and on pushes to `develop` and `main`. It checks format, clippy and the tests on Linux (the game-data tests skip there), then builds release binaries of `tidewater` and `twtool` on Linux, macOS and Windows, plus the iOS Simulator library, an unsigned iOS `.ipa` (uploaded as a workflow artifact) and the Android arm64 library.
+**CI.** [GitHub Actions](.github/workflows/ci.yml) runs on pull requests and on pushes to `develop` and `main`. It checks format, clippy and the tests on Linux (the game-data tests skip there), then builds release binaries of `tidewater` and `twtool` on Linux, macOS and Windows, plus the iOS Simulator library, an unsigned iOS `.ipa` and the PS Vita `.vpk` (both uploaded as workflow artifacts) and the Android arm64 library.
 
 **Branches and releases.** Work lands on `develop`; merging `develop` into `main` cuts a release, with the version worked out from the commit messages. Details: [docs/release.md](docs/release.md).
 

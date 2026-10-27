@@ -11,7 +11,7 @@ The gestures are in [touch.md](touch.md), the import in [import.md](import.md) a
 | Area | State |
 |---|---|
 | Build (arm64-v8a, x86_64), debug APK | Works. |
-| Touch, chrome buttons | On from the first frame; checked with taps in the emulator. One-finger pan, hold-then-drag box, smart tap and the control-group bar ([touch.md](touch.md)) are new and not yet run in the emulator. |
+| Touch, chrome buttons | On from the first frame; checked with taps in the emulator. One-finger pan, hold-then-drag box, smart tap and the control-group bar ([touch.md](touch.md)) are not yet run in the emulator. |
 | Touch Controls help | Shows by itself at the first game, then under Help and on the main menu. |
 | Exit Program, Back | Exit Program is not offered (Android closes apps itself); the Back button is Esc (`SDL_HINT_ANDROID_TRAP_BACK_BUTTON`), not yet tried in the emulator. |
 | Landscape only | Works (the manifest and an SDL hint). |
@@ -91,7 +91,7 @@ app's cache folder (`cache/picked`), writes the copy's path to `files/pick-resul
 `nativePicked`, which hands the path to the first-run screen as SDL's dialogs do. The activity shows a toast while it
 copies. This needs no storage permission, because the picker grants access to the chosen item only.
 
-Copying through the picker is slow (the full game is 700 MB and took about a minute in the emulator), and it makes a
+Copying through the picker is slow (the full game is about 500 MB and took about a minute in the emulator), and it makes a
 second copy until the next start of the app, which deletes `cache/picked`. A single picked file is read alone: a `.cue`
 sheet picked this way cannot see its `.bin`, so put multi-file images in the external files folder.
 
@@ -111,11 +111,11 @@ whatever orientation it chooses, and the game returns to landscape afterwards.
 ## Limits
 
 - **No GOG installer.** `innoextract` is a separate program and an Android app cannot start one.
-- **Not tried on a phone.** Only the arm64 emulator ran; a real device, other screen shapes (notches), the soft keyboard
-  and a controller are untried.
+- **Not tried on a phone.** Besides the arm64 emulator it has run on an Android handheld (a Retroid Pocket 3+) with its
+  touch screen and built-in controller; phones, other screen shapes (notches) and the soft keyboard are untried.
 - **The CD-image picker is untried** on Android (the folder picker was run); the import of CD images is the pure-Rust
   reader that works elsewhere.
-- **Storage.** Imported files are about 700 MB and the original stays; the picker needs the same again in cache.
+- **Storage.** Imported files are about 500 MB and the original stays; the picker needs the same again in cache.
 - **Network play** is untried on the phone.
 - **No Play Store packaging.** The release APK is for sideloading; when a newer release exists the main menu offers it, and **Update now** opens the release page to download the new APK (`update.rs`). The manifest asks only for `INTERNET`, for network games and that check.
 - **Sound** is untested in the emulator (it ran with `-no-audio`).

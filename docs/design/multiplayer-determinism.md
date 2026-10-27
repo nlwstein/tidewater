@@ -56,11 +56,11 @@ Mark a game-state read of the local player that the specs don't settle with
 
 | Where | Status |
 | --- | --- |
-| Passenger click, `game.rs` `tick` | Now `Command::UnloadOne`, applied first in the cycle as before |
+| Passenger click, `game.rs` `tick` | `Command::UnloadOne`, applied first in the cycle |
 | `set_fog_of_war`, `gamemenu.rs` | Skipped in network games (the spec disables the radio there) |
 | `start_cheats`, `cheats.rs` | Skipped in network games; network cheats use `Command::Cheat` |
 | Critter kill, `select_sound` | Never runs in network games |
-| Surrender, `gamemenu.rs` (`Confirm::Surrender`, `QuitDraw`) | Now `Command::Surrender` and `Command::QuitDraw`, applied at once through `Sim::apply_now` (same cycle as before, so traces and frame snapshots are unchanged). What a *network* surrender does (leave notices, allies) is still `TODO(multiplayer)`, `docs/specs/net/leave-and-drop.md` "Surrender and quit (draw)" |
+| Surrender, `gamemenu.rs` (`Confirm::Surrender`, `QuitDraw`) | `Command::Surrender` and `Command::QuitDraw`, applied at once through `Sim::apply_now`. What a *network* surrender does (leave notices, allies) is still `TODO(multiplayer)`, `docs/specs/net/leave-and-drop.md` "Surrender and quit (draw)" |
 | Demo options (`--demo-move`, `--demo-outcome`, `--demo-fight`) | Development only; they never run in a network game, and a run that uses one is not recorded |
 | Fog switch in Preferences, critter kill | Not reproducible by a replay. The recording notes the event (`Session::note_unsynced`), and playback prints the note |
 | `prepare_save`, `restore` | Single-player save and load only so far. Network saves (`docs/specs/game/save-load.md`) need a review for local-player reads before they ship |
