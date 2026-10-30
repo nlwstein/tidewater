@@ -17,7 +17,7 @@ The import is in [import.md](import.md), the touch gestures in [touch.md](touch.
 | Vita3K | Plays. All 33 game scenes of the frame test match the desktop snapshots, frames and sound (`firstrun` differs on purpose, see [Test builds](#test-builds)). Played by hand with the pad: videos, menus, a custom game. |
 | Real Vita | Installs (v0.9.1) and plays, by one player so far. The pointer and the scrolling move in steps; the frame rate is being measured (GitHub issue #3). |
 | Game files | Copied to `ux0:data/Tidewater`; the first-run screen scans that folder. |
-| Saves and settings | `ux0:data/Tidewater`. |
+| Saves and settings | `ux0:data/Tidewater`. A first run starts with Widescreen at `auto` (the Vita's 16:9 screen); Settings, General changes it. |
 | Front touch screen | Read as touch, like a phone. Not tried on hardware. |
 | Buttons and sticks | Read as a gamepad (SDL's built-in "PSVita Controller" mapping). Tried in Vita3K: click, right click, panel mode, the minimap jump, the game menu, pause and scrolling work. |
 | Speed | Unmeasured on a Vita. Vita3K on a fast Mac holds 60 fps with 10 to 12 ms of work a frame in a game, which says little about the hardware. Expect 30 fps at best until the compositor gets cheaper. |

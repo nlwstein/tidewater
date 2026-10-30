@@ -199,7 +199,8 @@ without new screen code. The file and the flags still work and are for power use
   `menu` records in memory only and adds a **Save Replay** button to the in-game menu that writes the game so far
   (and carries on writing), so a game you decide to keep after the fact is not lost. The default menu is unchanged
   while the option is off. A game started from a save, or with a `--demo-*` option, is not recorded, as before.
-- **Widescreen** (`widescreen`, C+L). Off by default. `16:10` makes the game screen 768 x 480, `16:9` 864 x 480 (853.3 rounded
+- **Widescreen** (`widescreen`, C+L). Off by default, except that a first run on the PS Vita (no settings file yet) starts
+  it at `auto`, which fits the Vita's 16:9 screen; its buttons and sticks do the side buttons' work. `16:10` makes the game screen 768 x 480, `16:9` 864 x 480 (853.3 rounded
   to a whole tile) and `auto` the tile multiple nearest the window's shape, from 640 to 864. The screen stays 480 lines
   high, so the interface art keeps its pixel size and the map view only gains width: 18 or 21 tiles across instead of
   14, nothing zoomed out and nothing more shown above or below. Menus, briefings, videos, the score screen and the game

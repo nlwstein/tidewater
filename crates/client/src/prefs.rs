@@ -153,12 +153,30 @@ impl Prefs {
         self
     }
 
-    /// Reads the settings file at program start ("Loading"); no file, or one that can't be read, gives the defaults.
+    /// The settings of a first run (no settings file yet): the defaults, plus what suits the platform from the start
+    /// ([`Prefs::first_run_for`]). The defaults themselves stay the original game's on every platform.
+    pub fn first_run() -> Self {
+        Self::first_run_for(cfg!(target_os = "vita"))
+    }
+
+    /// A first run's settings, on the PS Vita or elsewhere. The Vita starts with `widescreen` at `auto`: its screen is
+    /// 16:9, and its buttons and sticks stand in for the side buttons the wider map takes the place of.
+    pub fn first_run_for(vita: bool) -> Self {
+        let mut p = Self::default();
+        if vita {
+            // 3 is `auto` in `extras::WIDESCREEN_MODES`.
+            p.extras.set(crate::extras::Id::Widescreen, 3);
+        }
+        p
+    }
+
+    /// Reads the settings file at program start ("Loading"); no file, or one that can't be read, gives a first run's
+    /// settings ([`Prefs::first_run`]).
     pub fn load(storage: &dyn crate::storage::Storage) -> Self {
         let p = storage
             .read_settings()
             .and_then(|b| String::from_utf8(b).ok())
-            .map_or_else(Self::default, |s| Self::from_text(&s));
+            .map_or_else(Self::first_run, |s| Self::from_text(&s));
         for m in &p.key_problems {
             eprintln!("settings: [keys] {m}");
         }
@@ -574,6 +592,19 @@ mod tests {
         p.store(&storage).unwrap();
         assert_eq!(Prefs::load(&storage), p);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_first_run_on_the_vita_starts_widescreen_and_elsewhere_with_the_defaults() {
+        use crate::extras::Widescreen;
+        assert_eq!(Prefs::first_run_for(false), Prefs::default());
+        let vita = Prefs::first_run_for(true);
+        assert_eq!(vita.extras.widescreen(), Widescreen::Auto);
+        // Only that differs, and a stored file is read as it is.
+        let mut back = vita.clone();
+        back.extras.set(crate::extras::Id::Widescreen, 0);
+        assert_eq!(back, Prefs::default());
+        assert_eq!(Prefs::from_text(&vita.to_text()).extras.widescreen(), Widescreen::Auto);
     }
 
     #[test]
