@@ -505,8 +505,9 @@ impl FrameStats {
         self.phases.push(phases::take());
         let report = self.since.elapsed() >= Self::EVERY;
         if report {
+            let slowest = slowest_frame(&self.work, &self.phases);
             let line = format!(
-                "frame stats: {} frames, interval {}, work {}\n{}",
+                "frame stats: {} frames, interval {}, work {}\n{}\n{slowest}",
                 self.intervals.len(),
                 summary(&mut self.intervals),
                 summary(&mut self.work),
@@ -584,6 +585,19 @@ fn phase_summary(frames: &[[f32; Phase::ALL.len()]]) -> String {
         })
         .collect();
     format!("frame phases (mean/p99 ms): {}", parts.join(", "))
+}
+
+/// The phases of the frame that worked longest, which tells what a single stall spent its time on.
+fn slowest_frame(work: &[f32], frames: &[[f32; Phase::ALL.len()]]) -> String {
+    let Some((i, ms)) = work.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1)) else {
+        return "slowest frame: -".into();
+    };
+    let parts: Vec<String> = Phase::ALL
+        .iter()
+        .filter(|&&p| frames[i][p as usize] >= 0.05)
+        .map(|&p| format!("{} {:.1}", p.name(), frames[i][p as usize]))
+        .collect();
+    format!("slowest frame ({ms:.1} ms work): {}", parts.join(", "))
 }
 
 /// A key the core has no name for, by the shell's own name for it: the same name gives the same key.
