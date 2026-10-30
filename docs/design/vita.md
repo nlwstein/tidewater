@@ -2,8 +2,9 @@
 
 **Bottom line.** Tidewater builds as a Vita app (`.vpk`) from the same shell code as the other platforms, and CI builds
 it on every run. In the Vita3K emulator it plays: the videos, menus and a custom game work with the Vita's buttons
-and sticks, and every frame-test scene gives the same frames and sound as on the desktop. It has not been tried on a
-real Vita, and we expect it to run slower than 60 fps there.
+and sticks, and every frame-test scene gives the same frames and sound as on the desktop. One player has installed and
+played it on a real Vita (GitHub issue #3); the cursor and the scrolling move in
+steps there, which looks like a low frame rate, and a test build is measuring it.
 
 The import is in [import.md](import.md), the touch gestures in [touch.md](touch.md) and the Android version in
 [android.md](android.md).
@@ -14,7 +15,7 @@ The import is in [import.md](import.md), the touch gestures in [touch.md](touch.
 |---|---|
 | Build | Works on Linux and macOS (`platform/vita/build.sh`). CI builds the VPK on every run. |
 | Vita3K | Plays. All 33 game scenes of the frame test match the desktop snapshots, frames and sound (`firstrun` differs on purpose, see [Test builds](#test-builds)). Played by hand with the pad: videos, menus, a custom game. |
-| Real Vita | Not tried. |
+| Real Vita | Installs (v0.9.1) and plays, by one player so far. The pointer and the scrolling move in steps; the frame rate is being measured (GitHub issue #3). |
 | Game files | Copied to `ux0:data/Tidewater`; the first-run screen scans that folder. |
 | Saves and settings | `ux0:data/Tidewater`. |
 | Front touch screen | Read as touch, like a phone. Not tried on hardware. |
@@ -112,9 +113,11 @@ pixel, and the Vita's window is always the whole 960 by 544 screen, so it never 
 
 ## Limits
 
-- **Not run on a Vita yet.** The first hardware install, of v0.9.0, failed with error 0x8010113D (the icon was a 32-bit
-  PNG; fixed). Memory, speed, touch and the extended-memory request are all untested on hardware.
-- **Controls tried only in Vita3K.** SDL's Vita backend presents the buttons and sticks as a gamepad, which the
+- **One real Vita so far.** The first hardware install, of v0.9.0, failed with error 0x8010113D (the icon was a 32-bit
+  PNG; fixed in v0.9.1). On the Vita it now plays, but the pointer moves in steps of about two footman heights and
+  light stick pushes are hard to control (GitHub issue #3). Memory, touch and the
+  frame rate are not measured on hardware yet.
+- **Controls tuned only in Vita3K.** SDL's Vita backend presents the buttons and sticks as a gamepad, which the
   gamepad support reads like any other; which buttons the Vita lacks is in [gamepad.md](gamepad.md).
 - **Speed.** The compositor draws a 640 by 480 picture on the CPU each frame. We expect about 30 fps. Ideas, cheapest
   first: run at 30 fps (the simulation's fixed step is unaffected), raise the CPU clock to 444 MHz, compose only the
