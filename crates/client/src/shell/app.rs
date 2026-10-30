@@ -56,9 +56,13 @@ use tidewater_client::input::{
     Button, Buttons, Key, KeyEvent, MouseTouch, MouseTouchKind, PadAxis, PadButton, PadEvent, Touch, TouchPhase, Wheel,
     WindowGeom,
 };
+use tidewater_client::phases::{self, Phase};
 use tidewater_client::script;
 
 use crate::sdl;
+
+#[path = "gpu.rs"]
+mod gpu;
 
 /// The file dialogs' filters (the first-run screen's "Choose GOG installer..." and "Choose CD image...").
 const INSTALLER_FILTERS: &[(&str, &str)] = &[("Installers", "exe;bin;sh;pkg;dmg"), ("All files", "*")];
@@ -97,6 +101,8 @@ pub fn android_main(argv: Vec<std::ffi::OsString>) -> i32 {
 /// The program, from its command line: what `main` does on a desktop, and what the iOS app's entry calls. A test build
 /// with a command line baked in (`baked_args`) runs that instead.
 pub fn run_program() -> Result<()> {
+    #[cfg(target_os = "vita")]
+    sdl::raise_vita_clocks();
     if let Some(args) = baked_args() {
         return run_program_from(Args::parse_from(args));
     }
@@ -224,23 +230,23 @@ fn run(l: host::Launch) -> Result<()> {
     }
     // A scripted run mixes its sound itself (`script::record`) and plays none.
     let audio_stats = Arc::new(sdl::AudioStats::default());
+    let mut sound = String::new();
     let audio = if scripted {
         None
     } else {
         let output = core.audio.output();
         match sdl::AudioOut::open(&sdl, SAMPLE_RATE, move |buf| output.mix(buf), audio_stats.clone()) {
-            Ok(a) => Some(a),
+            Ok(a) => {
+                sound = format!("audio device (rate, channels, sample frames): {:?}", a.device_format());
+                Some(a)
+            }
             Err(e) => {
                 eprintln!("no sound: {e}");
+                sound = format!("no sound: {e}");
                 None
             }
         }
     };
-    if let Some(a) = &audio
-        && std::env::var_os("TIDEWATER_FRAME_STATS").is_some()
-    {
-        eprintln!("audio device (rate, channels, sample frames): {:?}", a.device_format());
-    }
 
     let mut shell = Shell {
         window: &window,
@@ -275,6 +281,18 @@ fn run(l: host::Launch) -> Result<()> {
     };
     let mut overlay_key: Option<(bool, u64, (u32, u32))> = None;
     let mut stats = FrameStats::default();
+    if !sound.is_empty() {
+        stats.note(&sound);
+    }
+    // The screen's layers drawn on the GPU (`gpu`) rather than composed on the CPU: the PS Vita's default, whose CPU
+    // can't compose them in time; `TIDEWATER_COMPOSITOR=gpu` or `cpu` chooses. A scripted run composes on the CPU as
+    // well, and compares the window with it.
+    let mut gpu = gpu::Gpu::default();
+    core.gpu_compose = match std::env::var("TIDEWATER_COMPOSITOR").as_deref() {
+        Ok("gpu") => true,
+        Ok("cpu") => false,
+        _ => cfg!(target_os = "vita"),
+    };
     let mut first = true;
     let mut last = Instant::now();
     loop {
@@ -369,7 +387,9 @@ fn run(l: host::Launch) -> Result<()> {
             continue;
         }
         // A game with `widescreen` has a wider screen: the picture's texture follows, and the window grows to hold it.
-        let screen = (core.frame.width as u32, core.frame.height as u32);
+        // The core's screen size, not its frame's: on the GPU path the frame is only composed when something reads it
+        // (`Core::frame_composed`), so its size can be an old screen's.
+        let screen = core.screen;
         if screen != shell.screen {
             renderer.set_size(screen)?;
             if !MOBILE && !big_script {
@@ -396,7 +416,16 @@ fn run(l: host::Launch) -> Result<()> {
                 None => renderer.set_overlay(None),
             }
         }
-        renderer.draw(&core.frame.rgba, lb.screen(), sharp);
+        phases::timed(Phase::Upload, || {
+            if core.gpu_compose && gpu.draw(&mut renderer, &core) {
+                renderer.show_layers(lb.screen(), sharp);
+            } else if core.frame_composed {
+                renderer.draw(&core.frame.rgba, lb.screen(), sharp);
+            } else {
+                // The renderer can't draw the list (no texture to draw into): the CPU composes from the next frame.
+                core.gpu_compose = false;
+            }
+        });
         let mut finished = false;
         if let Some(run) = core.script.as_mut() {
             let shown = (big_script || lb.scale == 1.0).then_some(&core.frame);
@@ -408,14 +437,16 @@ fn run(l: host::Launch) -> Result<()> {
             }
             finished = asked.finished;
         }
-        stats.frame(interval, now.elapsed());
-        renderer.present();
+        if stats.frame(interval, now.elapsed()) && audio.is_some() {
+            stats.note(&audio_summary(&audio_stats));
+        }
+        phases::timed(Phase::Present, || renderer.present());
         if exiting || finished {
             break;
         }
     }
-    if audio.is_some() && std::env::var_os("TIDEWATER_FRAME_STATS").is_some() {
-        print_audio_stats(&audio_stats);
+    if audio.is_some() {
+        stats.note(&audio_summary(&audio_stats));
     }
     drop(audio);
     Ok(())
@@ -455,16 +486,19 @@ fn fit_window(window: &sdl::Window, old: (u32, u32), new: (u32, u32), fit: displ
     window.set_size(points(w), points(h));
 }
 
-fn print_audio_stats(s: &sdl::AudioStats) {
+/// The sound device's callbacks so far, for the frame stats.
+fn audio_summary(s: &sdl::AudioStats) -> String {
     use std::sync::atomic::Ordering::Relaxed;
     let calls = s.calls.load(Relaxed);
     let span = s.last_ns.load(Relaxed).saturating_sub(s.first_ns.load(Relaxed)) as f64 / 1e6;
-    eprintln!(
-        "audio: {calls} callbacks, {} sample frames at 22,050 Hz, mean period {:.2} ms, longest gap {:.2} ms",
+    format!(
+        "audio: {calls} callbacks, {} sample frames at 22,050 Hz, mean period {:.2} ms, longest gap {:.2} ms, \
+         loudest sample {}",
         s.frames.load(Relaxed),
         if calls > 1 { span / (calls - 1) as f64 } else { 0.0 },
-        s.max_gap_ns.load(Relaxed) as f64 / 1e6
-    );
+        s.max_gap_ns.load(Relaxed) as f64 / 1e6,
+        s.peak.load(Relaxed)
+    )
 }
 
 /// The window as the core sees it, and the mouse lock's state.

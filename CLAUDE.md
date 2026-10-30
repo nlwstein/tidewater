@@ -62,8 +62,8 @@ before writing any code, and follow it exactly.
   Optional improvements' rules sit in their own modules: `overlay.rs` (health bars, clock), `idle.rs`, `groupbar.rs`, `attackmove.rs`, `ping.rs`; `keymap.rs` holds the rebindable keys.
   `storage.rs` is the `Storage` trait for everything read or written outside the core (installation, saves,
   settings, screenshots, wall clock) and the desktop's folders.
-  The window shows one picture composed on the CPU, 640 × 480 or wider in a game with the `widescreen` option (`compose.rs`, `widescreen.rs`; `core.rs` places the layers, the shell
-  shows it). `script.rs` runs scripted scenes (`--script NAME --script-out DIR [--headless]`) for the frame
+  The window shows one picture, 640 × 480 or wider in a game with the `widescreen` option, composed from a draw list on the CPU (`compose/`, `widescreen.rs`; `core.rs` places the layers) or drawn on the GPU by the shell (`shell/gpu.rs`, the Vita's default).
+  `script.rs` runs scripted scenes (`--script NAME --script-out DIR [--headless]`) for the frame
   snapshot `tests/frames.rs`; the design of the core and its shell is `docs/design/client-core.md`.
 - `crates/ios`: the iOS app's static library (`tidewater-ios`): empty except on `target_os = "ios"`, where it builds
   the shell files `crates/client/src/shell/app.rs` and `sdl.rs` by `#[path]`, so desktop and phone run one code path.

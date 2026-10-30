@@ -119,24 +119,33 @@ pub fn decode_wav(bytes: &[u8]) -> Option<Vec<Frame>> {
     })
 }
 
-/// Resamples frames at `from` Hz to [`SAMPLE_RATE`] by linear interpolation, in whole numbers.
+/// Resamples frames at `from` Hz to [`SAMPLE_RATE`] by linear interpolation, in whole numbers: output frame i lies at
+/// source frame j + frac / SAMPLE_RATE, where j and frac are i × from's quotient and remainder by SAMPLE_RATE. They are
+/// stepped by adding rather than divided out for each frame, and the mix is in 32 bits by a constant, as some CPUs (the
+/// Vita's) have no divide instruction; the results are the same.
 fn resample(src: &[Frame], from: u32) -> Vec<Frame> {
     if src.is_empty() {
         return Vec::new();
     }
-    let to = SAMPLE_RATE as u64;
-    let n = (src.len() as u64 * to / from as u64) as usize;
-    (0..n)
-        .map(|i| {
-            let num = i as u64 * from as u64;
-            let j = (num / to) as usize;
-            let frac = (num % to) as i64;
-            let a = src[j];
-            let b = *src.get(j + 1).unwrap_or(&a);
-            let mix = |a: i16, b: i16| (a as i64 + (b as i64 - a as i64) * frac / to as i64) as i16;
-            [mix(a[0], b[0]), mix(a[1], b[1])]
-        })
-        .collect()
+    let to = SAMPLE_RATE;
+    let n = (src.len() as u64 * to as u64 / from as u64) as usize;
+    let (whole, part) = (from / to, from % to);
+    let (mut j, mut frac) = (0usize, 0u32);
+    let mut out = Vec::with_capacity(n);
+    for _ in 0..n {
+        let a = src[j];
+        let b = *src.get(j + 1).unwrap_or(&a);
+        // |b − a| < 2^16 and frac < 22,050 < 2^15, so the product fits in an i32.
+        let mix = |a: i16, b: i16| (a as i32 + (b as i32 - a as i32) * frac as i32 / SAMPLE_RATE as i32) as i16;
+        out.push([mix(a[0], b[0]), mix(a[1], b[1])]);
+        j += whole as usize;
+        frac += part;
+        if frac >= to {
+            frac -= to;
+            j += 1;
+        }
+    }
+    out
 }
 
 /// Who a voice belongs to, so that it stops with its owner.
@@ -639,6 +648,27 @@ mod tests {
         );
         assert_eq!(decode_wav(b"RIFF\0\0\0\0WAVE"), None);
         assert_eq!(decode_wav(&wav(22_050, 1, 24, &[0, 0, 0])), None);
+    }
+
+    #[test]
+    fn resampling_by_steps_gives_the_quotient_and_remainder_rule() {
+        let src: Vec<Frame> = (0..997)
+            .map(|i| [(i * 61 % 65_536 - 32_768) as i16, (i * 7919 % 4001) as i16])
+            .collect();
+        for from in [8_000, 11_025, 16_000, 22_050, 32_000, 44_100, 48_000, 96_000] {
+            let to = SAMPLE_RATE as u64;
+            let n = (src.len() as u64 * to / from as u64) as usize;
+            let want: Vec<Frame> = (0..n)
+                .map(|i| {
+                    let num = i as u64 * from as u64;
+                    let (j, frac) = ((num / to) as usize, (num % to) as i64);
+                    let (a, b) = (src[j], *src.get(j + 1).unwrap_or(&src[j]));
+                    let mix = |a: i16, b: i16| (a as i64 + (b as i64 - a as i64) * frac / to as i64) as i16;
+                    [mix(a[0], b[0]), mix(a[1], b[1])]
+                })
+                .collect();
+            assert_eq!(resample(&src, from), want, "{from} Hz");
+        }
     }
 
     #[test]

@@ -455,6 +455,25 @@ pub fn set_env(name: &str, value: &str) {
     unsafe { std::env::set_var(name, value) };
 }
 
+/// The PS Vita's clocks raised from the system's defaults for an app (CPU 333 MHz, bus 222, GPU 166) to the most it
+/// allows one: CPU 444 MHz, bus 222, GPU 222 and its crossbar 166, as Vita ports commonly do (`docs/design/vita.md`).
+#[cfg(target_os = "vita")]
+pub fn raise_vita_clocks() {
+    unsafe extern "C" {
+        fn scePowerSetArmClockFrequency(mhz: c_int) -> c_int;
+        fn scePowerSetBusClockFrequency(mhz: c_int) -> c_int;
+        fn scePowerSetGpuClockFrequency(mhz: c_int) -> c_int;
+        fn scePowerSetGpuXbarClockFrequency(mhz: c_int) -> c_int;
+    }
+    // SAFETY: the system's calls, with frequencies it accepts; they change nothing else.
+    unsafe {
+        scePowerSetArmClockFrequency(444);
+        scePowerSetBusClockFrequency(222);
+        scePowerSetGpuClockFrequency(222);
+        scePowerSetGpuXbarClockFrequency(166);
+    }
+}
+
 /// Writes a line to the system log (`adb logcat -s SDL`) as an error.
 pub fn log_error(msg: &str) {
     // SAFETY: a fixed format string and a valid C string for its one argument.
@@ -589,8 +608,19 @@ pub struct Renderer<'w> {
     sharp: Option<(*mut sys::SDL_Texture, u32)>,
     /// The touch chrome drawn over the picture: its texture and size.
     overlay: Option<(*mut sys::SDL_Texture, (u32, u32))>,
+    /// The GPU path's textures ([`Renderer::create_texture`]; null where one was destroyed) and the screen they are
+    /// drawn into ([`Renderer::begin_layers`]), with its size.
+    textures: Vec<*mut sys::SDL_Texture>,
+    layered: Option<(*mut sys::SDL_Texture, (u32, u32))>,
     _window: PhantomData<&'w Window<'w>>,
 }
+
+/// One of a [`Renderer`]'s textures for the GPU path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct TextureId(usize);
+
+/// A rectangle in pixels: x, y, width and height.
+pub type FRect = (f32, f32, f32, f32);
 
 impl<'w> Renderer<'w> {
     /// A renderer with a `size` texture; `vsync`: present waits for the display.
@@ -625,6 +655,8 @@ impl<'w> Renderer<'w> {
             size,
             sharp: None,
             overlay: None,
+            textures: Vec::new(),
+            layered: None,
             _window: PhantomData,
         })
     }
@@ -679,29 +711,167 @@ impl<'w> Renderer<'w> {
             pitch * self.size.1 as usize,
             "the picture is the texture's size"
         );
+        // SAFETY: a live renderer and texture; `rgba` holds the texture's whole size at `pitch` bytes a row.
+        unsafe {
+            sys::SDL_UpdateTexture(self.texture, std::ptr::null(), rgba.as_ptr().cast(), pitch as c_int);
+        }
+        self.show(self.texture, dst, sharp);
+    }
+
+    /// Clears the window to black and draws `texture` (the picture's size) over `dst` as [`Renderer::draw`] does.
+    fn show(&mut self, texture: *mut sys::SDL_Texture, dst: (u32, u32, u32, u32), sharp: Option<u32>) {
         let dst = sys::SDL_FRect {
             x: dst.0 as f32,
             y: dst.1 as f32,
             w: dst.2 as f32,
             h: dst.3 as f32,
         };
-        // SAFETY: a live renderer and texture; `rgba` holds the texture's whole size at `pitch` bytes a row.
-        unsafe {
-            sys::SDL_UpdateTexture(self.texture, std::ptr::null(), rgba.as_ptr().cast(), pitch as c_int);
-        }
         let stepped = sharp.and_then(|n| self.sharp_target(n.max(1)));
         // SAFETY: a live renderer and textures; the target is ours and is unset again before the window is drawn.
         unsafe {
             if let Some(target) = stepped {
                 sys::SDL_SetRenderTarget(self.raw, target);
-                sys::SDL_RenderTexture(self.raw, self.texture, std::ptr::null(), std::ptr::null());
+                sys::SDL_RenderTexture(self.raw, texture, std::ptr::null(), std::ptr::null());
                 sys::SDL_SetRenderTarget(self.raw, std::ptr::null_mut());
             }
             sys::SDL_SetRenderDrawColor(self.raw, 0, 0, 0, 255);
             sys::SDL_RenderClear(self.raw);
-            sys::SDL_RenderTexture(self.raw, stepped.unwrap_or(self.texture), std::ptr::null(), &dst);
+            sys::SDL_RenderTexture(self.raw, stepped.unwrap_or(texture), std::ptr::null(), &dst);
         }
         self.draw_overlay();
+    }
+
+    /// A texture of `size` RGBA pixels for the GPU path, drawn with the nearest texel and blended by its alpha.
+    pub fn create_texture(&mut self, size: (u32, u32)) -> Option<TextureId> {
+        // SAFETY: a live renderer.
+        let t = unsafe {
+            sys::SDL_CreateTexture(
+                self.raw,
+                sys::SDL_PIXELFORMAT_RGBA32,
+                sys::SDL_TEXTUREACCESS_STATIC,
+                size.0.max(1) as c_int,
+                size.1.max(1) as c_int,
+            )
+        };
+        if t.is_null() {
+            return None;
+        }
+        // SAFETY: a live texture.
+        unsafe {
+            sys::SDL_SetTextureScaleMode(t, sys::SDL_SCALEMODE_NEAREST);
+            sys::SDL_SetTextureBlendMode(t, sys::SDL_BLENDMODE_BLEND);
+        }
+        self.textures.push(t);
+        Some(TextureId(self.textures.len() - 1))
+    }
+
+    pub fn destroy_texture(&mut self, id: TextureId) {
+        if let Some(t) = self.textures.get_mut(id.0)
+            && !t.is_null()
+        {
+            // SAFETY: made by `create_texture`, not used again (the slot is cleared).
+            unsafe { sys::SDL_DestroyTexture(*t) };
+            *t = std::ptr::null_mut();
+        }
+    }
+
+    fn texture(&self, id: TextureId) -> Option<*mut sys::SDL_Texture> {
+        self.textures.get(id.0).copied().filter(|t| !t.is_null())
+    }
+
+    /// Copies `rgba` into the part `rect` (x, y, width, height) of texture `id`: its first pixel is the rectangle's
+    /// top-left, its rows `pitch` bytes apart.
+    pub fn update_texture(&mut self, id: TextureId, rect: (u32, u32, u32, u32), rgba: &[u8], pitch: usize) {
+        let Some(t) = self.texture(id) else { return };
+        let (x, y, w, h) = rect;
+        if w == 0 || h == 0 {
+            return;
+        }
+        assert!(
+            pitch >= w as usize * 4 && rgba.len() >= (h as usize - 1) * pitch + w as usize * 4,
+            "the pixels cover the rectangle"
+        );
+        let r = sys::SDL_Rect {
+            x: x as c_int,
+            y: y as c_int,
+            w: w as c_int,
+            h: h as c_int,
+        };
+        // SAFETY: a live texture; `rgba` holds `h` rows of `w` pixels `pitch` bytes apart (checked above), and SDL
+        // clips the rectangle to the texture.
+        unsafe { sys::SDL_UpdateTexture(t, &r, rgba.as_ptr().cast(), pitch as c_int) };
+    }
+
+    /// Starts drawing the screen (the picture's size, black) from textures; [`Renderer::show_layers`] shows it.
+    pub fn begin_layers(&mut self) -> bool {
+        if self.layered.is_some_and(|(_, s)| s != self.size) {
+            // SAFETY: made below, not used again.
+            unsafe { sys::SDL_DestroyTexture(self.layered.take().unwrap().0) };
+        }
+        if self.layered.is_none() {
+            // SAFETY: a live renderer.
+            let t = unsafe {
+                sys::SDL_CreateTexture(
+                    self.raw,
+                    sys::SDL_PIXELFORMAT_RGBA32,
+                    sys::SDL_TEXTUREACCESS_TARGET,
+                    self.size.0 as c_int,
+                    self.size.1 as c_int,
+                )
+            };
+            if t.is_null() {
+                return false;
+            }
+            // SAFETY: a live texture.
+            unsafe {
+                sys::SDL_SetTextureScaleMode(t, sys::SDL_SCALEMODE_NEAREST);
+                sys::SDL_SetTextureBlendMode(t, sys::SDL_BLENDMODE_NONE);
+            }
+            self.layered = Some((t, self.size));
+        }
+        let (t, _) = self.layered.unwrap();
+        // SAFETY: a live renderer and target texture.
+        unsafe {
+            sys::SDL_SetRenderTarget(self.raw, t);
+            sys::SDL_SetRenderDrawColor(self.raw, 0, 0, 0, 255);
+            sys::SDL_RenderClear(self.raw);
+        }
+        true
+    }
+
+    /// Draws the part `src` of texture `id` over `dst` on the screen being drawn, inside `clip` (x, y, width and
+    /// height in screen pixels).
+    pub fn draw_texture(&mut self, id: TextureId, src: FRect, dst: FRect, clip: (i32, i32, i32, i32)) {
+        let Some(t) = self.texture(id) else { return };
+        let f = |r: FRect| sys::SDL_FRect {
+            x: r.0,
+            y: r.1,
+            w: r.2,
+            h: r.3,
+        };
+        let (src, dst) = (f(src), f(dst));
+        let clip = sys::SDL_Rect {
+            x: clip.0,
+            y: clip.1,
+            w: clip.2,
+            h: clip.3,
+        };
+        // SAFETY: a live renderer and texture, and valid rectangles.
+        unsafe {
+            sys::SDL_SetRenderClipRect(self.raw, &clip);
+            sys::SDL_RenderTexture(self.raw, t, &src, &dst);
+        }
+    }
+
+    /// Ends the screen begun by [`Renderer::begin_layers`] and shows it over `dst` as [`Renderer::draw`] does.
+    pub fn show_layers(&mut self, dst: (u32, u32, u32, u32), sharp: Option<u32>) {
+        let Some((t, _)) = self.layered else { return };
+        // SAFETY: a live renderer.
+        unsafe {
+            sys::SDL_SetRenderClipRect(self.raw, std::ptr::null());
+            sys::SDL_SetRenderTarget(self.raw, std::ptr::null_mut());
+        }
+        self.show(t, dst, sharp);
     }
 
     /// The intermediate picture for a whole-number scale `n`, made when the scale changes.
@@ -820,6 +990,12 @@ impl Drop for Renderer<'_> {
                 sys::SDL_DestroyTexture(t);
             }
             if let Some((t, _)) = self.overlay {
+                sys::SDL_DestroyTexture(t);
+            }
+            if let Some((t, _)) = self.layered {
+                sys::SDL_DestroyTexture(t);
+            }
+            for &t in self.textures.iter().filter(|t| !t.is_null()) {
                 sys::SDL_DestroyTexture(t);
             }
             sys::SDL_DestroyTexture(self.texture);
@@ -1037,6 +1213,8 @@ pub struct AudioStats {
     pub first_ns: AtomicU64,
     pub last_ns: AtomicU64,
     pub max_gap_ns: AtomicU64,
+    /// The loudest sample handed over (its size).
+    pub peak: AtomicU64,
 }
 
 /// What the callback owns.
@@ -1080,6 +1258,8 @@ unsafe extern "C" fn feed_callback<F: FnMut(&mut [i16])>(
     feed.buf.resize(samples, 0);
     (feed.fill)(&mut feed.buf);
     s.frames.fetch_add(samples as u64 / 2, Ordering::Relaxed);
+    let peak = feed.buf.iter().map(|v| v.unsigned_abs()).max().unwrap_or(0);
+    s.peak.fetch_max(peak as u64, Ordering::Relaxed);
     // SAFETY: a live stream and `samples` valid samples.
     unsafe { sys::SDL_PutAudioStreamData(stream, feed.buf.as_ptr().cast(), (samples * 2) as c_int) };
 }

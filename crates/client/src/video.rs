@@ -98,19 +98,12 @@ pub fn wav_length_ms(d: &[u8]) -> Option<u32> {
     None
 }
 
-/// The first audio track of a video as a WAV file, decoding the whole video (`None` without a usable track).
+/// The first audio track of a video as a WAV file, read from its audio chunks alone (`None` without a usable track):
+/// decoding the pictures as well takes seconds on a slow machine (the PS Vita), and the sound would start late.
 pub fn audio_wav(data: Arc<Vec<u8>>) -> Option<Vec<u8>> {
-    let mut smk = Smacker::from_shared(data).ok()?;
+    let smk = Smacker::from_shared(data).ok()?;
     let t = *smk.audio_tracks().iter().find(|t| !t.unsupported_codec)?;
-    smk.set_decode_audio(true);
-    let mut samples = Vec::new();
-    while let Ok(Some(f)) = smk.next_frame() {
-        for c in f.audio {
-            if c.track == t.track {
-                samples.extend_from_slice(&c.samples);
-            }
-        }
-    }
+    let samples = smk.track_samples(t.track);
     (!samples.is_empty()).then(|| wav_bytes(&samples, t.rate, t.channels as u16))
 }
 

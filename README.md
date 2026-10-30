@@ -22,7 +22,7 @@ Download the file for your system from the [latest release](../../releases/lates
 | **Linux** (x64, tarball) | `tidewater-<version>-linux-x64.tar.gz` | Unpack it and run `tidewater`. The archive has a `tidewater.desktop` menu entry to adapt and a `README.txt`. |
 | **Android** (7.0 or newer, early) | `tidewater-<version>-android.apk` | Download it on the device and open it; Android asks to allow installs from that browser or file manager, so allow it for that app. It is not on Google Play and does not update itself: to update, download the newer APK and install it over the old one (your game files and settings stay). Then [get your game files onto it](#android-early). A release may lack the APK until its signing key is set up. |
 | **iPhone and iPad** (iOS 15 or newer, early) | `tidewater-<version>-ios.ipa` | Not signed and not on the App Store: sideload it with your own Apple ID using AltStore, SideStore or Sideloadly (a free Apple ID needs a re-sign every 7 days). Steps: [Install the unsigned IPA](docs/design/ios.md#install-the-unsigned-ipa). |
-| **PS Vita** (custom firmware, early) | `tidewater-<version>-vita.vpk` | Install it with VitaShell, then copy your game files to `ux0:data/Tidewater`. Plays in the Vita3K emulator, buttons and sticks included; not tried on a real Vita. Steps: [PS Vita](#ps-vita-early). |
+| **PS Vita** (custom firmware, early) | `tidewater-<version>-vita.vpk` | Install it with VitaShell. **It needs your game files in `ux0:data/Tidewater`** (copy them there first). Plays in the Vita3K emulator and on a real Vita (one player's so far); the sticks are still being tuned for it. Steps: [PS Vita](#ps-vita-early). |
 
 ### Linux and the Steam Deck (being tested)
 
@@ -255,14 +255,16 @@ adb shell am start -n dev.tidewater.client/.TidewaterActivity
 
 ### PS Vita (early)
 
-Tidewater builds as a PS Vita app that plays in the Vita3K emulator with the Vita's buttons and sticks (it is not yet tried on a Vita). The build uses a pinned nightly Rust toolchain and the [Vita SDK](https://vitasdk.org). Details and limits: [`docs/design/vita.md`](docs/design/vita.md).
+Tidewater builds as a PS Vita app that plays in the Vita3K emulator with the Vita's buttons and sticks, and has been played on one real Vita (the sticks are still being tuned for it, GitHub issue #3). The build uses a pinned nightly Rust toolchain and the [Vita SDK](https://vitasdk.org). Details and limits: [`docs/design/vita.md`](docs/design/vita.md).
 
 ```sh
 export VITASDK=/path/to/vitasdk
 platform/vita/build.sh             # platform/vita/build/tidewater.vpk
 ```
 
-**Install it** by opening the VPK in VitaShell. **Get the game files onto it:** copy a game folder or a CD image into `ux0:data/Tidewater` (VitaShell's FTP or USB), then choose Scan again on the first-run screen.
+**Install it** by opening the VPK in VitaShell.
+
+**Then copy your game files to `ux0:data/Tidewater`.** The Vita app can't play without them. Copy a game folder or a CD image there (VitaShell's FTP or USB), then choose Scan again on the first-run screen.
 
 ### How faithful it is
 
@@ -478,7 +480,7 @@ What is done, what is early and what is not built. Not built: Battle.net and mod
 |---|---|---|
 | **Lockstep multiplayer** | Local Network and Direct IP games over TCP. The simulation is deterministic so that this is possible. | Early: menus, lobby, LAN game list, map transfer, chat and pause counts, the game going on when the host leaves, observers (our own addition); no Battle.net or modem |
 | **Custom games against the computer** | The Custom Scenario screen: race, opponents, resources, terrain, units and a map list. | Done |
-| **Touch, controllers and handhelds** | Touch input on desktop, iOS and Android; gamepads; a PS Vita app. | Early: tried on an iPad, an Android handheld, the iOS Simulator, the Android emulator and Vita3K; not yet on an Android phone or a real Vita |
+| **Touch, controllers and handhelds** | Touch input on desktop, iOS and Android; gamepads; a PS Vita app. | Early: tried on an iPad, an Android handheld, the iOS Simulator, the Android emulator, Vita3K and one real Vita; not yet on an Android phone |
 | **Optional modern improvements** | Quality-of-life additions, all off by default so the default game matches the original. | Done: see [Optional improvements](#optional-improvements) |
 
 ## How it is built

@@ -19,7 +19,7 @@
 //! - In the Controller and touch mode with a controller connected (options `controls` and `pad-hide-touch`), no
 //!   chrome: it neither shows nor takes fingers. In the Controller and Keyboard and mouse modes ([`crate::controls`])
 //!   fingers are dropped before the chrome and the gesture machine ([`park`]).
-//! - A pulse where a long press fired, drawn onto the picture after it is composed ([`draw_pulse`]).
+//! - A pulse where a long press fired, drawn over the screen as its mark ([`pulse_mark`]).
 //!
 //! [`Input::touches`]: crate::input::Input::touches
 //! [`Input::button`]: crate::input::Input::button
@@ -29,6 +29,7 @@
 use std::time::Duration;
 
 use crate::chrome::{self, Chrome, Control, Fed, Latch, Overlay};
+use crate::compose::Image;
 use crate::core::{Core, game_running};
 use crate::extras::{TouchSettings, TouchTwoFinger};
 use crate::gesture::{self, Gesture, OneFinger, Pt, TwoFinger, Zone};
@@ -71,7 +72,7 @@ pub struct TouchState {
     emu: Emulator,
     pointer: Option<Pt>,
     /// The pulse: where, and how old in milliseconds.
-    pulse: Option<(Pt, f32)>,
+    pub(crate) pulse: Option<(Pt, f32)>,
     /// The map view's pan and zoom not yet taken by the game, in window points.
     pan: Pt,
     zoom: Option<(f32, Pt)>,
@@ -621,30 +622,34 @@ fn view_zone(c: &Core, w: WindowGeom) -> Option<Zone> {
     })
 }
 
-/// Draws the long-press pulse (a ring that grows and fades) onto the composed picture; the same ring marks a finger
-/// held long enough to draw the selection box.
-pub fn draw_pulse(c: &mut Core) {
-    let Some((at, age)) = c.touch.pulse else { return };
-    let Some(w) = c.input.window else { return };
+/// The long-press pulse (a ring that grows and fades), as the screen's mark (`compose::Source::Mark`) and its top-left
+/// pixel; the same ring marks a finger held long enough to draw the selection box.
+pub fn pulse_mark(c: &Core) -> Option<(Image, (i32, i32))> {
+    let (at, age) = c.touch.pulse?;
+    let w = c.input.window?;
     let (cx, cy) = w.letterbox().screen_of(at, w.factor);
     let t = (age / PULSE_MS).clamp(0.0, 1.0);
     let radius = 4.0 + 26.0 * t;
     let strength = (1.0 - t) * 0.85;
-    let (width, height) = (c.frame.width as i32, c.frame.height as i32);
     let reach = (radius + 2.0).ceil() as i32;
-    for y in (cy as i32 - reach).max(0)..=(cy as i32 + reach).min(height - 1) {
-        for x in (cx as i32 - reach).max(0)..=(cx as i32 + reach).min(width - 1) {
-            let d = ((x as f32 + 0.5 - cx).powi(2) + (y as f32 + 0.5 - cy).powi(2)).sqrt();
-            let edge = 1.0 - (d - radius).abs() / 1.5;
-            if edge > 0.0 {
-                let a = (edge * strength).clamp(0.0, 1.0);
-                let i = (y as usize * width as usize + x as usize) * 4;
-                for (ch, ink) in c.frame.rgba[i..i + 3].iter_mut().zip([255.0, 240.0, 160.0]) {
-                    *ch = (*ch as f32 + (ink - *ch as f32) * a).round() as u8;
-                }
-            }
+    let (left, top) = (cx as i32 - reach, cy as i32 - reach);
+    let side = 2 * reach + 1;
+    let mut rgba = vec![0u8; (side * side * 4) as usize];
+    for (i, px) in rgba.chunks_exact_mut(4).enumerate() {
+        let (x, y) = (left + i as i32 % side, top + i as i32 / side);
+        let d = ((x as f32 + 0.5 - cx).powi(2) + (y as f32 + 0.5 - cy).powi(2)).sqrt();
+        let edge = 1.0 - (d - radius).abs() / 1.5;
+        if edge > 0.0 {
+            let a = ((edge * strength).clamp(0.0, 1.0) * 255.0).round() as u8;
+            px.copy_from_slice(&[255, 240, 160, a]);
         }
     }
+    let image = Image {
+        width: side as u32,
+        height: side as u32,
+        rgba,
+    };
+    Some((image, (left, top)))
 }
 
 #[cfg(test)]

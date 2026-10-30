@@ -81,13 +81,13 @@ pub fn team_colour(owner: u8, shade: u8) -> [u8; 3] {
 }
 
 pub fn to_rgba(idx: &[u8], pal: &Palette, transparent0: bool, owner: Option<u8>) -> Vec<u8> {
-    let mut out = Vec::with_capacity(idx.len() * 4);
-    for &i in idx {
+    let mut out = vec![0; idx.len() * 4];
+    for (o, &i) in out.chunks_exact_mut(4).zip(idx) {
         let c = match owner {
             Some(o) if o != 0 && o < 8 && TEAM.contains(&i) => team_colour(o, i - TEAM.start()),
             _ => pal.0[i as usize],
         };
-        out.extend([c[0], c[1], c[2], if transparent0 && i == 0 { 0 } else { 255 }]);
+        o.copy_from_slice(&[c[0], c[1], c[2], if transparent0 && i == 0 { 0 } else { 255 }]);
     }
     out
 }

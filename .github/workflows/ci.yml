@@ -75,7 +75,11 @@ jobs:
             libasound2-dev libpulse-dev libudev-dev libdbus-1-dev libegl1-mesa-dev libgl1-mesa-dev
       - name: Install the pinned toolchain
         run: rustup toolchain install
+      # Keyed by the runner image: a cache from another Ubuntu (this job ran on 24.04 until 2026-10-27) holds SDL
+      # built against a newer glibc, which then fails to link here.
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
       - name: Build the client and twtool
         run: cargo build --locked --release -p tidewater-client -p twtool
       - name: Pack and check the AppImage

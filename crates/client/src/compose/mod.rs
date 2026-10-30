@@ -1,8 +1,13 @@
 //! The screen's composition, without an engine: pictures placed on the screen (640 × 480, or wider in a game with the
-//! `widescreen` option, [`crate::widescreen`]), one over another, into one frame (`docs/design/client-core.md`). Each
-//! picture is sampled at the centre of each screen pixel it covers (nearest texel), a fully transparent texel leaves
-//! the pixel as it was, and a tinted picture's colours are multiplied by the tint in linear light, as a GPU sampling
-//! an sRGB texture into an sRGB target does.
+//! `widescreen` option, [`crate::widescreen`]), one over another (`docs/design/client-core.md`). The core lists them in
+//! a [`DrawList`] each frame; [`cpu`] composes the list into one [`Frame`] exactly, and a shell may instead draw the
+//! list on its GPU (the SDL shell's `gpu`), where the pictures are textures it uploads only when they change.
+//!
+//! Each picture is sampled at the centre of each screen pixel it covers (nearest texel), a fully transparent texel
+//! leaves the pixel as it was, and a tinted picture's colours are multiplied by the tint in linear light, as a GPU
+//! sampling an sRGB texture into an sRGB target does.
+
+pub mod cpu;
 
 /// The original screen's size in pixels, and a [`Frame`]'s default; a widescreen game's frame is wider.
 pub const W: usize = 640;
@@ -63,6 +68,66 @@ pub struct Placed<'a> {
     pub tint: f32,
 }
 
+/// A picture as a [`DrawList`] reads it: RGBA, row by row (sRGB, straight alpha).
+#[derive(Clone, Copy, Debug)]
+pub struct Pic<'a> {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: &'a [u8],
+}
+
+/// An owned picture: the pointer a [`DrawList`] carries.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Image {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+}
+
+impl Image {
+    pub fn pic(&self) -> Pic<'_> {
+        Pic {
+            width: self.width,
+            height: self.height,
+            rgba: &self.rgba,
+        }
+    }
+}
+
+/// What an [`Item`] draws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Source {
+    /// One of the core's pictures (`Core::picture`); `revision` changes whenever the picture does.
+    Picture { id: u64, revision: u64 },
+    /// The list's [`DrawList::pointer`].
+    Pointer,
+    /// The list's [`DrawList::mark`], one picture pixel per screen pixel. Its colours are mixed with what is under them
+    /// by their alpha in sRGB values, not linear light, as a GPU's blending does, so both compositions give the same
+    /// pixels.
+    Mark,
+}
+
+/// A picture placed on the screen, as [`Placed`] places it.
+#[derive(Clone, Copy, Debug)]
+pub struct Item {
+    pub source: Source,
+    pub origin: (f64, f64),
+    pub scale: (f64, f64),
+    pub clip: Clip,
+    pub tint: f32,
+}
+
+/// One frame's screen: `width` × `height` pixels, black, with the items drawn over it in order.
+#[derive(Clone, Debug, Default)]
+pub struct DrawList {
+    pub width: usize,
+    pub height: usize,
+    pub items: Vec<Item>,
+    pub pointer: Option<Image>,
+    /// A mark over everything (the touch pulse), the last item.
+    pub mark: Option<Image>,
+}
+
 /// One whole screen, RGBA (opaque): `width` × `height` pixels, 640 × 480 unless a game has a wider screen.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Frame {
@@ -101,20 +166,6 @@ pub fn to_srgb(l: f32) -> f32 {
     }
 }
 
-/// A tint's multiplication of an 8-bit sRGB channel, in linear light.
-fn tinted(table: &[u8; 256], c: u8) -> u8 {
-    table[c as usize]
-}
-
-fn tint_table(tint: f32) -> [u8; 256] {
-    let k = to_linear(tint.clamp(0.0, 1.0));
-    std::array::from_fn(|c| {
-        (to_srgb(to_linear(c as f32 / 255.0) * k) * 255.0)
-            .round()
-            .clamp(0.0, 255.0) as u8
-    })
-}
-
 impl Frame {
     pub fn black() -> Self {
         Self::black_sized(W, H)
@@ -138,50 +189,6 @@ impl Frame {
                 let i = (y as usize * self.width + x as usize) * 4;
                 self.rgba[i..i + 3].copy_from_slice(&rgb);
                 self.rgba[i + 3] = 255;
-            }
-        }
-    }
-
-    /// Draws a placed picture over the frame.
-    pub fn draw(&mut self, p: &Placed) {
-        if p.width == 0 || p.height == 0 || p.scale.0 <= 0.0 || p.scale.1 <= 0.0 {
-            return;
-        }
-        let table = (p.tint != 1.0).then(|| tint_table(p.tint));
-        let c = p.clip.on_frame(self.width, self.height);
-        let width = self.width;
-        // The texel under a pixel's centre, if the picture covers it.
-        let texel = |px: i32, origin: f64, scale: f64, len: u32| {
-            let t = ((px as f64 + 0.5 - origin) / scale).floor();
-            (t >= 0.0 && t < len as f64).then_some(t as usize)
-        };
-        let cols: Vec<Option<usize>> = (c.x0..c.x1).map(|x| texel(x, p.origin.0, p.scale.0, p.width)).collect();
-        for y in c.y0..c.y1 {
-            let Some(ty) = texel(y, p.origin.1, p.scale.1, p.height) else {
-                continue;
-            };
-            let row = &p.rgba[ty * p.width as usize * 4..(ty + 1) * p.width as usize * 4];
-            let out = &mut self.rgba[y as usize * width * 4..(y as usize + 1) * width * 4];
-            for (x, tx) in (c.x0..c.x1).zip(&cols) {
-                let Some(tx) = *tx else { continue };
-                let s = &row[tx * 4..tx * 4 + 4];
-                if s[3] == 0 {
-                    continue;
-                }
-                let mut rgb = [s[0], s[1], s[2]];
-                if let Some(t) = &table {
-                    rgb = rgb.map(|c| tinted(t, c));
-                }
-                let d = &mut out[x as usize * 4..x as usize * 4 + 4];
-                if s[3] == 255 {
-                    d[..3].copy_from_slice(&rgb);
-                } else {
-                    let a = s[3] as f32 / 255.0;
-                    for k in 0..3 {
-                        let l = to_linear(rgb[k] as f32 / 255.0) * a + to_linear(d[k] as f32 / 255.0) * (1.0 - a);
-                        d[k] = (to_srgb(l) * 255.0).round().clamp(0.0, 255.0) as u8;
-                    }
-                }
             }
         }
     }

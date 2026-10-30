@@ -206,6 +206,17 @@ impl Entries {
     pub fn intersects(&self, o: &Entries) -> bool {
         self.0.iter().zip(&o.0).any(|(a, b)| a & b != 0)
     }
+
+    pub fn contains(&self, i: u8) -> bool {
+        self.0[i as usize / 64] >> (i % 64) & 1 == 1
+    }
+
+    /// Adds `o`'s entries.
+    pub fn union(&mut self, o: &Entries) {
+        for (a, b) in self.0.iter_mut().zip(&o.0) {
+            *a |= b;
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -518,14 +529,49 @@ impl Effects {
 }
 
 /// Puts the effects over an RGBA picture drawn with the cycled palette (the interface, which has colours of its own
-/// besides palette entries): each pixel as [`shown_colour`] gives it.
+/// besides palette entries): each pixel as [`shown_colour`] gives it. A clear pixel shows nowhere, so it is left as it
+/// is.
 pub fn apply(rgba: &mut [u8], e: Effects) {
     if !e.any() {
         return;
     }
+    let t = channels(e);
     for px in rgba.chunks_exact_mut(4) {
-        let c = shown_colour([px[0], px[1], px[2]], e);
-        px[..3].copy_from_slice(&c);
+        if px[3] != 0 {
+            let c = shown_with(&t, e.paused, [px[0], px[1], px[2]]);
+            px[..3].copy_from_slice(&c);
+        }
+    }
+}
+
+/// `src` with the effects put over it ([`apply`]) into `dst`, of the same length, in one pass.
+pub fn apply_from(dst: &mut [u8], src: &[u8], e: Effects) {
+    if !e.any() {
+        dst.copy_from_slice(src);
+        return;
+    }
+    let t = channels(e);
+    for (d, s) in dst.chunks_exact_mut(4).zip(src.chunks_exact(4)) {
+        let c = [s[0], s[1], s[2]];
+        let c = if s[3] == 0 { c } else { shown_with(&t, e.paused, c) };
+        d[..3].copy_from_slice(&c);
+        d[3] = s[3];
+    }
+}
+
+/// The effects that work channel by channel (the negative, the fade-in) as a table from a channel's value.
+fn channels(e: Effects) -> [u8; 256] {
+    let e = Effects { paused: false, ..e };
+    std::array::from_fn(|v| shown_colour([v as u8; 3], e)[0])
+}
+
+/// [`shown_colour`] with its channel steps from [`channels`].
+#[inline(always)]
+fn shown_with(t: &[u8; 256], paused: bool, c: Rgb) -> Rgb {
+    if paused {
+        [t[grey_level(c) as usize]; 3]
+    } else {
+        c.map(|v| t[v as usize])
     }
 }
 
@@ -865,7 +911,28 @@ mod tests {
             ..Effects::default()
         };
         assert_eq!(shown(&b, end), b);
-        // The interface's own colours get the same treatment as palette entries.
+        // `apply` and `apply_from` give each pixel `shown_colour`'s colour under every mix of effects.
+        let pixels: Vec<u8> = (0..=255u8).flat_map(|v| [v, v.wrapping_mul(7), 255 - v, 255]).collect();
+        for paused in [false, true] {
+            for negative in [false, true] {
+                for fade_in in [None, Some((96, 200))] {
+                    let e = Effects {
+                        paused,
+                        negative,
+                        fade_in,
+                    };
+                    let mut a = pixels.clone();
+                    apply(&mut a, e);
+                    let mut b = vec![0; pixels.len()];
+                    apply_from(&mut b, &pixels, e);
+                    for (px, s) in a.chunks_exact(4).zip(pixels.chunks_exact(4)) {
+                        assert_eq!(px[..3], shown_colour([s[0], s[1], s[2]], e), "{e:?}");
+                    }
+                    assert_eq!(a, b, "{e:?}");
+                }
+            }
+        }
+        // The interface's own colours get the same treatment as palette entries; a clear pixel is left.
         let mut px = [255, 0, 0, 255, 10, 20, 30, 0];
         apply(
             &mut px,
@@ -874,7 +941,7 @@ mod tests {
                 ..Effects::default()
             },
         );
-        assert_eq!(px, [76, 76, 76, 255, 17, 17, 17, 0]);
+        assert_eq!(px, [76, 76, 76, 255, 10, 20, 30, 0]);
         // The fade agrees with `Fade::at`.
         let half = Effects {
             fade_in: Some((96, 200)),

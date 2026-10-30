@@ -5,6 +5,7 @@
 //! checkerboard on the even pixels, or the fog shapes of the tileset. Shape c (1 to 15) is bytes 1024·c to
 //! 1024·c + 1023 of the tileset's `.vr4` file, read as one 32 × 32 block as the spec says.
 
+use crate::palette::Entries;
 use crate::view::Canvas;
 
 /// The fog colour.
@@ -15,22 +16,24 @@ pub const NONE: u8 = 0;
 
 /// The fog shapes 0 to 15 (0 is never drawn).
 #[derive(Clone, Debug)]
-pub struct Shapes(Vec<[u8; 1024]>);
+pub struct Shapes(Vec<[u8; 1024]>, Entries);
 
 impl Shapes {
     /// The shapes from a tileset's `.vr4` bytes; missing bytes read as 0 (transparent).
     pub fn from_vr4(vr4: &[u8]) -> Self {
-        Shapes(
-            (0..16)
-                .map(|c| {
-                    let mut s = [0u8; 1024];
-                    for (i, b) in s.iter_mut().enumerate() {
-                        *b = vr4.get(1024 * c + i).copied().unwrap_or(0);
-                    }
-                    s
-                })
-                .collect(),
-        )
+        let shapes: Vec<[u8; 1024]> = (0..16)
+            .map(|c| {
+                let mut s = [0u8; 1024];
+                for (i, b) in s.iter_mut().enumerate() {
+                    *b = vr4.get(1024 * c + i).copied().unwrap_or(0);
+                }
+                s
+            })
+            .collect();
+        // The colours the fog can draw: black and the shapes' (shape 0 is never drawn, see `at`).
+        let mut colours = Entries::of_pixels(shapes[1..].as_flattened());
+        colours.insert(BLACK);
+        Shapes(shapes, colours)
     }
 
     /// Shape c's non-zero pixel at (x, y) in the tile; `None` where it is transparent or the code has no shape.
@@ -71,6 +74,8 @@ pub fn draw(canvas: &mut Canvas, width: usize, codes: &[(u8, u8)], shapes: &Shap
         return;
     }
     let height = codes.len() / width;
+    // Marked once for all the fog may draw, not pixel by pixel.
+    canvas.mark_used(&shapes.1);
     let (tx0, ty0) = (canvas.left.div_euclid(32).max(0), canvas.top.div_euclid(32).max(0));
     let tx1 = ((canvas.left + canvas.width + 31) / 32).min(width as i32);
     let ty1 = ((canvas.top + canvas.height + 31) / 32).min(height as i32);
@@ -80,10 +85,23 @@ pub fn draw(canvas: &mut Canvas, width: usize, codes: &[(u8, u8)], shapes: &Shap
             if v == NONE {
                 continue;
             }
-            for y in 0..32 {
-                for x in 0..32 {
-                    if let Some(c) = tile_pixel(v, e, shapes, x, y) {
-                        canvas.put(tx * 32 + x as i32, ty * 32 + y as i32, c);
+            // The tile's pixels inside the canvas, a row at a time.
+            let (left, top) = (tx * 32 - canvas.left, ty * 32 - canvas.top);
+            let (x0, x1) = ((-left).max(0), (canvas.width - left).min(32));
+            let (y0, y1) = ((-top).max(0), (canvas.height - top).min(32));
+            if x0 >= x1 {
+                continue;
+            }
+            for y in y0..y1 {
+                let at = ((top + y) * canvas.width + left + x0) as usize;
+                let row = &mut canvas.px[at..at + (x1 - x0) as usize];
+                if (v, e) == (ALL, ALL) {
+                    row.fill(BLACK as u16);
+                    continue;
+                }
+                for (x, p) in (x0 as usize..).zip(row) {
+                    if let Some(c) = tile_pixel(v, e, shapes, x, y as usize) {
+                        *p = c as u16;
                     }
                 }
             }
@@ -118,6 +136,38 @@ mod tests {
         // v = 16, e = 0: black on even pixels, the terrain shows on odd pixels.
         let c = tile(16, 0);
         assert_eq!((c.at(0, 0), c.at(1, 0), c.at(1, 1)), (Some(0), Some(CLEAR), Some(0)));
+    }
+
+    /// Drawing a row at a time gives each pixel [`tile_pixel`]'s colour, as drawing pixel by pixel does: every code
+    /// pair, on canvases that start inside a tile and stop short of the map's edge or past it.
+    #[test]
+    fn a_row_at_a_time_is_the_pixel_rule() {
+        let codes: Vec<(u8, u8)> = (0..17u8).flat_map(|v| (0..17u8).map(move |e| (v, e))).collect();
+        let width = 17;
+        let s = shapes();
+        for (left, top, w, h) in [
+            (0, 0, 544, 544),
+            (-40, -7, 300, 200),
+            (13, 29, 101, 77),
+            (500, 520, 90, 90),
+        ] {
+            let mut got = Canvas::new(left, top, w, h);
+            draw(&mut got, width, &codes, &s);
+            let mut want = Canvas::new(left, top, w, h);
+            for y in top..top + h {
+                for x in left..left + w {
+                    let (tx, ty) = (x.div_euclid(32), y.div_euclid(32));
+                    if !(0..width as i32).contains(&tx) || !(0..17).contains(&ty) {
+                        continue;
+                    }
+                    let (v, e) = codes[ty as usize * width + tx as usize];
+                    if let Some(c) = tile_pixel(v, e, &s, x.rem_euclid(32) as usize, y.rem_euclid(32) as usize) {
+                        want.put(x, y, c);
+                    }
+                }
+            }
+            assert_eq!(got.px, want.px, "canvas at {left}, {top}, {w} x {h}");
+        }
     }
 
     #[test]

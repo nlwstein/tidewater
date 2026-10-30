@@ -11,6 +11,7 @@ use anyhow::{Context, Result};
 use crate::args::Args;
 use crate::core::{Core, Platform};
 use crate::input::{Buttons, Key, WindowGeom};
+use crate::phases::{self, Phase};
 use crate::storage::Store;
 use crate::{display, firstrun, frontend, gamemenu, prefs, script, storage};
 
@@ -463,20 +464,28 @@ impl LockedPointer {
 }
 
 /// Frame times for measuring a shell (`TIDEWATER_FRAME_STATS=1`): every [`FrameStats::EVERY`] it prints the
-/// frames' intervals and the shell's own work per frame (the core's frame and showing it), in milliseconds.
+/// frames' intervals and the shell's own work per frame (the core's frame and showing it), in milliseconds. Any other
+/// value is a file the lines are also added to, for a system with no console to print to (a real PS Vita). A second
+/// line splits the frames into their parts ([`crate::phases`]); the showing's time falls in the next frame's.
 pub struct FrameStats {
     on: bool,
+    file: Option<std::path::PathBuf>,
     intervals: Vec<f32>,
     work: Vec<f32>,
+    phases: Vec<[f32; Phase::ALL.len()]>,
     since: std::time::Instant,
 }
 
 impl Default for FrameStats {
     fn default() -> Self {
+        let v = std::env::var_os("TIDEWATER_FRAME_STATS").filter(|v| !v.is_empty() && v != "0");
+        phases::set_on(v.is_some());
         FrameStats {
-            on: std::env::var_os("TIDEWATER_FRAME_STATS").is_some_and(|v| !v.is_empty() && v != "0"),
+            on: v.is_some(),
+            file: v.filter(|v| v != "1").map(std::path::PathBuf::from),
             intervals: Vec::new(),
             work: Vec::new(),
+            phases: Vec::new(),
             since: std::time::Instant::now(),
         }
     }
@@ -485,23 +494,51 @@ impl Default for FrameStats {
 impl FrameStats {
     pub const EVERY: Duration = Duration::from_secs(10);
 
-    /// Notes a frame `interval` after the last one, of which the shell worked `work`.
-    pub fn frame(&mut self, interval: Duration, work: Duration) {
+    /// Notes a frame `interval` after the last one, of which the shell worked `work`; `true` when that frame gave a
+    /// report (every [`FrameStats::EVERY`]).
+    pub fn frame(&mut self, interval: Duration, work: Duration) -> bool {
         if !self.on {
-            return;
+            return false;
         }
         self.intervals.push(interval.as_secs_f32() * 1000.0);
         self.work.push(work.as_secs_f32() * 1000.0);
-        if self.since.elapsed() >= Self::EVERY {
-            eprintln!(
-                "frame stats: {} frames, interval {}, work {}",
+        self.phases.push(phases::take());
+        let report = self.since.elapsed() >= Self::EVERY;
+        if report {
+            let slowest = slowest_frame(&self.work, &self.phases);
+            let line = format!(
+                "frame stats: {} frames, interval {}, work {}\n{}\n{slowest}",
                 self.intervals.len(),
                 summary(&mut self.intervals),
-                summary(&mut self.work)
+                summary(&mut self.work),
+                phase_summary(&self.phases)
             );
+            self.note(&line);
             self.intervals.clear();
             self.work.clear();
+            self.phases.clear();
             self.since = std::time::Instant::now();
+        }
+        report
+    }
+
+    /// Writes `line` where the stats go (standard error, and their file if they have one), when they are on: for the
+    /// shell's own measurements beside them.
+    pub fn note(&self, line: &str) {
+        if !self.on {
+            return;
+        }
+        eprintln!("{line}");
+        if let Some(path) = &self.file {
+            use std::io::Write;
+            let added = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .and_then(|mut f| writeln!(f, "{line}"));
+            if let Err(e) = added {
+                eprintln!("frame stats: can't write {}: {e}", path.display());
+            }
         }
     }
 }
@@ -520,6 +557,47 @@ fn summary(v: &mut [f32]) -> String {
         at(0.99),
         v[v.len() - 1]
     )
+}
+
+/// Each phase's mean and 99th percentile per frame, in milliseconds; for a phase some frames skipped, also how many
+/// frames it ran in and its median in those, which tells a rare costly step from an occasional slow one.
+fn phase_summary(frames: &[[f32; Phase::ALL.len()]]) -> String {
+    let parts: Vec<String> = Phase::ALL
+        .iter()
+        .map(|&p| {
+            let mut v: Vec<f32> = frames.iter().map(|f| f[p as usize]).collect();
+            if v.is_empty() {
+                return format!("{} -", p.name());
+            }
+            v.sort_by(f32::total_cmp);
+            let mean = v.iter().sum::<f32>() / v.len() as f32;
+            let p99 = v[((v.len() - 1) as f32 * 0.99).round() as usize];
+            let ran = &v[v.partition_point(|&t| t == 0.0)..];
+            if ran.is_empty() || ran.len() == v.len() {
+                return format!("{} {mean:.1}/{p99:.1}", p.name());
+            }
+            format!(
+                "{} {mean:.1}/{p99:.1} ({} at {:.1})",
+                p.name(),
+                ran.len(),
+                ran[ran.len() / 2]
+            )
+        })
+        .collect();
+    format!("frame phases (mean/p99 ms): {}", parts.join(", "))
+}
+
+/// The phases of the frame that worked longest, which tells what a single stall spent its time on.
+fn slowest_frame(work: &[f32], frames: &[[f32; Phase::ALL.len()]]) -> String {
+    let Some((i, ms)) = work.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1)) else {
+        return "slowest frame: -".into();
+    };
+    let parts: Vec<String> = Phase::ALL
+        .iter()
+        .filter(|&&p| frames[i][p as usize] >= 0.05)
+        .map(|&p| format!("{} {:.1}", p.name(), frames[i][p as usize]))
+        .collect();
+    format!("slowest frame ({ms:.1} ms work): {}", parts.join(", "))
 }
 
 /// A key the core has no name for, by the shell's own name for it: the same name gives the same key.

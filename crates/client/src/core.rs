@@ -31,7 +31,7 @@ use crate::chat;
 use crate::cheats;
 pub use crate::chrome::Chrome;
 use crate::clock::FrameClock;
-use crate::compose::{Clip, Frame, Placed};
+use crate::compose::{Clip, DrawList, Frame, Image, Item, Pic, Source, cpu};
 use crate::frontend::{self, AppState, Flow, Front, FrontScreen, OutcomeDialog};
 use crate::game;
 use crate::gamemenu::{self, GameMenu, Stored};
@@ -39,6 +39,7 @@ use crate::input::{Buttons, Input, Key, LogCursor, WindowGeom};
 use crate::jukebox::{self, Jukebox};
 use crate::layers::{Entry, Layer, PictureId, Pictures, Plane, Role, Stack};
 use crate::mapview::MapView;
+use crate::phases::{self, Phase};
 use crate::savegame::{GameClock, GameOrigin, PauseCounts, ResumeLook};
 use crate::screenshot::{self, PendingShot};
 use crate::script;
@@ -97,6 +98,13 @@ pub struct Core {
     pub opts: Args,
     /// The frame the screen shows, composed at the end of [`Core::advance`].
     pub frame: Frame,
+    /// This frame's screen as a list of placed pictures, which [`Core::frame`] is composed from (`compose`).
+    pub draw_list: DrawList,
+    /// Set by a shell that draws [`Core::draw_list`] itself: [`Core::frame`] is then composed only when something
+    /// reads it ([`Core::frame_composed`]).
+    pub gpu_compose: bool,
+    /// Whether [`Core::frame`] holds this frame (not only the last one composed).
+    pub frame_composed: bool,
     /// Whether the system's pointer shows (the screen draws none of its own).
     pub cursor_visible: bool,
     /// The window title a game asks for.
@@ -216,6 +224,9 @@ impl Core {
             store,
             opts,
             frame: Frame::black(),
+            draw_list: DrawList::default(),
+            gpu_compose: false,
+            frame_composed: false,
             cursor_visible: true,
             title: None,
             exit: false,
@@ -315,6 +326,7 @@ impl Core {
     /// Runs one frame, `elapsed` real time after the last, and returns the screen it composed.
     pub fn advance(&mut self, elapsed: Duration, platform: &mut dyn Platform) -> &Frame {
         let c = self;
+        let input = std::time::Instant::now();
         // 1. Time.
         if c.time.logs_age() {
             c.input.update_logs();
@@ -364,29 +376,51 @@ impl Core {
             c.screen = screen;
             c.input.window = stamp_screen(c.input.window, screen, headless);
         }
+        phases::add(Phase::Input, input);
         // 4. The game cycles.
-        c.time.accumulate();
-        while c.time.expend() {
-            // A network game waiting for a turn does not spend the step (a short wait is caught up).
-            if game_ticking(c) && !game::frozen_by_focus(c) && game::tick(c) {
-                c.time.unspend();
-                break;
+        phases::timed(Phase::Cycles, || {
+            c.time.accumulate();
+            while c.time.expend() {
+                // A network game waiting for a turn does not spend the step (a short wait is caught up).
+                if game_ticking(c) && !game::frozen_by_focus(c) && game::tick(c) {
+                    c.time.unspend();
+                    break;
+                }
             }
-        }
+        });
         // 5. The frame's systems.
-        frame_systems(c);
+        phases::timed(Phase::Systems, || frame_systems(c));
         // 6. The frame's end.
         if let Some(v) = &mut c.view {
             v.end_frame();
         }
         c.front_screen.ready = true;
-        compose_screen(c);
-        crate::touch::draw_pulse(c);
+        phases::timed(Phase::Compose, || compose_screen(c));
         screenshot::write_shot(c);
         if c.script.is_some() {
             script::note_sounds(c);
         }
         &c.frame
+    }
+
+    /// A picture a [`Core::draw_list`] item names, and its revision.
+    /// The revision before picture `id`'s last change and the parts that change drew, when it drew only parts
+    /// (`layers::Pictures::changed`).
+    pub fn picture_changed(&self, id: u64) -> Option<(u64, &[crate::layers::Part])> {
+        self.pictures.changed(PictureId::from_raw(id))
+    }
+
+    pub fn picture(&self, id: u64) -> Option<(Pic<'_>, u64)> {
+        self.pictures.get_with_revision(PictureId::from_raw(id)).map(|(p, r)| {
+            (
+                Pic {
+                    width: p.width,
+                    height: p.height,
+                    rgba: &p.rgba,
+                },
+                r,
+            )
+        })
     }
 
     /// The deferred changes take effect, in the order they were asked for.
@@ -586,12 +620,15 @@ fn frame_systems(c: &mut Core) {
             c.apply_commands();
             game::update_messages(c);
         }
-        game::cycle_palette(c);
-        game::redraw_terrain(c);
-        game::draw_view(c);
+        phases::timed(Phase::Terrain, || {
+            game::cycle_palette(c);
+            game::freshen_terrain(c);
+            game::redraw_terrain(c);
+        });
+        phases::timed(Phase::View, || game::draw_view(c));
         game::draw_placement(c);
         game::update_info(c);
-        game::draw_hud(c);
+        phases::timed(Phase::Hud, || game::draw_hud(c));
     }
     // The game menu's systems, with the points where their deferred changes take effect.
     if game_running(c) {
@@ -677,6 +714,8 @@ fn stamp_screen(window: Option<WindowGeom>, screen: (u32, u32), headless: bool) 
 /// draws the flow screen's own pointer, or none, and none through the screen's fades (`frontend::screen_pointer`,
 /// "Pointers outside a game"). The system's pointer shows only where the screen wants a pointer and has none.
 fn compose_screen(c: &mut Core) {
+    // Normally done in the frame's terrain step; again here in case the view moved after it.
+    game::freshen_terrain(c);
     let pictures = &c.pictures;
     // Outside a game the flow's screen clears the screen first (`frontend::camera_clear`).
     let front_clears = c.front_screen.clears;
@@ -750,18 +789,73 @@ fn compose_screen(c: &mut Core) {
     } else {
         map.iter().chain(&interface).chain(&front).collect()
     };
-    let mut frame = Frame::black_sized(c.screen.0 as usize, c.screen.1 as usize);
-    for l in order {
-        let Some(pic) = pictures.get(l.picture) else { continue };
-        frame.draw(&Placed {
-            rgba: &pic.rgba,
-            width: pic.width,
-            height: pic.height,
+    let mut list = DrawList {
+        width: c.screen.0 as usize,
+        height: c.screen.1 as usize,
+        items: std::mem::take(&mut c.draw_list.items),
+        pointer: None,
+        mark: None,
+    };
+    list.items.clear();
+    // Where the interface picture's items end, for the game's pointer drawn just over it.
+    let mut interface_end = None;
+    let interface_from = if front_clears { usize::MAX } else { map.len() };
+    let interface_to = interface_from.saturating_add(interface.len());
+    for (n, l) in order.into_iter().enumerate() {
+        let Some((_, revision)) = pictures.get_with_revision(l.picture) else {
+            continue;
+        };
+        list.items.push(Item {
+            source: Source::Picture {
+                id: l.picture.raw(),
+                revision,
+            },
             origin: l.origin,
             scale: l.scale,
             clip: l.clip,
             tint: l.tint,
         });
+        if (interface_from..interface_to).contains(&n) {
+            interface_end = Some(list.items.len());
+        }
+    }
+    // The game's pointer while it runs (`game::Hud::pointer`), just over the interface picture as if drawn on it,
+    // with the screen's effects on it as on the picture.
+    if let Some(h) = &c.hud
+        && let Some((shape, at)) = h.pointer
+        && let Some((pic, hot)) = h.art.pointer(shape)
+        && let Some(hud_pic) = h.image.and_then(|id| pictures.get(id))
+    {
+        let mut rgba = pic.rgba.clone();
+        if let Some(cycling) = &c.cycling {
+            crate::palette::apply(&mut rgba, cycling.effects);
+        }
+        let origin = (
+            (center_x - hud_pic.width as f64 / 2.0) + (at.0 - hot.0) as f64,
+            (center_y - hud_pic.height as f64 / 2.0) + (at.1 - hot.1) as f64,
+        );
+        // Cut to the picture, as drawing on it was.
+        let clip = Clip::new(
+            (center_x - hud_pic.width as f64 / 2.0) as i32,
+            (center_y - hud_pic.height as f64 / 2.0) as i32,
+            hud_pic.width as i32,
+            hud_pic.height as i32,
+        );
+        let item = Item {
+            source: Source::Pointer,
+            origin,
+            scale: (1.0, 1.0),
+            clip,
+            tint: 1.0,
+        };
+        list.pointer = Some(Image {
+            width: pic.width,
+            height: pic.height,
+            rgba,
+        });
+        if let Some(at) = interface_end {
+            list.items.insert(at, item);
+        }
     }
     // The pointer: the interface picture has it while the game runs; otherwise the normal arrow goes on top.
     let in_game = in_game(c);
@@ -787,10 +881,13 @@ fn compose_screen(c: &mut Core) {
     {
         let (x, y) = w.letterbox().screen_point(p, w.factor);
         let (x, y) = (x.floor() as i32 - hot.0, y.floor() as i32 - hot.1);
-        frame.draw(&Placed {
-            rgba: &pic.rgba,
+        list.pointer = Some(Image {
             width: pic.width,
             height: pic.height,
+            rgba: pic.rgba.clone(),
+        });
+        list.items.push(Item {
+            source: Source::Pointer,
             origin: (x as f64, y as f64),
             scale: (1.0, 1.0),
             clip: Clip::SCREEN,
@@ -799,7 +896,34 @@ fn compose_screen(c: &mut Core) {
     }
     // The system's pointer shows only where the screen wants a pointer and has none of its own.
     c.cursor_visible = !hud_draws && !hidden && arrow.is_none();
-    c.frame = frame;
+    // The touch pulse over everything.
+    if let Some((image, at)) = crate::touch::pulse_mark(c) {
+        list.mark = Some(image);
+        list.items.push(Item {
+            source: Source::Mark,
+            origin: (at.0 as f64, at.1 as f64),
+            scale: (1.0, 1.0),
+            clip: Clip::SCREEN,
+            tint: 1.0,
+        });
+    }
+    // The frame itself only where something reads it: a shell without the GPU path, a scripted run, a screenshot.
+    c.frame_composed = !c.gpu_compose || c.script.is_some() || c.pending_shot.is_some();
+    if c.frame_composed {
+        let pictures = &c.pictures;
+        cpu::render(
+            &list,
+            |id| {
+                pictures.get(PictureId::from_raw(id)).map(|p| Pic {
+                    width: p.width,
+                    height: p.height,
+                    rgba: &p.rgba,
+                })
+            },
+            &mut c.frame,
+        );
+    }
+    c.draw_list = list;
 }
 
 #[cfg(test)]

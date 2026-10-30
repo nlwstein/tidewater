@@ -2,10 +2,12 @@
 //! core's mixer (`audio`), and [`play_music`], which runs it every frame. Every screen starts and stops music through the
 //! methods here; the music files are read from the install's `Music` folder through the front end's [`Front`].
 //!
-//! A chained track's next track is read and decoded on a thread of its own while the open one plays ([`Prefetch`]):
-//! a battle track is some 15 MB in `Install.mpq`, and reading it on the frame that starts it held that frame for
-//! about 190 ms on a desktop, a visible stutter at every change of track in a game. Every other start reads its file
-//! at once, as before.
+//! A track's file is read and decoded on a thread of its own ([`Prefetch`]): a battle track is some 15 MB in
+//! `Install.mpq`, and reading it on the frame that starts it held that frame for about 190 ms on a desktop and some 4 s
+//! on a handheld, a stall at the start of every game. A start's track sounds from the first frame after its read
+//! ends ([`Loading`]), and a chained track's next track is read while the open one plays, so the chain goes on
+//! without a gap. A scripted run reads at once, on the frame, as its sound must not depend on how fast a thread
+//! reads; so does a platform that can't start a thread.
 //!
 //! The game menu's sound dialog changes the volume through [`Jukebox::set_volume`] (the same call for the countdown
 //! ending, the cancel and the menu closing: "Every time the music volume is applied").
@@ -38,6 +40,16 @@ pub struct Jukebox {
     carry: Duration,
     /// The open chained track's next track, being read.
     prefetch: Option<Prefetch>,
+    /// The track a load has opened, until its read ends.
+    loading: Option<Loading>,
+}
+
+/// A loaded track waiting for its read, and how it is to start.
+struct Loading {
+    track: u8,
+    read: Prefetch,
+    looped: bool,
+    attenuation: i32,
 }
 
 /// A track's file read and decoded for the mixer.
@@ -50,8 +62,9 @@ struct Prepared {
 /// Reads and decodes a track's file; `None` if the install lacks it or it isn't PCM WAV.
 fn prepare(install: &mut Install, track: u8) -> Option<Prepared> {
     let bytes = install.read(&music::path(track)).ok()?;
+    let sound = audio::Sound::from_wav(&bytes)?;
     Some(Prepared {
-        sound: audio::Sound::from_wav(&bytes)?,
+        sound,
         length: music::wav_data_len(&bytes).unwrap_or(0),
     })
 }
@@ -63,12 +76,12 @@ struct Prefetch {
 }
 
 impl Prefetch {
-    /// Starts reading `track`; `None` if the install can't be opened a second time.
+    /// Starts reading `track`, on a handle on the install the thread opens itself; `None` if no thread starts.
     fn start(install: &Install, track: u8) -> Option<Prefetch> {
-        let mut install = install.reopen().ok()?;
+        let reopen = install.reopener();
         let read = thread::Builder::new()
             .name("music read".into())
-            .spawn(move || prepare(&mut install, track))
+            .spawn(move || prepare(&mut reopen().ok()?, track))
             .ok()?;
         Some(Prefetch { track, read })
     }
@@ -182,14 +195,17 @@ pub fn play_music(c: &mut Core) {
         jukebox: jb,
         front,
         audio: core,
+        script,
         ..
     } = c;
 
     jb.carry += time.delta();
     let ms = jb.carry.as_millis() as u32;
     jb.carry -= Duration::from_millis(ms as u64);
+    let wait = script.is_some();
     let pending = std::mem::take(&mut jb.pending);
-    apply(jb, front, core, pending);
+    apply(jb, front, core, pending, wait);
+    start_loaded(jb, front, core);
     let length = jb.length;
     // A voice the mixer no longer has has played to its end.
     let playback = jb.voice.filter(|_| length > 0).map(|v| Playback {
@@ -199,7 +215,7 @@ pub fn play_music(c: &mut Core) {
         length,
     });
     let actions = jb.music.update(ms, playback);
-    apply(jb, front, core, actions);
+    apply(jb, front, core, actions, wait);
     if let Some(v) = jb.voice
         && jb.applied != Some(jb.atten)
     {
@@ -208,15 +224,16 @@ pub fn play_music(c: &mut Core) {
     }
 }
 
-/// Applies the music's actions in the mixer. A load puts the new track in the mixer's music slot, which stops the old
-/// one (`audio`, "The music slot").
-fn apply(jb: &mut Jukebox, front: &mut Front, core: &mut audio::Audio, actions: Vec<Action>) {
+/// Applies the music's actions in the mixer. A load stops the old track and opens the new one, which goes in the
+/// mixer's music slot when its read ends (`audio`, "The music slot"); `wait` reads it at once.
+fn apply(jb: &mut Jukebox, front: &mut Front, core: &mut audio::Audio, actions: Vec<Action>, wait: bool) {
     for action in actions {
         match action {
             Action::Stop => {
                 if let Some(v) = jb.voice.take() {
                     core.stop(v);
                 }
+                jb.loading = None;
             }
             Action::Load {
                 track,
@@ -229,26 +246,30 @@ fn apply(jb: &mut Jukebox, front: &mut Front, core: &mut audio::Audio, actions: 
                 }
                 jb.atten = attenuation;
                 jb.length = 0;
-                // Our choice: the whole file is read at once, by the prefetch if it read this track (waiting for it
-                // if it hasn't finished), or now; a file the install lacks leaves the music silent.
-                let prefetched = match jb.prefetch.take() {
-                    Some(p) if p.track == track => p.read.join().ok().flatten(),
-                    _ => None,
+                jb.loading = None;
+                // Our choice: the prefetch's read if it read this track, or a read of its own.
+                let read = match jb.prefetch.take() {
+                    Some(p) if p.track == track => Some(p),
+                    _ if wait => None,
+                    _ => Prefetch::start(&front.install, track),
                 };
-                if let music::End::Chain { next } = music::TRACKS[track as usize].end {
-                    jb.prefetch = Prefetch::start(&front.install, next);
+                match read {
+                    Some(read) if !wait => {
+                        jb.loading = Some(Loading {
+                            track,
+                            read,
+                            looped,
+                            attenuation,
+                        })
+                    }
+                    read => {
+                        let prepared = match read {
+                            Some(p) => p.read.join().ok().flatten(),
+                            None => prepare(&mut front.install, track),
+                        };
+                        play(jb, front, core, track, prepared, looped, attenuation);
+                    }
                 }
-                let Some(Prepared { sound, length }) = prefetched.or_else(|| prepare(&mut front.install, track)) else {
-                    continue;
-                };
-                jb.length = length;
-                let loop_from = match music::TRACKS[track as usize].end {
-                    music::End::Loop { point } if looped => Some(point as usize),
-                    _ => None,
-                };
-                let volume = audio::decibels_to_linear(music::decibels(attenuation));
-                jb.voice = Some(core.play_music(&sound, volume, audio::attenuation_gain(attenuation), loop_from));
-                jb.applied = Some(attenuation);
             }
             Action::SetAttenuation(a) => jb.atten = a,
             // The mixer loops from the loop point itself.
@@ -258,6 +279,45 @@ fn apply(jb: &mut Jukebox, front: &mut Front, core: &mut audio::Audio, actions: 
             Action::CutEffects => core.cut_effects(),
         }
     }
+}
+
+/// Starts the loaded track once its read has ended.
+fn start_loaded(jb: &mut Jukebox, front: &Front, core: &mut audio::Audio) {
+    if !jb.loading.as_ref().is_some_and(|l| l.read.read.is_finished()) {
+        return;
+    }
+    let Some(l) = jb.loading.take() else {
+        return;
+    };
+    let prepared = l.read.read.join().ok().flatten();
+    play(jb, front, core, l.track, prepared, l.looped, l.attenuation);
+}
+
+/// Puts a read track in the mixer's music slot, and starts reading the next track of its chain. A file the install
+/// lacks leaves the music silent.
+fn play(
+    jb: &mut Jukebox,
+    front: &Front,
+    core: &mut audio::Audio,
+    track: u8,
+    prepared: Option<Prepared>,
+    looped: bool,
+    attenuation: i32,
+) {
+    if let music::End::Chain { next } = music::TRACKS[track as usize].end {
+        jb.prefetch = Prefetch::start(&front.install, next);
+    }
+    let Some(Prepared { sound, length }) = prepared else {
+        return;
+    };
+    jb.length = length;
+    let loop_from = match music::TRACKS[track as usize].end {
+        music::End::Loop { point } if looped => Some(point as usize),
+        _ => None,
+    };
+    let volume = audio::decibels_to_linear(music::decibels(attenuation));
+    jb.voice = Some(core.play_music(&sound, volume, audio::attenuation_gain(attenuation), loop_from));
+    jb.applied = Some(attenuation);
 }
 
 #[cfg(test)]
@@ -281,8 +341,11 @@ mod tests {
     struct Files {
         music: Vec<(String, Vec<u8>)>,
         archive: Vec<u8>,
-        opened: Arc<Mutex<Vec<(String, ThreadId)>>>,
+        opened: Opened,
     }
+
+    /// The files an install opened, and the threads that opened them.
+    type Opened = Arc<Mutex<Vec<(String, ThreadId)>>>;
 
     impl tidewater_formats::install::Files for Files {
         fn open(&self, name: &str) -> std::io::Result<Option<Box<dyn ReadSeek>>> {
@@ -348,10 +411,9 @@ mod tests {
         }
     }
 
-    /// A chained track's next track is read on another thread while it plays, and starting it reads nothing on the
-    /// frame; a start the prefetch didn't guess reads its file at once.
-    #[test]
-    fn the_next_track_of_a_chain_is_read_ahead_off_the_frame() {
+    /// A front end over an install of three tracks, HUMAN1 (100 sample frames), HUMAN2 (200) and HDEFEAT (300), with
+    /// what it opens.
+    fn install() -> (Opened, Front) {
         let opened = Arc::new(Mutex::new(Vec::new()));
         let files = Files {
             music: [("HUMAN1.WAV", 100), ("HUMAN2.WAV", 200), ("HDEFEAT.WAV", 300)]
@@ -362,6 +424,47 @@ mod tests {
         };
         let mut front = Front::none();
         front.install = Install::from_files(Box::new(files)).expect("the install opens");
+        (opened, front)
+    }
+
+    /// Off a scripted run, a start reads its track on another thread and the track sounds once the read has ended,
+    /// never on the frame of the start; a stop while it reads leaves the music silent.
+    #[test]
+    fn a_start_reads_its_track_off_the_frame() {
+        let (opened, mut front) = install();
+        let (mut jb, mut core) = (Jukebox::default(), audio::Audio::default());
+        let main = thread::current().id();
+
+        apply(&mut jb, &mut front, &mut core, vec![load(0)], false);
+        assert_eq!(core.playing_in(audio::Group::Music), 0, "nothing sounds on the frame");
+        while !jb.loading.as_ref().unwrap().read.read.is_finished() {
+            thread::yield_now();
+        }
+        start_loaded(&mut jb, &front, &mut core);
+        assert_eq!(core.playing_in(audio::Group::Music), 1, "the track sounds once read");
+        assert_eq!(jb.length, 400);
+        assert_eq!(
+            jb.prefetch.as_ref().map(|p| p.track),
+            Some(1),
+            "and its chain's next is read ahead"
+        );
+        let opened_here = |name: &str| {
+            let opened = opened.lock().unwrap();
+            opened.iter().any(|(n, t)| n.ends_with(name) && *t == main)
+        };
+        assert!(!opened_here("HUMAN1.WAV"), "the read was off the frame");
+
+        apply(&mut jb, &mut front, &mut core, vec![load(12), Action::Stop], false);
+        assert!(jb.loading.is_none(), "a stop drops the read");
+        start_loaded(&mut jb, &front, &mut core);
+        assert_eq!(core.playing_in(audio::Group::Music), 0, "and nothing sounds");
+    }
+
+    /// A chained track's next track is read on another thread while it plays, and starting it reads nothing on the
+    /// frame; a start the prefetch didn't guess reads its file at once.
+    #[test]
+    fn the_next_track_of_a_chain_is_read_ahead_off_the_frame() {
+        let (opened, mut front) = install();
         let (mut jb, mut core) = (Jukebox::default(), audio::Audio::default());
         let main = thread::current().id();
         let reads = |name: &str| -> Vec<bool> {
@@ -374,12 +477,12 @@ mod tests {
         };
 
         // HUMAN1 chains to HUMAN2.
-        apply(&mut jb, &mut front, &mut core, vec![load(0)]);
+        apply(&mut jb, &mut front, &mut core, vec![load(0)], true);
         assert_eq!(reads("HUMAN1.WAV"), [true], "the first track is read at once");
         assert_eq!(jb.length, 400);
         assert_eq!(jb.prefetch.as_ref().map(|p| p.track), Some(1));
 
-        apply(&mut jb, &mut front, &mut core, vec![load(1)]);
+        apply(&mut jb, &mut front, &mut core, vec![load(1)], true);
         assert_eq!(
             reads("HUMAN2.WAV"),
             [false],
@@ -390,7 +493,7 @@ mod tests {
         assert_eq!(jb.prefetch.as_ref().map(|p| p.track), Some(2));
 
         // A defeat track, not the guess: read at once, and it chains nowhere.
-        apply(&mut jb, &mut front, &mut core, vec![load(12)]);
+        apply(&mut jb, &mut front, &mut core, vec![load(12)], true);
         assert_eq!(reads("HDEFEAT.WAV"), [true]);
         assert_eq!(jb.length, 1200);
         assert!(jb.prefetch.is_none());

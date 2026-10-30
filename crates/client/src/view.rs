@@ -31,6 +31,7 @@
 //! - **Building states in the background:** a building that is dead, removed or inside something isn't drawn; a dying
 //!   one (a ruin) is (the spec's default). A remembered look is set for every building, in the view or not.
 
+use crate::palette::Entries;
 use std::collections::HashMap;
 
 use tidewater_formats::grp::Grp;
@@ -156,20 +157,108 @@ pub struct Canvas {
     pub top: i32,
     pub width: i32,
     pub height: i32,
-    /// Palette indices row by row, [`CLEAR`] where nothing was drawn.
+    /// Palette indices row by row, [`CLEAR`] where nothing was drawn. Whatever writes one marks it in `used`
+    /// ([`Canvas::mark_used`]).
     pub px: Vec<u16>,
+    /// The palette entries drawn (some perhaps drawn over since), so that a palette change whose colours the canvas
+    /// doesn't use changes none of it ([`Canvas::changed_since`]). An array, not [`Entries`]: marking is per pixel, and
+    /// a byte store is much cheaper than setting a bit on a 32-bit CPU.
+    used: [bool; 256],
 }
 
 impl Canvas {
     pub fn new(left: i32, top: i32, width: i32, height: i32) -> Self {
+        Self::new_in(left, top, width, height, Vec::new())
+    }
+
+    /// [`Canvas::new`] in `px`'s room (an old canvas's), so a canvas a frame doesn't allocate one each time.
+    pub fn new_in(left: i32, top: i32, width: i32, height: i32, mut px: Vec<u16>) -> Self {
         let (width, height) = (width.max(0), height.max(0));
+        px.clear();
+        px.resize((width * height) as usize, CLEAR);
         Canvas {
             left,
             top,
             width,
             height,
-            px: vec![CLEAR; (width * height) as usize],
+            px,
+            used: [false; 256],
         }
+    }
+
+    /// The parts that differ from `before`, a canvas of the same place and size (`None` otherwise, or when most of its
+    /// colours changed), or whose colour changed with the palette (the entries `recoloured`, from [`Entries::changed`]): runs of rows that changed, each
+    /// as x, y, width and height spanning the columns that changed in them. More than [`MAX_PARTS`] runs become one
+    /// part around them all.
+    pub fn changed_since(&self, before: &Canvas, recoloured: &Entries) -> Option<Vec<(u32, u32, u32, u32)>> {
+        if (self.left, self.top, self.width, self.height) != (before.left, before.top, before.width, before.height)
+            || self.width == 0
+        {
+            return None;
+        }
+        let w = self.width as usize;
+        // With most of the drawn entries recoloured (the palette's effects changing: pausing, a fade), colouring the
+        // whole canvas costs less than finding the parts over a canvas that is mostly clear.
+        let used = self.used();
+        let (drawn, hit) = (0..=255u8)
+            .filter(|&i| used.contains(i))
+            .fold((0, 0), |(d, h), i| (d + 1, h + u32::from(recoloured.contains(i))));
+        if hit * 2 > drawn {
+            return None;
+        }
+        // A row the same as before changed only if it holds a recoloured index, which it can only if the canvas drew
+        // one.
+        let recoloured = Some(recoloured).filter(|r| r.intersects(&used));
+        let shown = |p: u16, r: &Entries| p < CLEAR && r.contains(p as u8);
+        let differs = |a: u16, b: u16| a != b || recoloured.is_some_and(|r| shown(a, r));
+        let mut parts: Vec<(u32, u32, u32, u32)> = Vec::new();
+        let mut open = false;
+        for (y, (now, was)) in self.px.chunks_exact(w).zip(before.px.chunks_exact(w)).enumerate() {
+            if same(now, was) && !recoloured.is_some_and(|r| now.iter().any(|&p| shown(p, r))) {
+                open = false;
+                continue;
+            }
+            let x0 = now.iter().zip(was).position(|(&a, &b)| differs(a, b)).unwrap_or(0) as u32;
+            let x1 = w as u32
+                - now
+                    .iter()
+                    .rev()
+                    .zip(was.iter().rev())
+                    .position(|(&a, &b)| differs(a, b))
+                    .unwrap_or(0) as u32;
+            match parts.last_mut() {
+                Some(p) if open => {
+                    let (l, r) = (p.0.min(x0), (p.0 + p.2).max(x1));
+                    *p = (l, p.1, r - l, p.3 + 1);
+                }
+                _ => parts.push((x0, y as u32, x1 - x0, 1)),
+            }
+            open = true;
+        }
+        if parts.len() > MAX_PARTS {
+            let (x0, y0) = parts
+                .iter()
+                .fold((u32::MAX, u32::MAX), |(x, y), p| (x.min(p.0), y.min(p.1)));
+            let (x1, y1) = parts
+                .iter()
+                .fold((0, 0), |(x, y), p| (x.max(p.0 + p.2), y.max(p.1 + p.3)));
+            parts = vec![(x0, y0, x1 - x0, y1 - y0)];
+        }
+        Some(parts)
+    }
+
+    /// The palette entries drawn.
+    pub fn used(&self) -> Entries {
+        let mut e = Entries::default();
+        (0..=255).filter(|&i| self.used[i as usize]).for_each(|i| e.insert(i));
+        e
+    }
+
+    /// Marks `e` as drawn, for drawing that writes [`Canvas::px`] itself (the fog).
+    pub fn mark_used(&mut self, e: &Entries) {
+        (0..=255)
+            .filter(|&i| e.contains(i))
+            .for_each(|i| self.used[i as usize] = true);
     }
 
     pub fn contains(&self, x: i32, y: i32) -> bool {
@@ -190,6 +279,7 @@ impl Canvas {
     pub fn put(&mut self, x: i32, y: i32, c: u8) {
         if let Some(i) = self.index(x, y) {
             self.px[i] = c as u16;
+            self.used[c as usize] = true;
         }
     }
 
@@ -210,18 +300,26 @@ impl Canvas {
 
     /// Copies a fw × fh block of indices with its top-left at `at`, flipped left to right if `mirrored`.
     fn pixels(&mut self, src: &[u8], fw: i32, fh: i32, at: (i32, i32), mirrored: bool, base: u8) {
+        // The block's columns inside the canvas, as offsets from `at`.
+        let (d0, d1) = ((self.left - at.0).max(0), (self.left + self.width - at.0).min(fw));
+        if d0 >= d1 {
+            return;
+        }
         for j in 0..fh {
             let y = at.1 + j;
             if y < self.top || y >= self.top + self.height {
                 continue;
             }
-            for i in 0..fw {
-                let v = src[(j * fw + i) as usize];
-                if v == 0 {
-                    continue;
+            let line = &src[(j * fw) as usize..((j + 1) * fw) as usize];
+            let start = ((y - self.top) * self.width + at.0 + d0 - self.left) as usize;
+            let row = &mut self.px[start..start + (d1 - d0) as usize];
+            for (d, p) in (d0..d1).zip(row) {
+                let v = line[if mirrored { fw - 1 - d } else { d } as usize];
+                if v != 0 {
+                    let c = remap(v, base);
+                    *p = c as u16;
+                    self.used[c as usize] = true;
                 }
-                let x = at.0 + if mirrored { fw - 1 - i } else { i };
-                self.put(x, y, remap(v, base));
             }
         }
     }
@@ -250,17 +348,48 @@ impl Canvas {
         }
     }
 
-    /// The canvas as RGBA8, transparent where nothing was drawn.
-    pub fn rgba(&self, pal: &Palette) -> Vec<u8> {
-        let mut out = vec![0u8; self.px.len() * 4];
-        for (o, &p) in out.chunks_exact_mut(4).zip(&self.px) {
-            if p != CLEAR {
-                let c = pal.0[p as usize & 0xff];
-                o.copy_from_slice(&[c[0], c[1], c[2], 255]);
+    /// `parts` of the canvas as RGBA8 into `out`, which holds the whole canvas so already.
+    pub fn rgba_parts_into(&self, pal: &Palette, out: &mut [u8], parts: &[(u32, u32, u32, u32)]) {
+        let table = rgba_table(pal);
+        for row in parts.iter().flat_map(|&p| crate::layers::rows(p, self.width as u32)) {
+            let bytes = &mut out[row.start * 4..row.end * 4];
+            for (o, &p) in bytes.chunks_exact_mut(4).zip(&self.px[row]) {
+                o.copy_from_slice(&table[(p as usize).min(CLEAR as usize)]);
             }
         }
+    }
+
+    /// The canvas as RGBA8 in `out` (its old contents are dropped, its room kept), transparent where nothing was drawn.
+    pub fn rgba_into(&self, pal: &Palette, out: &mut Vec<u8>) {
+        out.resize(self.px.len() * 4, 0);
+        let whole = (0, 0, self.width as u32, self.height as u32);
+        self.rgba_parts_into(pal, out, &[whole]);
+    }
+
+    /// The canvas as RGBA8, transparent where nothing was drawn.
+    pub fn rgba(&self, pal: &Palette) -> Vec<u8> {
+        let mut out = Vec::new();
+        self.rgba_into(pal, &mut out);
         out
     }
+}
+
+/// The most parts [`Canvas::changed_since`] gives.
+pub const MAX_PARTS: usize = 24;
+
+/// Whether two rows hold the same pixels, read in one pass with no early exit so that the compiler makes it vector
+/// code; a slice's `==` calls the C library's `memcmp` instead, which is several times slower on the Vita.
+fn same(a: &[u16], b: &[u16]) -> bool {
+    a.iter().zip(b).fold(0, |d, (x, y)| d | (x ^ y)) == 0
+}
+
+/// Each palette index's RGBA8, [`CLEAR`]'s (transparent) last.
+fn rgba_table(pal: &Palette) -> [[u8; 4]; CLEAR as usize + 1] {
+    let mut table = [[0u8; 4]; CLEAR as usize + 1];
+    for (t, c) in table.iter_mut().zip(&pal.0) {
+        *t = [c[0], c[1], c[2], 255];
+    }
+    table
 }
 
 /// A map pixel.
@@ -752,7 +881,7 @@ pub fn draw(canvas: &mut Canvas, f: &ViewFrame, art: &Art, shapes: &fog::Shapes)
         draw_bar(canvas, b);
     }
     if let Some((width, codes)) = &f.fog {
-        fog::draw(canvas, *width, codes, shapes);
+        crate::phases::timed(crate::phases::Phase::Fog, || fog::draw(canvas, *width, codes, shapes));
     }
     for flag in &f.flags {
         draw_flag(canvas, flag);
@@ -1597,5 +1726,69 @@ mod tests {
         let mut c = Canvas::new(0, 0, 2, 1);
         c.put(1, 0, 9);
         assert_eq!(c.rgba(&pal), [0, 0, 0, 0, 1, 2, 3, 255]);
+    }
+
+    #[test]
+    fn a_canvas_names_the_runs_of_rows_that_changed() {
+        let before = Canvas::new(0, 0, 8, 6);
+        let mut now = Canvas::new(0, 0, 8, 6);
+        assert_eq!(now.changed_since(&before, &Entries::default()), Some(vec![]));
+        now.put(2, 1, 5);
+        now.put(5, 2, 5);
+        now.put(1, 4, 5);
+        assert_eq!(
+            now.changed_since(&before, &Entries::default()),
+            Some(vec![(2, 1, 4, 2), (1, 4, 1, 1)]),
+            "rows 1 and 2 are one run, columns 2 to 5"
+        );
+        assert_eq!(
+            now.changed_since(&Canvas::new(1, 0, 8, 6), &Entries::default()),
+            None,
+            "another place"
+        );
+        let mut spread = Canvas::new(0, 0, 4, 2 * MAX_PARTS as i32 + 2);
+        for y in 0..=MAX_PARTS as i32 {
+            spread.put(1, 2 * y, 5);
+        }
+        let blank = Canvas::new(0, 0, 4, 2 * MAX_PARTS as i32 + 2);
+        assert_eq!(
+            spread.changed_since(&blank, &Entries::default()),
+            Some(vec![(1, 0, 1, 2 * MAX_PARTS as u32 + 1)]),
+            "too many runs: one part round them"
+        );
+        let pal = Palette([[1, 2, 3]; 256]);
+        let mut out = before.rgba(&pal);
+        now.rgba_parts_into(
+            &pal,
+            &mut out,
+            &now.changed_since(&before, &Entries::default()).expect("same place"),
+        );
+        assert_eq!(out, now.rgba(&pal));
+    }
+
+    #[test]
+    fn a_palette_change_names_the_rows_that_use_its_colours() {
+        let draw = |c: &mut Canvas| {
+            c.put(3, 0, 5);
+            c.put(1, 2, 7);
+            c.put(6, 2, 7);
+        };
+        let mut before = Canvas::new(0, 0, 8, 4);
+        draw(&mut before);
+        let mut now = Canvas::new(0, 0, 8, 4);
+        draw(&mut now);
+        now.put(2, 3, 5);
+        let was = Palette([[1, 2, 3]; 256]);
+        let mut pal = was.clone();
+        pal.0[7] = [9, 9, 9];
+        let r = Entries::changed(&was, &pal);
+        assert_eq!(
+            now.changed_since(&before, &r),
+            Some(vec![(1, 2, 6, 2)]),
+            "row 2 for its colour 7 and row 3 for its new pixel, one run; row 0's colour 5 kept its colour"
+        );
+        let mut out = before.rgba(&was);
+        now.rgba_parts_into(&pal, &mut out, &now.changed_since(&before, &r).expect("same place"));
+        assert_eq!(out, now.rgba(&pal));
     }
 }

@@ -86,7 +86,14 @@ impl Install {
 
     /// A second handle on the same files, with archives of its own, for reading on another thread.
     pub fn reopen(&self) -> Result<Self, InstallError> {
-        Ok(Self::from_shared(self.files.clone())?.with_mods(self.mods.clone()))
+        self.reopener()()
+    }
+
+    /// [`Self::reopen`] to call later, on another thread: opening the archives reads their tables, which takes a
+    /// visible while on a slow machine.
+    pub fn reopener(&self) -> impl FnOnce() -> Result<Self, InstallError> + Send + 'static {
+        let (files, mods) = (self.files.clone(), self.mods.clone());
+        move || Ok(Self::from_shared(files)?.with_mods(mods))
     }
 
     fn from_shared(files: Arc<dyn Files>) -> Result<Self, InstallError> {
