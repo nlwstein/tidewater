@@ -49,12 +49,14 @@ pub fn decompress(input: &[u8], max_out: usize, channels: usize) -> Result<Vec<u
         *p = s as i32;
         out.extend_from_slice(&s.to_le_bytes());
     }
+    // The next channel, without a division: a CPU with no divide instruction (the Vita's) calls a routine for `%`.
+    let next = |ch: usize| if ch + 1 == channels { 0 } else { ch + 1 };
     let mut ch = channels - 1;
     for &encoded in &input[pos..] {
         if out.len() + 2 > max_out {
             break;
         }
-        ch = (ch + 1) % channels;
+        ch = next(ch);
         match encoded {
             0x80 => {
                 step_index[ch] = step_index[ch].saturating_sub(1);
@@ -62,7 +64,7 @@ pub fn decompress(input: &[u8], max_out: usize, channels: usize) -> Result<Vec<u
             }
             0x81 => {
                 step_index[ch] = (step_index[ch] + 8).min(88);
-                ch = (ch + 1) % channels;
+                ch = next(ch);
             }
             _ => {
                 let step = STEP_SIZE[step_index[ch]];

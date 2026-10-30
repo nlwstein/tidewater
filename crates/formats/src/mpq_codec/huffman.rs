@@ -2,9 +2,10 @@
 //!
 //! Ported from StormLib `src/huffman/huff.cpp` by Ladislav Zezula and ShadowFlare,
 //! <https://github.com/ladislav-zezula/StormLib>, MIT License, Copyright (c) 1999-2013 Ladislav Zezula.
-//! Changes: pointers became indices into one arena (index 0 is the list head); the quick-link lookup cache, a pure
-//! speed-up, is left out; the compressor is left out.
+//! Changes: pointers became indices into one arena (index 0 is the list head); StormLib's quick-link cache is replaced
+//! by a lookup table of our own ([`Shortcuts`]); the compressor is left out.
 
+use super::bits::Bits;
 use super::{Error, Result};
 
 const ITEM_COUNT: usize = 515;
@@ -319,49 +320,57 @@ fn full() -> Error {
     Error::compression("huffman: tree item pool exhausted")
 }
 
-struct Bits<'a> {
-    data: &'a [u8],
-    pos: usize,
-    buf: u32,
-    count: u32,
+/// How many bits one table lookup decodes.
+const PEEK_BITS: u32 = 7;
+
+/// Where the next `PEEK_BITS` bits lead from the root, for each of their values, filled in as
+/// they are first met. The tree only changes on a new byte (or every symbol, in the sparse
+/// kind), so between changes most symbols decode in one lookup instead of a step per bit.
+struct Shortcuts {
+    /// The item reached, how many bits it took, and the tree version it holds for.
+    entries: Vec<(usize, u32, u32)>,
+    version: u32,
 }
 
-impl Bits<'_> {
-    fn bit(&mut self) -> Option<u32> {
-        if self.count == 0 {
-            self.buf = *self.data.get(self.pos)? as u32;
-            self.pos += 1;
-            self.count = 8;
+impl Shortcuts {
+    fn new() -> Self {
+        Self {
+            entries: vec![(HEAD, 0, 0); 1 << PEEK_BITS],
+            version: 1,
         }
-        let b = self.buf & 1;
-        self.buf >>= 1;
-        self.count -= 1;
-        Some(b)
     }
 
-    fn byte(&mut self) -> Option<u32> {
-        if self.count < 8 {
-            self.buf |= (*self.data.get(self.pos)? as u32) << self.count;
-            self.pos += 1;
-            self.count += 8;
+    /// Forgets every entry, once the tree has changed.
+    fn invalidate(&mut self) {
+        self.version += 1;
+    }
+
+    /// The item `peeked` leads to: a leaf within its bits, or the branch after all of them.
+    fn get(&mut self, tree: &Tree, root: usize, peeked: usize) -> (usize, u32) {
+        let (i, n, v) = self.entries[peeked];
+        if v == self.version {
+            return (i, n);
         }
-        let v = self.buf & 0xFF;
-        self.buf >>= 8;
-        self.count -= 8;
-        Some(v)
+        let (mut i, mut n) = (root, 0);
+        while n < PEEK_BITS && tree.items[i].child_lo != NONE {
+            let lo = tree.items[i].child_lo;
+            i = if (peeked >> n) & 1 == 1 {
+                tree.items[lo].prev
+            } else {
+                lo
+            };
+            n += 1;
+        }
+        self.entries[peeked] = (i, n, self.version);
+        (i, n)
     }
 }
 
 /// Decompresses a Huffman stream, producing at most `max_out` bytes.
 pub fn decompress(data: &[u8], max_out: usize) -> Result<Vec<u8>> {
-    let mut bits = Bits {
-        data,
-        pos: 0,
-        buf: 0,
-        count: 0,
-    };
+    let mut bits = Bits::new(data);
     let eof = || Error::compression("huffman: unexpected end of data");
-    let kind = bits.byte().ok_or_else(eof)? as usize;
+    let kind = bits.take(8).ok_or_else(eof)? as usize;
     if kind & 0x0F > 8 {
         return Err(Error::compression(format!("huffman: unknown data type {kind}")));
     }
@@ -371,14 +380,22 @@ pub fn decompress(data: &[u8], max_out: usize) -> Result<Vec<u8>> {
     tree.build(&mut used, kind & 0x0F)?;
 
     let mut out = Vec::with_capacity(max_out);
+    let mut shortcuts = Shortcuts::new();
     loop {
         let mut i = tree.items[HEAD].next;
         if i == HEAD {
             return Err(Error::compression("huffman: empty tree"));
         }
+        let (peeked, real) = bits.peek(PEEK_BITS);
+        let (to, n) = shortcuts.get(&tree, i, peeked);
+        // Past the end of the data the peeked bits are padding: walk on so it fails as before.
+        if n <= real {
+            bits.skip(n);
+            i = to;
+        }
         while tree.items[i].child_lo != NONE {
             let lo = tree.items[i].child_lo;
-            i = if bits.bit().ok_or_else(eof)? == 1 {
+            i = if bits.take(1).ok_or_else(eof)? == 1 {
                 tree.items[lo].prev
             } else {
                 lo
@@ -389,12 +406,13 @@ pub fn decompress(data: &[u8], max_out: usize) -> Result<Vec<u8>> {
             break;
         }
         if value == NEW_BYTE {
-            value = bits.byte().ok_or_else(eof)?;
+            value = bits.take(8).ok_or_else(eof)?;
             let last_value = tree.items[tree.items[HEAD].prev].value;
             tree.insert_new_branch(&mut used, last_value, value)?;
             if !sparse {
                 tree.inc_weights(tree.by_byte[value as usize]);
             }
+            shortcuts.invalidate();
         }
         if out.len() >= max_out {
             break;
@@ -402,7 +420,100 @@ pub fn decompress(data: &[u8], max_out: usize) -> Result<Vec<u8>> {
         out.push(value as u8);
         if sparse {
             tree.inc_weights(tree.by_byte[value as usize]);
+            shortcuts.invalidate();
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Encodes `data` as [`decompress`] reads it: each byte's code is its path from the root, found walking up from its
+    /// item, and the tree changes after each symbol as the decoder's does.
+    fn encode(kind: u8, data: &[u8]) -> Vec<u8> {
+        let mut tree = Tree::new();
+        let mut used = 0;
+        tree.build(&mut used, kind as usize & 0x0F).unwrap();
+        let sparse = kind == 0;
+        let (mut out, mut acc, mut n) = (Vec::new(), 0u64, 0);
+        let mut put = |v: u32, bits: u32| {
+            acc |= u64::from(v) << n;
+            n += bits;
+            while n >= 8 {
+                out.push(acc as u8);
+                acc >>= 8;
+                n -= 8;
+            }
+        };
+        put(u32::from(kind), 8);
+        let code = |tree: &Tree, mut i: usize| {
+            let mut path = Vec::new();
+            while tree.items[i].parent != NONE {
+                let p = tree.items[i].parent;
+                path.push(u32::from(tree.items[p].child_lo != i));
+                i = p;
+            }
+            path.into_iter().rev()
+        };
+        for &b in data {
+            let i = tree.by_byte[b as usize];
+            if i != NONE {
+                code(&tree, i).for_each(|bit| put(bit, 1));
+                if sparse {
+                    tree.inc_weights(i);
+                }
+                continue;
+            }
+            code(&tree, tree.by_byte[NEW_BYTE as usize]).for_each(|bit| put(bit, 1));
+            put(u32::from(b), 8);
+            let last_value = tree.items[tree.items[HEAD].prev].value;
+            tree.insert_new_branch(&mut used, last_value, u32::from(b)).unwrap();
+            tree.inc_weights(tree.by_byte[b as usize]);
+        }
+        code(&tree, tree.by_byte[END_OF_STREAM as usize]).for_each(|bit| put(bit, 1));
+        put(0, 7);
+        out
+    }
+
+    /// Bytes with a skew, as real data has, and some the preset weights lack (so new bytes are added).
+    fn sample(len: usize) -> Vec<u8> {
+        let mut x = 0x1234_5678u32;
+        (0..len)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 17;
+                x ^= x << 5;
+                if x.is_multiple_of(4) {
+                    (x >> 8) as u8
+                } else {
+                    (x >> 8) as u8 & 0x0F
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn what_is_encoded_decodes() {
+        let data = sample(5000);
+        for kind in [0, 1, 2, 7, 8] {
+            assert_eq!(
+                decompress(&encode(kind, &data), data.len()).unwrap(),
+                data,
+                "kind {kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_cut_stream_fails() {
+        let data = sample(300);
+        for kind in [0, 7] {
+            let stream = encode(kind, &data);
+            for n in 0..stream.len() {
+                assert!(decompress(&stream[..n], data.len()).is_err(), "kind {kind}, cut at {n}");
+            }
+        }
+    }
 }

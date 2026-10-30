@@ -2,6 +2,7 @@
 //! header); PKWARE DCL "implode" comes from the MIT-licensed `explode` crate.
 
 mod adpcm;
+mod bits;
 mod huffman;
 
 #[derive(Debug)]
