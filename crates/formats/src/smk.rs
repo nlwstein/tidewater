@@ -488,27 +488,39 @@ impl Smacker {
         }))
     }
 
-    fn decode_frame(&mut self, mut d: &[u8], kind: u8) -> Result<Vec<AudioChunk>> {
-        if kind & 1 != 0 {
-            let words = *d.first().ok_or(SmkError::Truncated)? as usize;
-            let n = words * 4;
-            if n == 0 || n > d.len() {
-                return Err(SmkError::Corrupt("palette chunk size"));
+    /// Every sample of audio track `track` (0 to 6), read from the frames' audio chunks without decoding their
+    /// pictures, up to the first frame that can't be read (as [`Smacker::next_frame`] would stop there); empty for a
+    /// track the header doesn't declare or whose codec is unsupported. Doesn't move [`Smacker::next_frame`]'s place.
+    pub fn track_samples(&self, track: usize) -> Vec<i16> {
+        let Some(t) = self
+            .audio
+            .iter()
+            .find(|a| a.track == track && !a.unsupported_codec)
+            .copied()
+        else {
+            return Vec::new();
+        };
+        let mut samples = Vec::new();
+        for (&(start, len), &kind) in self.spans.iter().zip(&self.types).take(self.frame_count) {
+            let chunk =
+                split_frame(&self.data[start..start + len], kind).map(|p| p.audio.get(track).copied().flatten());
+            match chunk.and_then(|c| c.map(|c| decode_audio(&t, c)).transpose()) {
+                Ok(Some(more)) => samples.extend(more),
+                Ok(None) => {}
+                Err(_) => break,
             }
-            self.read_palette(&d[1..n])?;
-            d = &d[n..];
+        }
+        samples
+    }
+
+    fn decode_frame(&mut self, d: &[u8], kind: u8) -> Result<Vec<AudioChunk>> {
+        let parts = split_frame(d, kind)?;
+        if let Some(palette) = parts.palette {
+            self.read_palette(palette)?;
         }
         let mut audio = Vec::new();
-        for t in 0..MAX_TRACKS {
-            if kind >> (t + 1) & 1 == 0 {
-                continue;
-            }
-            let n = rd32(d, 0)? as usize;
-            if n < 4 || n > d.len() {
-                return Err(SmkError::Corrupt("audio chunk size"));
-            }
-            let chunk = &d[4..n];
-            d = &d[n..];
+        for (t, chunk) in parts.audio.iter().enumerate() {
+            let Some(chunk) = chunk else { continue };
             if !self.decode_audio {
                 continue;
             }
@@ -523,7 +535,7 @@ impl Smacker {
                 samples: decode_audio(&track, chunk)?,
             });
         }
-        self.decode_video(d)?;
+        self.decode_video(parts.video)?;
         Ok(audio)
     }
 
@@ -651,6 +663,44 @@ impl Smacker {
 }
 
 /// Decodes one audio chunk (the bytes after its length word) to interleaved signed 16-bit samples.
+/// A frame's data in its parts ("Frame data"): the palette chunk without its length byte, each audio track's chunk
+/// without its length, and the video bit stream.
+struct FrameParts<'a> {
+    palette: Option<&'a [u8]>,
+    audio: [Option<&'a [u8]>; MAX_TRACKS],
+    video: &'a [u8],
+}
+
+fn split_frame(mut d: &[u8], kind: u8) -> Result<FrameParts<'_>> {
+    let mut palette = None;
+    if kind & 1 != 0 {
+        let words = *d.first().ok_or(SmkError::Truncated)? as usize;
+        let n = words * 4;
+        if n == 0 || n > d.len() {
+            return Err(SmkError::Corrupt("palette chunk size"));
+        }
+        palette = Some(&d[1..n]);
+        d = &d[n..];
+    }
+    let mut audio = [None; MAX_TRACKS];
+    for (t, slot) in audio.iter_mut().enumerate() {
+        if kind >> (t + 1) & 1 == 0 {
+            continue;
+        }
+        let n = rd32(d, 0)? as usize;
+        if n < 4 || n > d.len() {
+            return Err(SmkError::Corrupt("audio chunk size"));
+        }
+        *slot = Some(&d[4..n]);
+        d = &d[n..];
+    }
+    Ok(FrameParts {
+        palette,
+        audio,
+        video: d,
+    })
+}
+
 fn decode_audio(track: &AudioTrack, chunk: &[u8]) -> Result<Vec<i16>> {
     if !track.packed {
         return Ok(if track.bits == 16 {
@@ -898,6 +948,11 @@ mod tests {
 
     /// Two frames of an 8x4 (or 7x4) picture: solid + mono, then void + solid, each with a palette chunk.
     fn synthetic(width: u32) -> Vec<u8> {
+        synthetic_with_sound(width, None)
+    }
+
+    /// [`synthetic`], with each frame carrying the given raw 8-bit mono chunk on audio track 0 when `sound` is given.
+    fn synthetic_with_sound(width: u32, sound: Option<[&[u8]; 2]>) -> Vec<u8> {
         let mono_pair = 0x0201u32; // colour 1 where the mask bit is set, 2 where it is clear
         let t_solid1 = type_code(3, 0, 1);
         let t_mono = type_code(0, 0, 0);
@@ -930,8 +985,12 @@ mod tests {
             p[0] = (p.len() / 4) as u8;
         }
         let mut frames = Vec::new();
-        for (p, v) in [(p0, f0.bytes), (p1, f1.bytes)] {
+        for (n, (p, v)) in [(p0, f0.bytes), (p1, f1.bytes)].into_iter().enumerate() {
             let mut d = p;
+            if let Some(chunks) = sound {
+                d.extend((chunks[n].len() as u32 + 4).to_le_bytes());
+                d.extend(chunks[n]);
+            }
             d.extend(v);
             while d.len() % 4 != 0 {
                 d.push(0);
@@ -946,17 +1005,33 @@ mod tests {
         out.extend([0u8; 28]);
         out.extend((trees.len() as u32).to_le_bytes());
         out.extend([0u8; 16]);
-        out.extend([0u8; 28]);
+        let rate = if sound.is_some() { 0x4000_0000u32 | 22_050 } else { 0 };
+        out.extend(rate.to_le_bytes());
+        out.extend([0u8; 24]);
         out.extend([0u8; 4]);
         for (i, f) in frames.iter().enumerate() {
             out.extend((f.len() as u32 | (i == 0) as u32).to_le_bytes());
         }
-        out.extend([1u8, 1u8]);
+        let kind = if sound.is_some() { 1u8 | 1 << 1 } else { 1 };
+        out.extend([kind, kind]);
         out.extend(trees);
         for f in frames {
             out.extend(f);
         }
         out
+    }
+
+    #[test]
+    fn a_track_read_alone_gives_the_frames_sound() {
+        let mut s = Smacker::parse(&synthetic_with_sound(8, Some([&[128, 130], &[126]]))).unwrap();
+        let alone = s.track_samples(0);
+        assert!(s.track_samples(1).is_empty(), "no such track");
+        let mut decoded = Vec::new();
+        while let Some(f) = s.next_frame().unwrap() {
+            decoded.extend(f.audio.into_iter().flat_map(|c| c.samples));
+        }
+        assert_eq!(alone, decoded);
+        assert_eq!(alone.len(), 3);
     }
 
     #[test]
