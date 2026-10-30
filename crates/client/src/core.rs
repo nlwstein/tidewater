@@ -622,6 +622,7 @@ fn frame_systems(c: &mut Core) {
         }
         phases::timed(Phase::Terrain, || {
             game::cycle_palette(c);
+            game::freshen_terrain(c);
             game::redraw_terrain(c);
         });
         phases::timed(Phase::View, || game::draw_view(c));
@@ -713,6 +714,8 @@ fn stamp_screen(window: Option<WindowGeom>, screen: (u32, u32), headless: bool) 
 /// draws the flow screen's own pointer, or none, and none through the screen's fades (`frontend::screen_pointer`,
 /// "Pointers outside a game"). The system's pointer shows only where the screen wants a pointer and has none.
 fn compose_screen(c: &mut Core) {
+    // Normally done in the frame's terrain step; again here in case the view moved after it.
+    game::freshen_terrain(c);
     let pictures = &c.pictures;
     // Outside a game the flow's screen clears the screen first (`frontend::camera_clear`).
     let front_clears = c.front_screen.clears;

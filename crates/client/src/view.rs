@@ -186,8 +186,8 @@ impl Canvas {
         }
     }
 
-    /// The parts that differ from `before`, a canvas of the same place and size (`None` otherwise), or whose colour
-    /// changed with the palette (the entries `recoloured`, from [`Entries::changed`]): runs of rows that changed, each
+    /// The parts that differ from `before`, a canvas of the same place and size (`None` otherwise, or when most of its
+    /// colours changed), or whose colour changed with the palette (the entries `recoloured`, from [`Entries::changed`]): runs of rows that changed, each
     /// as x, y, width and height spanning the columns that changed in them. More than [`MAX_PARTS`] runs become one
     /// part around them all.
     pub fn changed_since(&self, before: &Canvas, recoloured: &Entries) -> Option<Vec<(u32, u32, u32, u32)>> {
@@ -197,9 +197,18 @@ impl Canvas {
             return None;
         }
         let w = self.width as usize;
+        // With most of the drawn entries recoloured (the palette's effects changing: pausing, a fade), colouring the
+        // whole canvas costs less than finding the parts over a canvas that is mostly clear.
+        let used = self.used();
+        let (drawn, hit) = (0..=255u8)
+            .filter(|&i| used.contains(i))
+            .fold((0, 0), |(d, h), i| (d + 1, h + u32::from(recoloured.contains(i))));
+        if hit * 2 > drawn {
+            return None;
+        }
         // A row the same as before changed only if it holds a recoloured index, which it can only if the canvas drew
         // one.
-        let recoloured = Some(recoloured).filter(|r| r.intersects(&self.used()));
+        let recoloured = Some(recoloured).filter(|r| r.intersects(&used));
         let shown = |p: u16, r: &Entries| p < CLEAR && r.contains(p as u8);
         let differs = |a: u16, b: u16| a != b || recoloured.is_some_and(|r| shown(a, r));
         let mut parts: Vec<(u32, u32, u32, u32)> = Vec::new();

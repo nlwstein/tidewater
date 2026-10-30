@@ -1026,6 +1026,14 @@ impl HudArt {
         self.redraw(frame, l, v, pic, &[Rect::new(0, 0, frame.width, frame.height)]);
     }
 
+    /// Draws `rects` of the picture again ([`HudArt::redraw`]), or all of it ([`HudArt::draw_into`]) for `None`.
+    pub fn redraw_or_draw(&self, frame: &Picture, l: &Layout, v: &View, pic: &mut Picture, rects: Option<&[Rect]>) {
+        match rects {
+            Some(rects) => self.redraw(frame, l, v, pic, rects),
+            None => self.draw_into(frame, l, v, pic),
+        }
+    }
+
     /// Draws `rects` of the picture again (a picture [`HudArt::draw`] made from `frame`, the rectangles inside it): each
     /// is the frame's pixels again with everything drawn over them clipped to it. The rest of the picture is left as it
     /// is, which is the point: copying the whole frame costs more than all the drawing where memory is slow.

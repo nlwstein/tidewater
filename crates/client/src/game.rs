@@ -214,6 +214,11 @@ impl Selection {
 pub struct TerrainArt {
     pub image: layers::PictureId,
     pub tileset: tidewater_formats::tileset::Tileset,
+    /// Per map tile, row by row: drawn in an older palette than the one shown. A palette change recolours only the
+    /// tiles in view at once, and the rest as they come into view ([`freshen_terrain`]).
+    pub stale: Vec<bool>,
+    /// How many tiles are stale.
+    pub stale_count: usize,
 }
 
 /// Colour cycling (`palette`): the cycled palette every indexed picture is converted with, and the tiles' used entries.
@@ -265,17 +270,21 @@ pub struct Hud {
     pub map: (u32, u32),
     /// The minimap: its redraw countdown, terrain picture and last picture (`minimap`).
     pub minimap: minimap::Minimap,
-    /// The fingerprints of the last picture drawn: of the whole, with the effects put over it and the picture
-    /// (`HudArt::whole_key`), and of each part (`HudArt::parts`). A frame with the same draws nothing, and one with only
-    /// some parts changed draws only those.
+    /// The fingerprints of the last picture drawn: of the whole and the picture (`HudArt::whole_key`), the effects put
+    /// over it, and of each part (`HudArt::parts`). A frame with the same draws nothing, and one with only some parts
+    /// changed draws only those.
     pub drawn: Option<HudDrawn>,
+    /// While the palette's effects are on (`palette::Effects`: the pause's greyscale, a fade; `plain_on`), the picture
+    /// as drawn without them. Kept between: allocating it again costs a slow machine more than the memory.
+    pub plain: scene::Picture,
+    pub plain_on: bool,
     /// The game's pointer over the picture this frame, by its shape and place on it: the screen puts it on top of the
     /// picture (`core::compose_screen`).
     pub pointer: Option<(screen::Pointer, (i32, i32))>,
 }
 
 /// See [`Hud::drawn`].
-pub type HudDrawn = ((u64, palette::Effects, Option<layers::PictureId>), [u64; 7]);
+pub type HudDrawn = ((u64, Option<layers::PictureId>), palette::Effects, [u64; 7]);
 
 impl Hud {
     /// The cursor in screen pixels, through the black border (`display::Letterbox::screen_point`).
@@ -742,6 +751,12 @@ fn load_game(c: &mut Core, map: &str, setup: Option<tidewater_sim::setup::Setup>
         map: (0, 0),
         minimap: minimap::Minimap::new(0),
         drawn: None,
+        plain: scene::Picture {
+            width: 0,
+            height: 0,
+            rgba: Vec::new(),
+        },
+        plain_on: false,
         pointer: None,
     });
     c.time.restart_steps(hz);
@@ -835,6 +850,8 @@ pub(crate) fn setup(c: &mut Core) {
     let art = TerrainArt {
         image: terrain,
         tileset: scene.tileset,
+        stale: vec![false; hud.map.0 as usize * hud.map.1 as usize],
+        stale_count: 0,
     };
     commands.queue(move |c| c.terrain_art = Some(art));
     // The map view's picture, redrawn every frame for the part of the map in view (`draw_view`).
@@ -1122,7 +1139,6 @@ pub(crate) fn cycle_palette(c: &mut Core) {
         stored,
         menu,
         input,
-        pictures,
         time: real,
         ..
     } = c
@@ -1170,25 +1186,20 @@ pub(crate) fn cycle_palette(c: &mut Core) {
             })
             .collect()
     });
+    // Marked stale here and recoloured as they show (`freshen_terrain`): the pause's greyscale changes every entry, and
+    // recolouring the whole map at once stalls a slow machine.
     let v = &sim.world.vision;
-    let tiles: Vec<(i32, i32, u16)> = (0..v.height as i32)
-        .flat_map(|y| (0..v.width as i32).map(move |x| (x, y)))
-        .filter_map(|(x, y)| {
-            let m = sim.world.terrain.tile(x, y)?;
-            used.get(m as usize)
-                .is_some_and(|u| u.intersects(&changed))
-                .then_some((x, y, m))
-        })
-        .collect();
-    if let Some(img) = pictures.get_mut_parts(terrain.image, tile_runs(&tiles)) {
-        // A map repeats its megatiles, so each is coloured once and copied to every tile that shows it (a change of
-        // every entry, the greyscale's, redraws the whole map).
-        let mut coloured = HashMap::new();
-        for &(x, y, m) in &tiles {
-            let pic = coloured
-                .entry(m)
-                .or_insert_with(|| scene::tile_picture(ts, m as usize, &cycling.shown));
-            put_tile(img, x, y, pic);
+    for y in 0..v.height as i32 {
+        for x in 0..v.width as i32 {
+            let Some(m) = sim.world.terrain.tile(x, y) else {
+                continue;
+            };
+            let i = y as usize * v.width + x as usize;
+            if used.get(m as usize).is_some_and(|u| u.intersects(&changed)) && terrain.stale.get(i).is_some_and(|&s| !s)
+            {
+                terrain.stale[i] = true;
+                terrain.stale_count += 1;
+            }
         }
     }
     cycling.used = Some(used);
@@ -1219,6 +1230,7 @@ pub(crate) fn redraw_terrain(c: &mut Core) {
     let Some(img) = pictures.get_mut_parts(art.image, parts) else {
         return;
     };
+    let width = sim.world.vision.width;
     for (x, y, m) in tiles {
         put_tile(
             img,
@@ -1226,6 +1238,64 @@ pub(crate) fn redraw_terrain(c: &mut Core) {
             y,
             &scene::tile_picture(&art.tileset, m as usize, &cycling.shown),
         );
+        if let Some(s) = art.stale.get_mut(y as usize * width + x as usize).filter(|s| **s) {
+            *s = false;
+            art.stale_count -= 1;
+        }
+    }
+}
+
+/// Recolours the stale terrain tiles ([`TerrainArt::stale`]) in the map view, and one tile around it, in the palette
+/// shown. Nothing shows the terrain without a view, so then none are.
+pub(crate) fn freshen_terrain(c: &mut Core) {
+    let Core {
+        sim: Some(sim),
+        terrain_art: Some(art),
+        cycling: Some(cycling),
+        hud: Some(hud),
+        view: Some(mv),
+        pictures,
+        ..
+    } = c
+    else {
+        return;
+    };
+    let Some(layout) = hud.layout else { return };
+    if art.stale_count == 0 {
+        return;
+    }
+    let (width, height) = (sim.world.vision.width as i32, sim.world.vision.height as i32);
+    let (vw, vh) = (layout.viewport.w as f32 * mv.zoom, layout.viewport.h as f32 * mv.zoom);
+    let t = TILE_PX as f32;
+    let tile = |px: f32| (px / t).floor() as i32;
+    let (x0, x1) = (
+        (tile(mv.centre.0 - vw / 2.0) - 1).max(0),
+        (tile(mv.centre.0 + vw / 2.0) + 2).min(width),
+    );
+    let (y0, y1) = (
+        (tile(mv.centre.1 - vh / 2.0) - 1).max(0),
+        (tile(mv.centre.1 + vh / 2.0) + 2).min(height),
+    );
+    let tiles: Vec<(i32, i32, u16)> = (y0..y1)
+        .flat_map(|y| (x0..x1).map(move |x| (x, y)))
+        .filter(|&(x, y)| art.stale[(y * width + x) as usize])
+        .filter_map(|(x, y)| Some((x, y, sim.world.terrain.tile(x, y)?)))
+        .collect();
+    if tiles.is_empty() {
+        return;
+    }
+    let Some(img) = pictures.get_mut_parts(art.image, tile_runs(&tiles)) else {
+        return;
+    };
+    // A map repeats its megatiles, so each is coloured once and copied to every tile that shows it.
+    let mut coloured = HashMap::new();
+    for &(x, y, m) in &tiles {
+        let pic = coloured
+            .entry(m)
+            .or_insert_with(|| scene::tile_picture(&art.tileset, m as usize, &cycling.shown));
+        put_tile(img, x, y, pic);
+        art.stale[(y * width + x) as usize] = false;
+        art.stale_count -= 1;
     }
 }
 
@@ -2947,11 +3017,7 @@ pub(crate) fn draw_hud(c: &mut Core) {
         group_bar: &group_bar,
         pings: &ping_marks,
     };
-    let whole = (
-        hud.art.whole_key(&hud.frame, &layout, &view),
-        cycling.effects,
-        hud.image,
-    );
+    let whole = (hud.art.whole_key(&hud.frame, &layout, &view), hud.image);
     let parts = hud.art.parts(&layout, &view);
     let keys = parts.map(|(_, k)| k);
     let (Some(id), (width, height)) = (hud.image, (hud.frame.width, hud.frame.height)) else {
@@ -2959,7 +3025,7 @@ pub(crate) fn draw_hud(c: &mut Core) {
     };
     // The parts whose fingerprint changed, inside the picture; all of it when the whole changed.
     let changed: Option<Vec<hud::Rect>> = match hud.drawn {
-        Some((w, old)) if w == whole => Some(
+        Some((w, _, old)) if w == whole => Some(
             parts
                 .iter()
                 .zip(old)
@@ -2969,32 +3035,61 @@ pub(crate) fn draw_hud(c: &mut Core) {
         ),
         _ => None,
     };
-    hud.drawn = Some((whole, keys));
-    match changed {
-        Some(rects) if rects.is_empty() => {}
-        Some(rects) => {
-            let Some(pic) = pictures.get_mut_parts(id, rects.iter().map(|r| r.part()).collect()) else {
-                return;
-            };
-            hud.art.redraw(&hud.frame, &layout, &view, pic, &rects);
+    let effects = cycling.effects;
+    let new_effects = hud.drawn.is_none_or(|(_, e, _)| e != effects);
+    hud.drawn = Some((whole, effects, keys));
+    let all = [hud::Rect::new(0, 0, width, height)];
+    let rects = changed.as_deref().unwrap_or(&all);
+    if rects.is_empty() && !new_effects {
+        return;
+    }
+    // Without effects the parts are drawn straight into the picture. With them, into the picture as drawn without them
+    // (`Hud::plain`), which the effects are then put over: an effect starting or ending puts them over it again rather
+    // than drawing every part.
+    if !effects.any() && !hud.plain_on {
+        let pic = if changed.is_some() {
+            pictures.get_mut_parts(id, rects.iter().map(|r| r.part()).collect())
+        } else {
+            pictures.get_mut(id)
+        };
+        let Some(pic) = pic else { return };
+        hud.art
+            .redraw_or_draw(&hud.frame, &layout, &view, pic, changed.as_deref());
+    } else {
+        let Some(shown) = pictures.get(id) else { return };
+        let plain = &mut hud.plain;
+        if !hud.plain_on {
+            // The effects were off until now: the picture is still as drawn without them.
+            (plain.width, plain.height) = (shown.width, shown.height);
+            plain.rgba.clone_from(&shown.rgba);
+        }
+        hud.plain_on = effects.any();
+        hud.art
+            .redraw_or_draw(&hud.frame, &layout, &view, plain, changed.as_deref());
+        let pic = if new_effects || changed.is_none() {
+            pictures.get_mut(id)
+        } else {
+            pictures.get_mut_parts(id, rects.iter().map(|r| r.part()).collect())
+        };
+        let Some(pic) = pic else { return };
+        if new_effects || changed.is_none() {
+            (pic.width, pic.height) = (plain.width, plain.height);
+            pic.rgba.resize(plain.rgba.len(), 0);
+            palette::apply_from(&mut pic.rgba, &plain.rgba, effects);
+        } else {
             for row in rects.iter().flat_map(|r| layers::rgba_rows(r.part(), width)) {
-                palette::apply(&mut pic.rgba[row], cycling.effects);
-            }
-            #[cfg(debug_assertions)]
-            {
-                let mut whole = hud.art.draw(&hud.frame, &layout, &view);
-                palette::apply(&mut whole.rgba, cycling.effects);
-                assert!(
-                    whole.rgba == pic.rgba,
-                    "redrawing the changed parts draws the whole picture"
-                );
+                palette::apply_from(&mut pic.rgba[row.clone()], &plain.rgba[row], effects);
             }
         }
-        None => {
-            let Some(pic) = pictures.get_mut(id) else { return };
-            hud.art.draw_into(&hud.frame, &layout, &view, pic);
-            palette::apply(&mut pic.rgba, cycling.effects);
-        }
+    }
+    #[cfg(debug_assertions)]
+    if let Some(pic) = pictures.get(id) {
+        let mut whole = hud.art.draw(&hud.frame, &layout, &view);
+        palette::apply(&mut whole.rgba, effects);
+        assert!(
+            whole.rgba == pic.rgba,
+            "redrawing the changed parts draws the whole picture"
+        );
     }
 }
 

@@ -127,6 +127,13 @@ average and 15.8 ms at p99). What gets it there, all of it on every platform unl
   (`layers::Pictures::get_mut_parts`); the view and the interface colour only those, and the GPU uploads only those,
   since writing texture memory is slow on the Vita (about 180 MB/s). A palette step redraws only the parts that use
   a changed colour.
+- **Pausing.** The pause's greyscale changes every colour. The terrain recolours only the tiles in view and greys the
+  rest as they scroll in (`game::freshen_terrain`); the interface keeps its picture as drawn without the greyscale and
+  puts it over that (`game::Hud::plain`, `palette::apply_from`) rather than drawing every part again; the map view
+  colours itself whole. Pausing or resuming takes one frame of about 90 or 65 ms (178 ms before).
+- **The touch pulse is drawn by the GPU too.** The long-press pulse is the draw list's last item
+  (`compose::Source::Mark`) rather than painted into a composed frame, so a long press keeps 60 fps (it took frames of
+  85 ms before).
 - **No division in hot loops.** The Vita's CPU has no divide instruction, so the sound's resampling and the music's
   decoding step instead of dividing.
 - **Music off the frame.** A track is read and decoded on a thread of its own (`jukebox.rs`), so a game no longer waits
@@ -135,7 +142,7 @@ average and 15.8 ms at p99). What gets it there, all of it on every platform unl
   at a time (`mpq_codec/`); reading a battle track takes half the time and the unit sprites a third.
 
 What is left at a game's start is mostly reading files: the Vita's memory card gave about 4 MB/s, and the unit sprites
-are 2.4 MB. Opening the game menu greys the whole map's terrain picture once (about 0.1 s).
+are 2.4 MB.
 
 ## Limits
 
