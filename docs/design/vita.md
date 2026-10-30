@@ -96,7 +96,9 @@ platform/vita/build.sh --args "@ux0:data/TWtest/args.txt" --env "TIDEWATER_NO_BE
 ```
 
 `--env "NAME=value ..."` sets environment variables first, such as `TIDEWATER_SCRIPT_PICTURES=0` (save each shot as
-a PNG) or `TIDEWATER_FRAME_STATS=1`. With `@FILE`, a missing file means no arguments: the normal program. Release
+a PNG) or `TIDEWATER_FRAME_STATS=1` (the frame times every 10 seconds; a path such as
+`ux0:data/Tidewater/frame-stats.txt` in place of `1` also adds them to that file, since a real Vita has no
+console). With `@FILE`, a missing file means no arguments: the normal program. Release
 builds carry neither option. A test build runs the same on a real Vita: copy the files there with VitaShell and read
 the results back from `ux0:data/TWtest`.
 

@@ -463,9 +463,11 @@ impl LockedPointer {
 }
 
 /// Frame times for measuring a shell (`TIDEWATER_FRAME_STATS=1`): every [`FrameStats::EVERY`] it prints the
-/// frames' intervals and the shell's own work per frame (the core's frame and showing it), in milliseconds.
+/// frames' intervals and the shell's own work per frame (the core's frame and showing it), in milliseconds. Any other
+/// value is a file the lines are also added to, for a system with no console to print to (a real PS Vita).
 pub struct FrameStats {
     on: bool,
+    file: Option<std::path::PathBuf>,
     intervals: Vec<f32>,
     work: Vec<f32>,
     since: std::time::Instant,
@@ -473,8 +475,10 @@ pub struct FrameStats {
 
 impl Default for FrameStats {
     fn default() -> Self {
+        let v = std::env::var_os("TIDEWATER_FRAME_STATS").filter(|v| !v.is_empty() && v != "0");
         FrameStats {
-            on: std::env::var_os("TIDEWATER_FRAME_STATS").is_some_and(|v| !v.is_empty() && v != "0"),
+            on: v.is_some(),
+            file: v.filter(|v| v != "1").map(std::path::PathBuf::from),
             intervals: Vec::new(),
             work: Vec::new(),
             since: std::time::Instant::now(),
@@ -493,12 +497,24 @@ impl FrameStats {
         self.intervals.push(interval.as_secs_f32() * 1000.0);
         self.work.push(work.as_secs_f32() * 1000.0);
         if self.since.elapsed() >= Self::EVERY {
-            eprintln!(
+            let line = format!(
                 "frame stats: {} frames, interval {}, work {}",
                 self.intervals.len(),
                 summary(&mut self.intervals),
                 summary(&mut self.work)
             );
+            eprintln!("{line}");
+            if let Some(path) = &self.file {
+                use std::io::Write;
+                let added = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+                    .and_then(|mut f| writeln!(f, "{line}"));
+                if let Err(e) = added {
+                    eprintln!("frame stats: can't write {}: {e}", path.display());
+                }
+            }
             self.intervals.clear();
             self.work.clear();
             self.since = std::time::Instant::now();
