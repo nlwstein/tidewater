@@ -111,17 +111,40 @@ purpose: the Vita's first-run screen has its own text and only **Scan again**.
 Scenes run only headless here. With a window, the scripted run waits for a frame shown at one window pixel per screen
 pixel, and the Vita's window is always the whole 960 by 544 screen, so it never ends.
 
+## Speed
+
+Measured on the real Vita with `TIDEWATER_FRAME_STATS` on a 2-player Gold Rush custom game at the 864-pixel
+`widescreen` width: the game holds 60 fps (frame interval p99 16.8 ms over 600 frames, the frame's own work 11.3 ms on
+average and 15.8 ms at p99). What gets it there, all of it on every platform unless it says otherwise:
+
+- **Clocks.** The shell raises the CPU to 444 MHz, and the GPU to 222 MHz, the most an app may ask for
+  (`raise_vita_clocks` in `shell/sdl.rs`; the system's defaults for an app are 333 and 166).
+- **The GPU draws the layers.** On the Vita the shell draws the core's draw list with the renderer's textures
+  (`shell/gpu.rs`) instead of composing the frame on the CPU (`compose/cpu.rs`, still the default elsewhere and in
+  every scripted run). `TIDEWATER_COMPOSITOR=gpu` or `cpu` chooses on any platform; the window comparison in
+  `tests/frames.rs` checks the GPU's picture against the CPU's.
+- **Only what changed.** The map view, the interface and the terrain record the parts of their pictures that changed
+  (`layers::Pictures::get_mut_parts`); the view and the interface colour only those, and the GPU uploads only those,
+  since writing texture memory is slow on the Vita (about 180 MB/s). A palette step redraws only the parts that use
+  a changed colour.
+- **No division in hot loops.** The Vita's CPU has no divide instruction, so the sound's resampling and the music's
+  decoding step instead of dividing.
+- **Music off the frame.** A track is read and decoded on a thread of its own (`jukebox.rs`), so a game no longer waits
+  some 4 seconds for its music before it starts.
+- **Faster decoders.** The archive's Huffman and PKWARE decoders read a code through a lookup table rather than a bit
+  at a time (`mpq_codec/`); reading a battle track takes half the time and the unit sprites a third.
+
+What is left at a game's start is mostly reading files: the Vita's memory card gave about 4 MB/s, and the unit sprites
+are 2.4 MB. Opening the game menu greys the whole map's terrain picture once (about 0.1 s).
+
 ## Limits
 
-- **One real Vita so far.** The first hardware install, of v0.9.0, failed with error 0x8010113D (the icon was a 32-bit
-  PNG; fixed in v0.9.1). On the Vita it now plays, but the pointer moves in steps of about two footman heights and
-  light stick pushes are hard to control (GitHub issue #3). Memory, touch and the
-  frame rate are not measured on hardware yet.
+- **One real Vita so far** (an LCD model). The first hardware install, of v0.9.0, failed with error
+  0x8010113D (the icon was a 32-bit PNG; fixed in v0.9.1). Memory is not measured on hardware yet.
 - **Controls tuned only in Vita3K.** SDL's Vita backend presents the buttons and sticks as a gamepad, which the
   gamepad support reads like any other; which buttons the Vita lacks is in [gamepad.md](gamepad.md).
-- **Speed.** The compositor draws a 640 by 480 picture on the CPU each frame. We expect about 30 fps. Ideas, cheapest
-  first: run at 30 fps (the simulation's fixed step is unaffected), raise the CPU clock to 444 MHz, compose only the
-  changed regions, convert an indexed frame on the GPU.
+- **Starting a game takes about 3 seconds** on the Vita (see "Speed" below), most of it reading the unit sprites from
+  the memory card.
 - **No GOG installer.** `innoextract` is a separate program and the Vita cannot start one. Unpack the installer on a
   computer first.
 - **No system keyboard**, so no typing in chat or save names yet.

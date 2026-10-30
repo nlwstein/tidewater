@@ -281,11 +281,11 @@ the frame and sound behaviour.
 
 | Part | What it does | Where |
 |---|---|---|
-| Compositor | Places pictures on the screen: nearest texel at pixel centres, transparent texels skipped, grey tint in linear light, fades applied exactly on the CPU. No engine types. | `crates/client/src/compose.rs` |
+| Compositor | Places pictures on the screen: nearest texel at pixel centres, transparent texels skipped, grey tint in linear light, fades applied exactly on the CPU. No engine types. The core lists the frame's pictures in a draw list; the CPU composes it, or the shell draws it on the GPU (below). | `crates/client/src/compose/` |
 | Scripted scenes | Feed the scene's input into the core's `Input` (`input.rs`). | `script.rs` |
 | Frame snapshot | Hashes every frame (runs of equal frames on one line), every shot and every sound start, without a window. Skips without `TIDEWATER_INSTALL`; `TIDEWATER_SNAPSHOT_BLESS=1` blesses. | `tests/frames.rs`, `tests/snapshots/` |
 | Audio snapshot | A fingerprint of the mixed sound per second. | `tests/snapshots/NAME-audio.txt` |
-| Window comparison | Ignored test: runs the scenes in the SDL window at one pixel per screen pixel and compares the window's own pixels (read back before each shot is shown) with the composed frame at each shot. It opens windows on top for about a minute and a half. | `tests/frames.rs` (`-- --ignored`) |
+| Window comparison | Ignored test: runs the scenes in the SDL window at one pixel per screen pixel and compares the window's own pixels (read back before each shot is shown) with the composed frame at each shot. It opens windows on top for about a minute and a half. Run it with `TIDEWATER_COMPOSITOR=gpu` as well to check the GPU path. | `tests/frames.rs` (`-- --ignored`) |
 
 Run the frame snapshot with `cargo test --release -p tidewater-client --test frames` and `TIDEWATER_INSTALL` set. An
 existing scene's snapshot changes only with the reason in the commit that re-blesses it.
@@ -300,7 +300,8 @@ SDL install is needed.
 |---|---|---|
 | The core | `crates/client`, the library (`lib.rs`) | It forbids `unsafe` code itself (`#![forbid(unsafe_code)]`). |
 | The shell | `crates/client`, the `tidewater` binary: `src/shell/main.rs` (its `main`), `src/shell/app.rs` (the loop, input, mouse lock, sound) and `src/shell/sdl.rs` (our thin safe wrapper over `sdl3-sys`, every `unsafe` block of the program) | `tidewater-ios` and `tidewater-android` compile `app.rs` and `sdl.rs` too, so desktop and phones run one code path. |
-| Shared start-up | `crates/client/src/host.rs` | Start-up from the command line (`host::launch`), the headless scripted loop, the mouse lock's pointer (`LockedPointer`), frame statistics (`FrameStats`, reported with `TIDEWATER_FRAME_STATS=1`). |
+| Shared start-up | `crates/client/src/host.rs` | Start-up from the command line (`host::launch`), the headless scripted loop, the mouse lock's pointer (`LockedPointer`), frame statistics (`FrameStats`, reported with `TIDEWATER_FRAME_STATS=1`, split into the frame's phases by `phases.rs`). |
+| GPU composition | `crates/client/src/shell/gpu.rs` | Draws the core's draw list with the renderer's textures, uploading a picture again only when it changes and then only its changed parts. The PS Vita's default; `TIDEWATER_COMPOSITOR=gpu` or `cpu` chooses anywhere. A half-transparent texel blends in sRGB there rather than in linear light, the one difference from the CPU's frame. |
 
 **Why the shell lives in the client crate.** The frame snapshot starts `CARGO_BIN_EXE_tidewater`, which Cargo gives only
 to tests of the package that has the binary; one shell needs no crate of its own; and the library forbids `unsafe` while

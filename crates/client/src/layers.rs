@@ -29,34 +29,119 @@ pub struct PictureId(u64);
 #[derive(Default)]
 pub struct Pictures {
     next: u64,
-    pictures: HashMap<PictureId, Picture>,
+    pictures: HashMap<PictureId, Stored>,
+    revisions: u64,
+}
+
+/// A part of a picture: x, y, width and height in pixels.
+pub type Part = (u32, u32, u32, u32);
+
+/// Each row of `part` in a picture `width` pixels wide, as the indices of its pixels (row by row from the top left).
+pub fn rows(part: Part, width: u32) -> impl Iterator<Item = std::ops::Range<usize>> {
+    let (x, y, w, h) = part;
+    (y..y + h).map(move |row| {
+        let at = row as usize * width as usize + x as usize;
+        at..at + w as usize
+    })
+}
+
+/// [`rows`] as the bytes of an RGBA8 picture.
+pub fn rgba_rows(part: Part, width: u32) -> impl Iterator<Item = std::ops::Range<usize>> {
+    rows(part, width).map(|r| r.start * 4..r.end * 4)
+}
+
+struct Stored {
+    picture: Picture,
+    /// A number no other change has had, taken whenever the picture may change.
+    revision: u64,
+    /// When only parts of it changed: the revision before, and the parts.
+    changed: Option<(u64, Vec<Part>)>,
+}
+
+impl Stored {
+    fn new(picture: Picture, revision: u64) -> Self {
+        Stored {
+            picture,
+            revision,
+            changed: None,
+        }
+    }
+}
+
+impl PictureId {
+    /// The id as a number, for the screen's draw list (`compose::Source`).
+    pub fn raw(self) -> u64 {
+        self.0
+    }
+
+    pub fn from_raw(id: u64) -> Self {
+        PictureId(id)
+    }
 }
 
 impl Pictures {
+    fn revision(&mut self) -> u64 {
+        self.revisions += 1;
+        self.revisions
+    }
+
     pub fn add(&mut self, p: Picture) -> PictureId {
         let id = PictureId(self.next);
         self.next += 1;
-        self.pictures.insert(id, p);
+        let r = self.revision();
+        self.pictures.insert(id, Stored::new(p, r));
         id
     }
 
     pub fn get(&self, id: PictureId) -> Option<&Picture> {
-        self.pictures.get(&id)
+        self.pictures.get(&id).map(|s| &s.picture)
     }
 
+    /// The picture and its revision.
+    pub fn get_with_revision(&self, id: PictureId) -> Option<(&Picture, u64)> {
+        self.pictures.get(&id).map(|s| (&s.picture, s.revision))
+    }
+
+    /// The picture, to change: it takes a new revision.
     pub fn get_mut(&mut self, id: PictureId) -> Option<&mut Picture> {
-        self.pictures.get_mut(&id)
+        let r = self.revision();
+        self.pictures.get_mut(&id).map(|s| {
+            s.revision = r;
+            s.changed = None;
+            &mut s.picture
+        })
+    }
+
+    /// The picture, to change only `parts` of (its size stays): it takes a new revision, and [`Pictures::changed`]
+    /// says which parts changed since the one before, so a copy of it elsewhere (the GPU's texture) can take only
+    /// those.
+    pub fn get_mut_parts(&mut self, id: PictureId, parts: Vec<Part>) -> Option<&mut Picture> {
+        let r = self.revision();
+        self.pictures.get_mut(&id).map(|s| {
+            s.changed = Some((s.revision, parts));
+            s.revision = r;
+            &mut s.picture
+        })
+    }
+
+    /// The revision before the last change and the parts it changed, if it changed only parts.
+    pub fn changed(&self, id: PictureId) -> Option<(u64, &[Part])> {
+        self.pictures
+            .get(&id)
+            .and_then(|s| s.changed.as_ref())
+            .map(|(r, parts)| (*r, parts.as_slice()))
     }
 
     /// Replaces picture `id`, if it is still there.
     pub fn set(&mut self, id: PictureId, p: Picture) {
+        let r = self.revision();
         if let Some(old) = self.pictures.get_mut(&id) {
-            *old = p;
+            *old = Stored::new(p, r);
         }
     }
 
     pub fn remove(&mut self, id: PictureId) -> Option<Picture> {
-        self.pictures.remove(&id)
+        self.pictures.remove(&id).map(|s| s.picture)
     }
 
     #[cfg(test)]
@@ -271,6 +356,23 @@ mod tests {
         p.set(a, pic(3, 3));
         assert!(p.get(a).is_none(), "a removed picture stays removed");
         assert_eq!(p.len(), 1);
+    }
+
+    #[test]
+    fn a_change_of_parts_says_which_parts_since_which_revision() {
+        let mut p = Pictures::default();
+        let a = p.add(pic(4, 4));
+        let (_, before) = p.get_with_revision(a).expect("added");
+        assert_eq!(p.changed(a), None, "a new picture is new all over");
+        p.get_mut_parts(a, vec![(1, 1, 2, 2)]).expect("there");
+        let (_, after) = p.get_with_revision(a).expect("there");
+        assert_ne!(before, after);
+        assert_eq!(p.changed(a), Some((before, &[(1, 1, 2, 2)][..])));
+        p.get_mut(a).expect("there");
+        assert_eq!(p.changed(a), None, "a change of the whole");
+        p.get_mut_parts(a, vec![(0, 0, 1, 1)]).expect("there");
+        p.set(a, pic(2, 2));
+        assert_eq!(p.changed(a), None, "a new picture");
     }
 
     #[test]

@@ -12,6 +12,7 @@
 //! [`crate::messages`]). Button frames, the menu button labels and the text colours of the colour codes are our own
 //! choices that follow the look of the game. No SDL types here.
 
+use crate::palette::Entries;
 use anyhow::{Context, Result, bail};
 use tidewater_formats::fnt::Font;
 use tidewater_formats::grp::{Frame, Grp};
@@ -42,6 +43,21 @@ impl Rect {
             && py >= self.y as f32
             && px < (self.x + self.w as i32) as f32
             && py < (self.y + self.h as i32) as f32
+    }
+
+    /// As a picture's part (`layers::Part`); for a rectangle inside the picture ([`Rect::within`]).
+    pub fn part(self) -> crate::layers::Part {
+        (self.x as u32, self.y as u32, self.w, self.h)
+    }
+
+    /// The part inside a `width` × `height` picture, if any.
+    pub fn within(self, width: u32, height: u32) -> Option<Rect> {
+        let (x0, y0) = (self.x.max(0), self.y.max(0));
+        let (x1, y1) = (
+            (self.x + self.w as i32).min(width as i32),
+            (self.y + self.h as i32).min(height as i32),
+        );
+        (x0 < x1 && y0 < y1).then(|| Rect::new(x0, y0, (x1 - x0) as u32, (y1 - y0) as u32))
     }
 }
 
@@ -116,6 +132,18 @@ pub struct InfoView<'a> {
     pub more: usize,
 }
 
+impl InfoView<'_> {
+    /// The icon frames the panel shows ([`HudArt::draw_info`]): the selection's, the production's and its queue's.
+    fn icons(&self) -> impl Iterator<Item = u16> + '_ {
+        let slots = self.slots.iter().flatten().filter_map(|s| crate::info::icon(s.kind));
+        let production = self
+            .content
+            .into_iter()
+            .flat_map(|c| c.production.into_iter().chain(c.waiting.iter().flatten().copied()));
+        slots.chain(production)
+    }
+}
+
 /// The changing state the interface shows.
 pub struct View<'a> {
     /// The shown gold, lumber and oil (see [`crate::screen::Counter`]).
@@ -153,40 +181,93 @@ pub struct PingMark {
     pub colour: u8,
 }
 
+/// `h` with `args`' text written into it, finished: a fingerprint of the values the text shows (their `Debug`).
+fn fingerprint(mut h: std::collections::hash_map::DefaultHasher, args: std::fmt::Arguments) -> u64 {
+    use std::fmt::Write as _;
+    use std::hash::Hasher;
+    struct Text<'h>(&'h mut std::collections::hash_map::DefaultHasher);
+    impl std::fmt::Write for Text<'_> {
+        fn write_str(&mut self, s: &str) -> std::fmt::Result {
+            self.0.write(s.as_bytes());
+            Ok(())
+        }
+    }
+    let _ = Text(&mut h).write_fmt(args);
+    h.finish()
+}
+
 // --- drawing primitives -------------------------------------------------------------------------------------------
+
+thread_local! {
+    /// The rectangle the primitives draw in while [`clipped`] runs; `None` is the whole picture.
+    static CLIP: std::cell::Cell<Option<Rect>> = const { std::cell::Cell::new(None) };
+}
+
+/// Runs `draw` with every primitive here kept inside `r`, for redrawing one part of the interface ([`HudArt::redraw`]).
+fn clipped<R>(r: Rect, draw: impl FnOnce() -> R) -> R {
+    let outer = CLIP.replace(Some(r));
+    let out = draw();
+    CLIP.set(outer);
+    out
+}
+
+/// The pixels of `dst` the primitives may draw in: x0, y0, x1, y1 (the last two exclusive).
+fn bounds(dst: &Picture) -> (i32, i32, i32, i32) {
+    let whole = (0, 0, dst.width as i32, dst.height as i32);
+    match CLIP.get() {
+        Some(c) => (
+            whole.0.max(c.x),
+            whole.1.max(c.y),
+            whole.2.min(c.x + c.w as i32),
+            whole.3.min(c.y + c.h as i32),
+        ),
+        None => whole,
+    }
+}
+
+/// Whether any of `r` is inside the rectangle [`clipped`] draws in, so that work wholly outside it can be skipped.
+fn visible(r: Rect) -> bool {
+    CLIP.get().is_none_or(|c| {
+        r.x < c.x + c.w as i32 && c.x < r.x + r.w as i32 && r.y < c.y + c.h as i32 && c.y < r.y + r.h as i32
+    })
+}
 
 /// Copies `src` to `(x, y)`, skipping fully transparent pixels and clipping to `dst`.
 pub fn blit(dst: &mut Picture, x: i32, y: i32, src: &Picture) {
-    for sy in 0..src.height as i32 {
-        let dy = y + sy;
-        if dy < 0 || dy >= dst.height as i32 {
-            continue;
-        }
-        for sx in 0..src.width as i32 {
-            let dx = x + sx;
-            if dx < 0 || dx >= dst.width as i32 {
-                continue;
+    let (bx0, by0, bx1, by1) = bounds(dst);
+    let (sx0, sx1) = ((bx0 - x).max(0), (bx1 - x).min(src.width as i32));
+    let (sy0, sy1) = ((by0 - y).max(0), (by1 - y).min(src.height as i32));
+    if sx0 >= sx1 {
+        return;
+    }
+    let w = (sx1 - sx0) as usize * 4;
+    for sy in sy0..sy1 {
+        let s = (sy as usize * src.width as usize + sx0 as usize) * 4;
+        let d = ((y + sy) as usize * dst.width as usize + (x + sx0) as usize) * 4;
+        for (to, from) in dst.rgba[d..d + w]
+            .chunks_exact_mut(4)
+            .zip(src.rgba[s..s + w].chunks_exact(4))
+        {
+            if from[3] != 0 {
+                to.copy_from_slice(from);
             }
-            let s = ((sy as u32 * src.width + sx as u32) * 4) as usize;
-            if src.rgba[s + 3] == 0 {
-                continue;
-            }
-            let d = ((dy as u32 * dst.width + dx as u32) * 4) as usize;
-            dst.rgba[d..d + 4].copy_from_slice(&src.rgba[s..s + 4]);
         }
     }
 }
 
 /// Fills a rectangle, clipped to `dst`.
 pub fn fill(dst: &mut Picture, r: Rect, c: [u8; 3]) {
-    let x0 = r.x.max(0) as u32;
-    let y0 = r.y.max(0) as u32;
-    let x1 = ((r.x + r.w as i32).max(0) as u32).min(dst.width);
-    let y1 = ((r.y + r.h as i32).max(0) as u32).min(dst.height);
+    let (bx0, by0, bx1, by1) = bounds(dst);
+    let (x0, x1) = (r.x.max(bx0), (r.x + r.w as i32).min(bx1));
+    let (y0, y1) = (r.y.max(by0), (r.y + r.h as i32).min(by1));
+    if x0 >= x1 {
+        return;
+    }
+    let px = [c[0], c[1], c[2], 255];
     for y in y0..y1 {
-        for x in x0..x1 {
-            let d = ((y * dst.width + x) * 4) as usize;
-            dst.rgba[d..d + 4].copy_from_slice(&[c[0], c[1], c[2], 255]);
+        let d = (y as usize * dst.width as usize + x0 as usize) * 4;
+        for to in dst.rgba[d..d + (x1 - x0) as usize * 4].chunks_exact_mut(4) {
+            to.copy_from_slice(&px);
         }
     }
 }
@@ -313,6 +394,7 @@ pub fn text_styled(dst: &mut Picture, font: &Font, at: (i32, i32), s: &str, styl
 fn set_text(dst: &mut Picture, font: &Font, at: (i32, i32), s: &str, style: &TextStyle, clip: i32) -> u32 {
     let (x, y) = at;
     let (top, bottom) = style.rows;
+    let (bx0, by0, bx1, by1) = bounds(dst);
     let mut pen = x;
     for c in s.bytes() {
         if let Some(g) = font.glyph(c) {
@@ -323,14 +405,7 @@ fn set_text(dst: &mut Picture, font: &Font, at: (i32, i32), s: &str, style: &Tex
                         continue;
                     }
                     let (dx, dy) = (pen + g.x as i32 + gx, y + g.y as i32 + gy);
-                    if dx <= clip
-                        && dy >= top
-                        && dy <= bottom
-                        && dx >= 0
-                        && dy >= 0
-                        && (dx as u32) < dst.width
-                        && (dy as u32) < dst.height
-                    {
+                    if dx <= clip && dy >= top && dy <= bottom && dx >= bx0 && dy >= by0 && dx < bx1 && dy < by1 {
                         let d = ((dy as u32 * dst.width + dx as u32) * 4) as usize;
                         let col = style.colours[shade as usize];
                         dst.rgba[d..d + 4].copy_from_slice(&[col[0], col[1], col[2], 255]);
@@ -385,6 +460,10 @@ fn frame_picture(f: &Frame, pal: &Palette, owner: Option<u8>) -> Picture {
     indexed(w, f.height as u32, &f.pixels, pal, true, owner)
 }
 
+/// The palette entries the information panel fills with ([`HudArt::colour`]): the health bar's (spec "Icons and
+/// health bars", [`crate::info::health_bar`]), the progress bar's and the boxes'. Its part's fingerprint covers them.
+const PANEL_COLOURS: [u8; 6] = [99, 149, 186, 246, 249, 251];
+
 // --- the art ------------------------------------------------------------------------------------------------------
 
 pub struct HudArt {
@@ -404,6 +483,9 @@ pub struct HudArt {
     /// `rez\network.tbl`, if the install has it.
     network: StringTable,
     icons: Grp,
+    /// The palette entries each icon frame uses, so that a part showing icons redraws only when one of theirs changes
+    /// colour ([`HudArt::parts`]).
+    icon_entries: Vec<Entries>,
     font: Font,
     /// A smaller font for the hit point text, if the install has one.
     small: Option<Font>,
@@ -494,6 +576,7 @@ impl HudArt {
             resources: res.frames.iter().take(5).map(|f| frame_picture(f, pal, None)).collect(),
             pointers,
             network,
+            icon_entries: icons.frames.iter().map(|f| Entries::of_pixels(&f.pixels)).collect(),
             icons,
             font,
             small: SMALL_FONT
@@ -707,6 +790,7 @@ impl HudArt {
         };
         let p = frame_picture(f, &self.pal, Some(owner));
         let (w, h) = (p.width as i32 / 4, p.height as i32 / 4);
+        let (bx0, by0, bx1, by1) = bounds(pic);
         outline(pic, Rect::new(x - 1, y - 1, w as u32 + 2, h as u32 + 2), [140, 120, 60]);
         fill(pic, Rect::new(x, y, w as u32, h as u32), [24, 24, 24]);
         for sy in 0..h {
@@ -717,7 +801,7 @@ impl HudArt {
                     continue;
                 }
                 let (dx, dy) = (x + sx, y + sy);
-                if dx < 0 || dy < 0 || dx as u32 >= pic.width || dy as u32 >= pic.height {
+                if dx < bx0 || dy < by0 || dx >= bx1 || dy >= by1 {
                     continue;
                 }
                 let to = (dy as usize * pic.width as usize + dx as usize) * 4;
@@ -731,8 +815,9 @@ impl HudArt {
         self.pal.clone_from(pal);
     }
 
-    /// A palette colour of the era.
+    /// A palette colour of the era, one of [`PANEL_COLOURS`].
     fn colour(&self, n: u8) -> [u8; 3] {
+        debug_assert!(PANEL_COLOURS.contains(&n), "panel colour {n} isn't in PANEL_COLOURS");
         self.pal.0[n as usize]
     }
 
@@ -836,63 +921,195 @@ impl HudArt {
         }
     }
 
+    /// The fingerprint of what the whole picture is drawn from: a change redraws all of it. The palette is not in it:
+    /// the colour cycling changes it every few cycles, and only the parts drawn in its colours (the minimap, the
+    /// icons, the health bars) take it.
+    pub fn whole_key(&self, frame: &Picture, l: &Layout, v: &View) -> u64 {
+        use std::hash::Hasher;
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        h.write_usize(frame.rgba.as_ptr() as usize);
+        h.write_u32(frame.width);
+        h.write_u32(frame.height);
+        fingerprint(h, format_args!("{l:?}{:?}", v.pointer))
+    }
+
+    /// The parts of the picture that are redrawn on their own ([`HudArt::redraw`]): each one's rectangle and the
+    /// fingerprint of what is drawn in it. Drawing is clipped to the rectangle, so a part only has to name everything
+    /// that may draw inside it; the parts may overlap.
+    pub fn parts(&self, l: &Layout, v: &View) -> [(Rect, u64); 7] {
+        use std::hash::Hasher;
+        let key = |args: std::fmt::Arguments| fingerprint(std::collections::hash_map::DefaultHasher::new(), args);
+        // The parts drawn in the palette's colours start from the colours they can show: the minimap any of them, the
+        // command buttons their icons', the information panel its icons' and its own.
+        let palette = |shown: &Entries| {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            for (n, c) in self.pal.0.iter().enumerate().filter(|&(n, _)| shown.contains(n as u8)) {
+                h.write_usize(n);
+                h.write(c);
+            }
+            h
+        };
+        let icons = |ids: &mut dyn Iterator<Item = u16>| {
+            let mut e = Entries::default();
+            for f in ids.filter_map(|i| self.icon_entries.get(i as usize)) {
+                e.union(f);
+            }
+            e
+        };
+        let buttons = palette(&icons(&mut v.buttons.iter().map(|&(_, i)| i)));
+        let mut shown = icons(&mut v.info.icons());
+        PANEL_COLOURS.iter().for_each(|&c| shown.insert(c));
+        let panel = palette(&shown);
+        let mut mini = std::collections::hash_map::DefaultHasher::new();
+        for c in &self.pal.0 {
+            mini.write(c);
+        }
+        mini.write(v.minimap);
+        let i = &v.info;
+        let menu = crate::screen::MenuButton::Menu.rect();
+        let pause = crate::screen::MenuButton::Pause.rect();
+        [
+            // The ping rings reach 4 pixels past their tile's pixel.
+            (
+                Rect::new(l.minimap.x - 4, l.minimap.y - 4, l.minimap.w + 8, l.minimap.h + 8),
+                fingerprint(mini, format_args!("{:?}", v.pings)),
+            ),
+            (
+                l.top,
+                key(format_args!("{:?}{:?}{:?}", v.resources, v.food, v.idle_button)),
+            ),
+            (
+                Rect::new(
+                    menu.x,
+                    menu.y,
+                    (pause.x + pause.w as i32 - menu.x) as u32,
+                    menu.h.max(pause.h),
+                ),
+                key(format_args!("{:?}{:?}", v.paused, v.pause_button)),
+            ),
+            (l.bottom, key(format_args!("{:?}", v.status))),
+            (
+                l.viewport,
+                key(format_args!("{:?}{:?}{:?}", v.messages, v.group_bar, v.clock)),
+            ),
+            (l.buttons, fingerprint(buttons, format_args!("{:?}", v.buttons))),
+            (
+                l.info,
+                fingerprint(
+                    panel,
+                    format_args!(
+                        "{:?}{:?}{:?}{:?}{:?}{:?}",
+                        i.frame, i.slots, i.pressed, i.content, i.local, i.more
+                    ),
+                ),
+            ),
+        ]
+    }
+
     /// The whole interface: `frame` plus the minimap, resources and selection.
     pub fn draw(&self, frame: &Picture, l: &Layout, v: &View) -> Picture {
         let mut pic = Picture {
-            width: frame.width,
-            height: frame.height,
-            rgba: frame.rgba.clone(),
+            width: 0,
+            height: 0,
+            rgba: Vec::new(),
         };
-        let mini = Picture {
-            width: crate::minimap::SIZE as u32,
-            height: crate::minimap::SIZE as u32,
-            rgba: to_rgba(v.minimap, &self.pal, false, None),
-        };
-        if v.minimap.len() == crate::minimap::SIZE * crate::minimap::SIZE {
-            blit(&mut pic, l.minimap.x, l.minimap.y, &mini);
-        }
+        self.draw_into(frame, l, v, &mut pic);
+        pic
+    }
 
-        for m in v.pings {
-            // A ring in the sender's colour round a white centre, over the minimap's pixels.
-            let c = to_rgba(&[m.colour], &self.pal, false, None);
-            let (cx, cy) = (l.minimap.x + m.x, l.minimap.y + m.y);
-            outline(&mut pic, Rect::new(cx - 4, cy - 4, 9, 9), [c[0], c[1], c[2]]);
-            outline(&mut pic, Rect::new(cx - 3, cy - 3, 7, 7), [c[0], c[1], c[2]]);
-            fill(&mut pic, Rect::new(cx - 1, cy - 1, 3, 3), [255, 255, 255]);
+    /// [`HudArt::draw`] into `pic`, keeping its buffer: a new one each time costs far more than the copy where
+    /// allocating is slow (the PS Vita).
+    pub fn draw_into(&self, frame: &Picture, l: &Layout, v: &View, pic: &mut Picture) {
+        pic.width = frame.width;
+        pic.height = frame.height;
+        pic.rgba.resize(frame.rgba.len(), 0);
+        self.redraw(frame, l, v, pic, &[Rect::new(0, 0, frame.width, frame.height)]);
+    }
+
+    /// Draws `rects` of the picture again (a picture [`HudArt::draw`] made from `frame`, the rectangles inside it): each
+    /// is the frame's pixels again with everything drawn over them clipped to it. The rest of the picture is left as it
+    /// is, which is the point: copying the whole frame costs more than all the drawing where memory is slow.
+    pub fn redraw(&self, frame: &Picture, l: &Layout, v: &View, pic: &mut Picture, rects: &[Rect]) {
+        for &r in rects {
+            for row in crate::layers::rgba_rows(r.part(), frame.width) {
+                pic.rgba[row.clone()].copy_from_slice(&frame.rgba[row]);
+            }
+            clipped(r, || self.draw_over(pic, l, v));
         }
-        self.draw_resources(&mut pic, l.top, v);
-        self.draw_status(&mut pic, l.bottom, v.status);
-        self.draw_menu_buttons(&mut pic, v.paused, v.pause_button);
-        self.draw_messages(&mut pic, l.viewport, v.messages);
+    }
+
+    /// Everything drawn over the frame.
+    fn draw_over(&self, pic: &mut Picture, l: &Layout, v: &View) {
+        // The ping rings reach 4 pixels past the minimap (as in `parts`).
+        if visible(Rect::new(
+            l.minimap.x - 4,
+            l.minimap.y - 4,
+            l.minimap.w + 8,
+            l.minimap.h + 8,
+        )) {
+            if v.minimap.len() == crate::minimap::SIZE * crate::minimap::SIZE {
+                let mini = Picture {
+                    width: crate::minimap::SIZE as u32,
+                    height: crate::minimap::SIZE as u32,
+                    rgba: to_rgba(v.minimap, &self.pal, false, None),
+                };
+                blit(pic, l.minimap.x, l.minimap.y, &mini);
+            }
+            for m in v.pings {
+                // A ring in the sender's colour round a white centre, over the minimap's pixels.
+                let c = to_rgba(&[m.colour], &self.pal, false, None);
+                let (cx, cy) = (l.minimap.x + m.x, l.minimap.y + m.y);
+                outline(pic, Rect::new(cx - 4, cy - 4, 9, 9), [c[0], c[1], c[2]]);
+                outline(pic, Rect::new(cx - 3, cy - 3, 7, 7), [c[0], c[1], c[2]]);
+                fill(pic, Rect::new(cx - 1, cy - 1, 3, 3), [255, 255, 255]);
+            }
+        }
+        self.draw_resources(pic, l.top, v);
+        self.draw_status(pic, l.bottom, v.status);
+        self.draw_menu_buttons(pic, v.paused, v.pause_button);
+        self.draw_messages(pic, l.viewport, v.messages);
         if let Some((n, key)) = v.idle_button {
-            self.draw_idle_button(&mut pic, n, key);
+            self.draw_idle_button(pic, n, key);
         }
-        self.draw_group_bar(&mut pic, l.viewport, v.group_bar);
+        self.draw_group_bar(pic, l.viewport, v.group_bar);
         if let Some(line) = v.clock {
-            self.draw_clock(&mut pic, l.viewport, line);
+            self.draw_clock(pic, l.viewport, line);
         }
 
         // The command panel: frames of the icon sheet (the command icons share the unit icon sheet).
         for &(slot, icon) in v.buttons {
             let r = crate::panel::slot_rect((l.buttons.x, l.buttons.y), slot as usize);
-            fill(&mut pic, r, [24, 24, 24]);
-            if let Some(f) = self.icons.frames.get(icon as usize) {
+            let frame = self.icons.frames.get(icon as usize);
+            // The icon is centred on the slot and may be the larger.
+            let (iw, ih) = frame.map_or((0, 0), |f| {
+                ((f.pixels.len() / f.height.max(1) as usize) as u32, f.height as u32)
+            });
+            let reach = Rect::new(
+                r.x + (r.w as i32 - iw as i32).min(0) / 2,
+                r.y + (r.h as i32 - ih as i32).min(0) / 2,
+                r.w.max(iw),
+                r.h.max(ih),
+            );
+            if !visible(reach) {
+                continue;
+            }
+            fill(pic, r, [24, 24, 24]);
+            if let Some(f) = frame {
                 let p = frame_picture(f, &self.pal, None);
                 blit(
-                    &mut pic,
+                    pic,
                     r.x + (r.w as i32 - p.width as i32) / 2,
                     r.y + (r.h as i32 - p.height as i32) / 2,
                     &p,
                 );
             }
-            outline(&mut pic, r, [140, 120, 60]);
+            outline(pic, r, [140, 120, 60]);
         }
 
-        self.draw_info(&mut pic, (l.info.x, l.info.y), &v.info);
+        self.draw_info(pic, (l.info.x, l.info.y), &v.info);
         if let Some((p, at)) = v.pointer {
-            self.draw_pointer(&mut pic, p, at);
+            self.draw_pointer(pic, p, at);
         }
-        pic
     }
 }
 
@@ -957,6 +1174,42 @@ mod tests {
         assert_eq!(dst.rgba, vec![9, 9, 9, 9, 1, 1, 1, 255]);
         blit(&mut dst, -1, 0, &src);
         assert_eq!(dst.rgba, vec![9, 9, 9, 9, 1, 1, 1, 255]);
+    }
+
+    #[test]
+    fn a_clip_keeps_every_primitive_inside_it() {
+        let solid = |w, h| Picture {
+            width: w,
+            height: h,
+            rgba: [1, 2, 3, 255].repeat((w * h) as usize),
+        };
+        let mut dst = Picture {
+            width: 4,
+            height: 4,
+            rgba: vec![0; 64],
+        };
+        clipped(Rect::new(1, 1, 2, 2), || {
+            blit(&mut dst, -1, -1, &solid(6, 6));
+            fill(&mut dst, Rect::new(0, 0, 4, 4), [7, 7, 7]);
+        });
+        let painted: Vec<bool> = dst.rgba.chunks(4).map(|p| p[3] != 0).collect();
+        #[rustfmt::skip]
+        assert_eq!(painted, [
+            false, false, false, false,
+            false, true, true, false,
+            false, true, true, false,
+            false, false, false, false,
+        ]);
+        assert_eq!(&dst.rgba[20..24], &[7, 7, 7, 255]);
+        // Outside `clipped` the whole picture is open again.
+        fill(&mut dst, Rect::new(0, 0, 1, 1), [5, 5, 5]);
+        assert_eq!(&dst.rgba[..4], &[5, 5, 5, 255]);
+    }
+
+    #[test]
+    fn a_rectangle_within_a_picture_is_cut_to_it() {
+        assert_eq!(Rect::new(-2, 3, 5, 10).within(8, 8), Some(Rect::new(0, 3, 3, 5)));
+        assert_eq!(Rect::new(8, 0, 5, 5).within(8, 8), None);
     }
 
     #[test]

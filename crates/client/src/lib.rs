@@ -51,6 +51,7 @@ mod overlay;
 pub mod pad;
 mod palette;
 mod panel;
+pub mod phases;
 mod ping;
 mod prefs;
 mod savedlg;

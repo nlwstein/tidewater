@@ -206,6 +206,17 @@ impl Entries {
     pub fn intersects(&self, o: &Entries) -> bool {
         self.0.iter().zip(&o.0).any(|(a, b)| a & b != 0)
     }
+
+    pub fn contains(&self, i: u8) -> bool {
+        self.0[i as usize / 64] >> (i % 64) & 1 == 1
+    }
+
+    /// Adds `o`'s entries.
+    pub fn union(&mut self, o: &Entries) {
+        for (a, b) in self.0.iter_mut().zip(&o.0) {
+            *a |= b;
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

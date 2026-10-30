@@ -71,7 +71,7 @@ pub struct TouchState {
     emu: Emulator,
     pointer: Option<Pt>,
     /// The pulse: where, and how old in milliseconds.
-    pulse: Option<(Pt, f32)>,
+    pub(crate) pulse: Option<(Pt, f32)>,
     /// The map view's pan and zoom not yet taken by the game, in window points.
     pan: Pt,
     zoom: Option<(f32, Pt)>,
