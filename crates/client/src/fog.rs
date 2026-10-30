@@ -138,6 +138,38 @@ mod tests {
         assert_eq!((c.at(0, 0), c.at(1, 0), c.at(1, 1)), (Some(0), Some(CLEAR), Some(0)));
     }
 
+    /// Drawing a row at a time gives each pixel [`tile_pixel`]'s colour, as drawing pixel by pixel does: every code
+    /// pair, on canvases that start inside a tile and stop short of the map's edge or past it.
+    #[test]
+    fn a_row_at_a_time_is_the_pixel_rule() {
+        let codes: Vec<(u8, u8)> = (0..17u8).flat_map(|v| (0..17u8).map(move |e| (v, e))).collect();
+        let width = 17;
+        let s = shapes();
+        for (left, top, w, h) in [
+            (0, 0, 544, 544),
+            (-40, -7, 300, 200),
+            (13, 29, 101, 77),
+            (500, 520, 90, 90),
+        ] {
+            let mut got = Canvas::new(left, top, w, h);
+            draw(&mut got, width, &codes, &s);
+            let mut want = Canvas::new(left, top, w, h);
+            for y in top..top + h {
+                for x in left..left + w {
+                    let (tx, ty) = (x.div_euclid(32), y.div_euclid(32));
+                    if !(0..width as i32).contains(&tx) || !(0..17).contains(&ty) {
+                        continue;
+                    }
+                    let (v, e) = codes[ty as usize * width + tx as usize];
+                    if let Some(c) = tile_pixel(v, e, &s, x.rem_euclid(32) as usize, y.rem_euclid(32) as usize) {
+                        want.put(x, y, c);
+                    }
+                }
+            }
+            assert_eq!(got.px, want.px, "canvas at {left}, {top}, {w} x {h}");
+        }
+    }
+
     #[test]
     fn unexplored_is_all_black() {
         assert!(tile(16, 16).px.iter().all(|&p| p == 0));
