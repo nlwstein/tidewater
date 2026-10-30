@@ -7,7 +7,6 @@ license.workspace = true
 [dependencies]
 serde.workspace = true
 thiserror.workspace = true
-explode = "0.1"
 
 [dev-dependencies]
 sha2 = "0.11"

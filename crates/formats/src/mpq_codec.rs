@@ -1,8 +1,9 @@
 //! Sector decompressors for MPQ archives. The Huffman and IMA ADPCM decoders are ports of StormLib (see each file's
-//! header); PKWARE DCL "implode" comes from the MIT-licensed `explode` crate.
+//! header); the PKWARE DCL "implode" decoder is written from Mark Adler's `blast.c` (its header).
 
 mod adpcm;
 mod bits;
+mod explode;
 mod huffman;
 
 #[derive(Debug)]
@@ -43,7 +44,7 @@ pub fn decompress(mask: u8, data: &[u8], size: usize) -> Result<Vec<u8>> {
         cur = huffman::decompress(&cur, size)?;
     }
     if mask & method::PKWARE != 0 {
-        cur = explode::explode(&cur).map_err(|e| Error(format!("pkware: {e:?}")))?;
+        cur = explode::explode(&cur)?;
     }
     if mask & method::ADPCM_STEREO != 0 {
         cur = adpcm::decompress(&cur, size, 2)?;
