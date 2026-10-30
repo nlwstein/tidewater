@@ -106,7 +106,8 @@ no touch is frame for frame what it was.
 - **What the game takes.** `game::touch_view`, with the game's other input systems, moves the map view by whole tiles
   for a pan, zooms it for a pinch and pauses for the chrome's pause button; `mouse_input` hands a tap's release to
   `mouse::tap_snap` first. Outside a game a pan becomes mouse-wheel lines for lists.
-- **Drawing.** The long-press pulse is drawn into the 640 x 480 frame after it is composed (so it is in snapshots). The
+- **Drawing.** The long-press pulse is the screen's last item, its mark (`compose::Source::Mark`), mixed in sRGB values with
+  8-bit alpha so the CPU and GPU compositions give the same pixels (it is in snapshots). The
   chrome is not: it is an RGBA overlay of the window's size (`TouchState::overlay`) that the shell blends over the
   picture, rebuilt only when `TouchState::revision` changes.
 - **Scaling.** `WindowGeom::letterbox` fits the picture in the safe area, by a whole number or (`fit`: `auto`, `sharp`) by any

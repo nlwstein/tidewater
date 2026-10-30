@@ -40,6 +40,7 @@ fn clip_part(rect: (u32, u32, u32, u32), within: (u32, u32, u32, u32)) -> Option
 enum Key {
     Picture(u64),
     Pointer,
+    Mark,
 }
 
 struct Entry {
@@ -81,6 +82,12 @@ impl Gpu {
                     let mut h = std::collections::hash_map::DefaultHasher::new();
                     (p.width, p.height, &p.rgba).hash(&mut h);
                     (Key::Pointer, p.pic(), h.finish(), None)
+                }
+                Source::Mark => {
+                    let Some(m) = &list.mark else { continue };
+                    let mut h = std::collections::hash_map::DefaultHasher::new();
+                    (m.width, m.height, &m.rgba).hash(&mut h);
+                    (Key::Mark, m.pic(), h.finish(), None)
                 }
             };
             self.draw_item(r, key, (pic, revision, changed), item, screen);

@@ -10,6 +10,12 @@ pub fn render<'a>(list: &'a DrawList, picture: impl Fn(u64) -> Option<Pic<'a>>, 
         let pic = match item.source {
             Source::Picture { id, .. } => picture(id),
             Source::Pointer => list.pointer.as_ref().map(|p| p.pic()),
+            Source::Mark => {
+                if let Some(m) = &list.mark {
+                    frame.mix(m.pic(), (item.origin.0.floor() as i32, item.origin.1.floor() as i32));
+                }
+                continue;
+            }
         };
         let Some(pic) = pic else { continue };
         frame.draw(&Placed {
@@ -80,6 +86,28 @@ impl Frame {
         (self.width, self.height) = (width, height);
     }
 
+    /// Mixes `pic`, its top-left corner at pixel `at`, over the frame by its alpha in sRGB values ([`Source::Mark`]):
+    /// each channel becomes (s·a + d·(255 − a)) / 255, rounded.
+    pub fn mix(&mut self, pic: Pic, at: (i32, i32)) {
+        let (w, h) = (pic.width as i32, pic.height as i32);
+        let (x0, x1) = (at.0.max(0), (at.0 + w).min(self.width as i32));
+        let (y0, y1) = (at.1.max(0), (at.1 + h).min(self.height as i32));
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let s = ((y - at.1) * w + x - at.0) as usize * 4;
+                let s = &pic.rgba[s..s + 4];
+                let a = s[3] as u32;
+                if a == 0 {
+                    continue;
+                }
+                let d = (y as usize * self.width + x as usize) * 4;
+                for (d, &s) in self.rgba[d..d + 3].iter_mut().zip(&s[..3]) {
+                    *d = ((s as u32 * a + *d as u32 * (255 - a) + 127) / 255) as u8;
+                }
+            }
+        }
+    }
+
     /// Draws a placed picture over the frame.
     pub fn draw(&mut self, p: &Placed) {
         if p.width == 0 || p.height == 0 || p.scale.0 <= 0.0 || p.scale.1 <= 0.0 {
@@ -139,5 +167,32 @@ impl Frame {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A mark mixes by its alpha in sRGB values, rounded, leaves what its clear pixels cover, and is cut at the frame's
+    /// edges.
+    #[test]
+    fn a_mark_mixes_in_srgb_values_and_is_cut_at_the_edges() {
+        let mut f = Frame::default();
+        f.clear_black(4, 1);
+        f.rgba[4..8].copy_from_slice(&[200, 100, 0, 255]);
+        let rgba = [255, 255, 255, 128, 255, 255, 255, 128, 9, 9, 9, 0];
+        let mark = Pic {
+            width: 3,
+            height: 1,
+            rgba: &rgba,
+        };
+        // Cut on the left: pixel 0 takes texel 1 (255·128/255 rounded = 128), pixel 1 the clear texel 2.
+        f.mix(mark, (-1, 0));
+        assert_eq!(&f.rgba[..8], &[128, 128, 128, 255, 200, 100, 0, 255]);
+        // Over (200, 100, 0): (255·128 + 200·127) / 255 = 228.1, (255·128 + 100·127) / 255 = 178.3, and 128.498.
+        f.mix(mark, (1, 0));
+        assert_eq!(&f.rgba[4..12], &[228, 178, 128, 255, 128, 128, 128, 255]);
+        assert_eq!(&f.rgba[12..], &[0, 0, 0, 255], "under its clear texel");
     }
 }

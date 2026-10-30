@@ -101,6 +101,10 @@ pub enum Source {
     Picture { id: u64, revision: u64 },
     /// The list's [`DrawList::pointer`].
     Pointer,
+    /// The list's [`DrawList::mark`], one picture pixel per screen pixel. Its colours are mixed with what is under them
+    /// by their alpha in sRGB values, not linear light, as a GPU's blending does, so both compositions give the same
+    /// pixels.
+    Mark,
 }
 
 /// A picture placed on the screen, as [`Placed`] places it.
@@ -120,6 +124,8 @@ pub struct DrawList {
     pub height: usize,
     pub items: Vec<Item>,
     pub pointer: Option<Image>,
+    /// A mark over everything (the touch pulse), the last item.
+    pub mark: Option<Image>,
 }
 
 /// One whole screen, RGBA (opaque): `width` × `height` pixels, 640 × 480 unless a game has a wider screen.

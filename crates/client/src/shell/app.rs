@@ -417,7 +417,7 @@ fn run(l: host::Launch) -> Result<()> {
             }
         }
         phases::timed(Phase::Upload, || {
-            if core.gpu_compose && !core.frame_only && gpu.draw(&mut renderer, &core) {
+            if core.gpu_compose && gpu.draw(&mut renderer, &core) {
                 renderer.show_layers(lb.screen(), sharp);
             } else if core.frame_composed {
                 renderer.draw(&core.frame.rgba, lb.screen(), sharp);

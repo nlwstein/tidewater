@@ -105,9 +105,6 @@ pub struct Core {
     pub gpu_compose: bool,
     /// Whether [`Core::frame`] holds this frame (not only the last one composed).
     pub frame_composed: bool,
-    /// Whether this frame's [`Core::frame`] has more on it than [`Core::draw_list`] (the touch pulse): a GPU path shows
-    /// the frame instead.
-    pub frame_only: bool,
     /// Whether the system's pointer shows (the screen draws none of its own).
     pub cursor_visible: bool,
     /// The window title a game asks for.
@@ -230,7 +227,6 @@ impl Core {
             draw_list: DrawList::default(),
             gpu_compose: false,
             frame_composed: false,
-            frame_only: false,
             cursor_visible: true,
             title: None,
             exit: false,
@@ -400,9 +396,6 @@ impl Core {
         }
         c.front_screen.ready = true;
         phases::timed(Phase::Compose, || compose_screen(c));
-        if c.frame_composed {
-            crate::touch::draw_pulse(c);
-        }
         screenshot::write_shot(c);
         if c.script.is_some() {
             script::note_sounds(c);
@@ -798,6 +791,7 @@ fn compose_screen(c: &mut Core) {
         height: c.screen.1 as usize,
         items: std::mem::take(&mut c.draw_list.items),
         pointer: None,
+        mark: None,
     };
     list.items.clear();
     // Where the interface picture's items end, for the game's pointer drawn just over it.
@@ -899,10 +893,19 @@ fn compose_screen(c: &mut Core) {
     }
     // The system's pointer shows only where the screen wants a pointer and has none of its own.
     c.cursor_visible = !hud_draws && !hidden && arrow.is_none();
-    // The frame itself only where something reads it: a shell without the GPU path, a scripted run, a screenshot,
-    // the touch pulse drawn over it.
-    c.frame_composed = !c.gpu_compose || c.script.is_some() || c.pending_shot.is_some() || c.touch.pulse.is_some();
-    c.frame_only = c.touch.pulse.is_some();
+    // The touch pulse over everything.
+    if let Some((image, at)) = crate::touch::pulse_mark(c) {
+        list.mark = Some(image);
+        list.items.push(Item {
+            source: Source::Mark,
+            origin: (at.0 as f64, at.1 as f64),
+            scale: (1.0, 1.0),
+            clip: Clip::SCREEN,
+            tint: 1.0,
+        });
+    }
+    // The frame itself only where something reads it: a shell without the GPU path, a scripted run, a screenshot.
+    c.frame_composed = !c.gpu_compose || c.script.is_some() || c.pending_shot.is_some();
     if c.frame_composed {
         let pictures = &c.pictures;
         cpu::render(
