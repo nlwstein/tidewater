@@ -74,6 +74,14 @@ font exists before the game files are imported. The glyph table is `font8x8_basi
 ([dhepper/font8x8](https://github.com/dhepper/font8x8)), which is in the **public domain**. It is based on the
 public-domain IBM VGA 8 x 8 font as published by Marcel Sondaar. Only U+0020 to U+007E are used, unchanged.
 
+## Clear font
+
+The `font` option's clear font (`crates/client/src/clearfont.rs`, glyph table `clearfont/glyphs.rs`) is Pixel Operator
+Bold by Jayvee Enaguas, released under **CC0 1.0 Universal** (public domain dedication;
+[Pixel Operator on Font Library](https://fontlibrary.org/en/font/pixel-operator)). `tools/gen_clear_font.py` renders
+its printable ASCII characters (U+0021 to U+007E) at the font's 16-pixel design size, without smoothing, into the
+table; the pixels are unchanged.
+
 ## Touch icons and their renderer
 
 The touch controls' icons (`crates/client/assets/touch-icons/*.svg`) are Tidewater's own, under its MPL-2.0; no

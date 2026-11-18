@@ -295,6 +295,15 @@ pub fn scenes() -> Vec<Scene> {
             extras: &[("map-zoom", "wheel")],
             keys: "",
         },
+        // The clear font (`font`): the menus, an act and a briefing, the game screen and its menu, then the Settings
+        // screen over the game puts the game's own font back and the clear one again, each shown at once.
+        Scene {
+            name: "extras-font",
+            start: vec![Step::MainMenu],
+            cmds: extras_font(),
+            extras: &[("font", "clear")],
+            keys: "",
+        },
         // The multiplayer menus, up to the game list.
         Scene {
             name: "multi",
@@ -1433,6 +1442,73 @@ fn extras_zoom() -> Vec<Cmd> {
         Wait(3),
         Shot("out-1x-again"),
     ]);
+    v
+}
+
+/// The clear font (`clearfont`) from the main menu into the first human mission, and switched off and on again on the
+/// Settings screen's Interface page during the game.
+fn extras_font() -> Vec<Cmd> {
+    use Cmd::*;
+    use Key as K;
+    let mut v = vec![Move(320.0, 240.0), Until(AppState::MainMenu), Wait(25), Shot("menu")];
+    v.extend(tap(K::Letter('S')));
+    v.extend([Until(AppState::SinglePlayer), Wait(3), Shot("single-player")]);
+    v.extend(click(320.0, 254.0));
+    v.extend([
+        Until(AppState::NewCampaign),
+        Wait(2),
+        Move(320.0, 300.0),
+        Wait(1),
+        Shot("campaigns"),
+    ]);
+    v.extend(click(320.0, 300.0));
+    v.extend([Until(AppState::Act), Wait(20), Shot("act-text")]);
+    v.extend(tap(K::Space));
+    // The briefing's text crawls up from below its panel: the last line shows later.
+    v.extend([
+        Until(AppState::Briefing),
+        Wait(240),
+        Shot("briefing"),
+        Wait(400),
+        Shot("briefing-later"),
+    ]);
+    v.extend(tap(K::Enter));
+    v.extend([Until(AppState::Game), Move(400.0, 240.0), Wait(90), Shot("game")]);
+    v.extend(click(416.0, 318.0));
+    v.extend([Wait(3), Move(600.0, 400.0), Wait(3), Shot("selected")]);
+    v.extend(tap(K::F(10)));
+    v.extend([Wait(3), Shot("game-menu")]);
+    v.extend(tap(K::Escape));
+    // Settings, Interface: the Font row (the ninth) and its list; Original, then OK.
+    v.extend(ctrl_tap(K::Letter('G')));
+    v.extend([Wait(3)]);
+    v.extend(click(212.0, 76.0));
+    v.extend([Wait(2), Move(200.0, 338.0), Wait(1), Shot("interface")]);
+    v.extend(click(460.0, 338.0));
+    v.extend([Wait(2), Shot("font-list")]);
+    v.extend(click(460.0, 359.0));
+    v.extend([Wait(2), Shot("font-original")]);
+    v.extend(click(523.0, 424.0));
+    v.extend([Wait(40), Shot("game-original")]);
+    v.extend(tap(K::F(10)));
+    v.extend([Wait(3), Shot("game-menu-original")]);
+    v.extend(tap(K::Escape));
+    // And back to the clear font.
+    v.extend(ctrl_tap(K::Letter('G')));
+    v.extend([Wait(3)]);
+    v.extend(click(212.0, 76.0));
+    v.extend([Wait(2)]);
+    v.extend(click(460.0, 338.0));
+    v.extend([Wait(2)]);
+    v.extend(click(460.0, 379.0));
+    v.extend([Wait(2), Shot("font-clear")]);
+    v.extend(click(523.0, 424.0));
+    v.extend([Wait(40), Shot("game-clear-again")]);
+    // The Options dialog and its small Settings link.
+    v.extend(tap(K::F(5)));
+    v.extend([Wait(3), Shot("options")]);
+    v.extend(tap(K::Escape));
+    v.extend([Wait(3)]);
     v
 }
 

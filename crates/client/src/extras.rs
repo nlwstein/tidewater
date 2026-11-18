@@ -53,10 +53,11 @@ pub enum Id {
     PadSwap,
     PadHideTouch,
     Controls,
+    Font,
 }
 
 /// How many options there are.
-pub const COUNT: usize = 32;
+pub const COUNT: usize = 33;
 
 /// Who decides an option in a game with other players.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -134,6 +135,9 @@ pub const TOUCH_HOLD_MODES: &[&str] = &["normal", "long", "longer"];
 pub const TOUCH_BUTTON_SIZES: &[&str] = &["medium", "small", "large"];
 /// The values of `touch-menu-tap`.
 pub const TOUCH_MENU_TAP: &[&str] = &["on", "off"];
+
+/// The values of `font`: the game's own text fonts, or the clear one (`clearfont`).
+pub const FONT_MODES: &[&str] = &["original", "clear"];
 
 /// The values of `pad-speed`: how fast the left stick moves the pointer.
 pub const PAD_SPEEDS: &[&str] = &["normal", "slow", "fast"];
@@ -438,6 +442,15 @@ pub const REGISTRY: [Spec; COUNT] = [
         default: 0,
         scope: Scope::Client,
         description: "Which devices work the game; the keyboard always does. `auto`: every device there is. `mouse`: keyboard and mouse only. `touch`: fingers. `pad`: controller. `pad-touch`: both. A missing device falls back to `auto`",
+    },
+    Spec {
+        id: Id::Font,
+        name: "font",
+        label: "Font",
+        kind: Kind::Choice(FONT_MODES),
+        default: 0,
+        scope: Scope::Client,
+        description: "The letters of the game's text. `original`: the game's own. `clear`: plain letters without serifs or shading, easier to read on a small screen (the titles keep the game's)",
     },
 ];
 
@@ -766,6 +779,11 @@ impl ClientExtras {
     /// The choice of input devices (`controls`).
     pub fn controls(&self) -> crate::controls::Mode {
         crate::controls::Mode::from_index(self.get(Id::Controls))
+    }
+
+    /// Whether text is drawn in the clear font (`clearfont`).
+    pub fn clear_font(&self) -> bool {
+        self.get(Id::Font) == 1
     }
 
     pub fn map_zoom_wheel(&self) -> bool {

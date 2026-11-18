@@ -182,6 +182,8 @@ pub struct Front {
     pub(crate) button_faces: menuscreen::ButtonFaces,
     /// Sounds decoded for the mixer, by name; `None` for one the install lacks, so it is looked up once.
     sounds: HashMap<String, Option<Sound>>,
+    /// The game's own [`Front::font`] and [`Front::small`], kept while the clear font (`clearfont`) stands in.
+    game_fonts: Option<(Font, Font)>,
 }
 
 impl Front {
@@ -204,6 +206,7 @@ impl Front {
             arrow: None,
             button_faces: menuscreen::ButtonFaces::default(),
             sounds: HashMap::new(),
+            game_fonts: None,
         }
     }
 
@@ -248,7 +251,30 @@ impl Front {
             arrow,
             button_faces,
             sounds: HashMap::new(),
+            game_fonts: None,
         })
+    }
+
+    /// Draws text in the clear font (`clearfont`, option `font`) or in the game's own: swaps [`Front::font`] and
+    /// [`Front::small`]; the title fonts stay. Returns whether anything changed.
+    pub fn set_clear_font(&mut self, on: bool) -> bool {
+        match (on, self.game_fonts.take()) {
+            (true, None) => {
+                let game = (self.font.clone(), self.small.clone());
+                self.font = crate::clearfont::clear(&game.0);
+                self.small = crate::clearfont::clear(&game.1);
+                self.game_fonts = Some(game);
+                true
+            }
+            (false, Some((font, small))) => {
+                (self.font, self.small) = (font, small);
+                true
+            }
+            (_, kept) => {
+                self.game_fonts = kept;
+                false
+            }
+        }
     }
 
     /// A sound decoded for the mixer (`None` if the install lacks it or it isn't PCM WAV).
