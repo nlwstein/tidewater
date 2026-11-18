@@ -141,6 +141,46 @@ fn every_scene_shows_and_sounds_as_snapshotted() {
     );
 }
 
+/// The replay viewer: the `replay-seek` scene watches a recording of the `replay-record` scene (a mission with a
+/// computer opponent, left to play), jumps about it by clicks and
+/// keys, takes the other player's vision and everyone's, and its frames and sound are snapshotted like the others. The
+/// jumps play the recording's checkpoints on the way, so a jump that landed on a wrong state would stop the replay and
+/// say so on the error output. Bless it with the others (see the module doc).
+#[test]
+fn the_replay_viewer_jumps_and_changes_vision_as_snapshotted() {
+    let Some(install) = std::env::var_os("TIDEWATER_INSTALL") else {
+        eprintln!("skipped: set TIDEWATER_INSTALL to run");
+        return;
+    };
+    let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let (ok, _, err) = run_with(&install, "replay-record", a.path(), &["--record-replay".as_ref()]);
+    assert!(ok, "recording failed: {err}");
+    let file = recorded(a.path());
+    let (ok, got, err) = run_with(
+        &install,
+        "replay-seek",
+        b.path(),
+        &["--replay".as_ref(), file.as_os_str()],
+    );
+    assert!(ok, "replaying failed: {err}");
+    assert!(
+        !err.contains("out of sync") && !err.contains("panicked"),
+        "a jump left the recording: {err}"
+    );
+    let file = snapshot("replay-seek");
+    if on("TIDEWATER_SNAPSHOT_BLESS") {
+        std::fs::write(&file, &got).expect("writing the snapshot");
+        eprintln!("blessed {}", file.display());
+        return;
+    }
+    let want = std::fs::read_to_string(&file).expect("the snapshot file");
+    if let Some(d) = first_difference(&want, &got) {
+        panic!(
+            "replay-seek.txt differs from tests/snapshots/: {d}\nIf the change is intended, bless the file (see this module's doc)."
+        );
+    }
+}
+
 /// The first-run screen (`src/firstrun.rs`) needs no game files: the scene `firstrun` runs it over a demo backend with a
 /// fake list of installs, so this test never skips. Bless it with the others (see the module doc).
 #[test]
