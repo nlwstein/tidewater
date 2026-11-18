@@ -63,6 +63,8 @@ pub struct Sim {
     pub carried: carry::Carried,
     /// The commands the player has given so far, for the clock overlay's actions per minute (`overlay`).
     pub actions: u32,
+    /// The readings for the statistics page (option `game-stats`, `gamestats`); started on the first cycle it is on.
+    pub stats: Option<crate::gamestats::History>,
 }
 
 impl Sim {
@@ -888,6 +890,7 @@ pub(crate) fn setup(c: &mut Core) {
         ui_sounds: Vec::new(),
         carried: carry::Carried::default(),
         actions: 0,
+        stats: None,
     };
     commands.queue(move |c| {
         c.sim = Some(sim);
@@ -940,6 +943,8 @@ pub(crate) fn tick(c: &mut Core) -> bool {
         cheats: cheat_queue,
         stored,
         panel_ui: c_panel_ui,
+        game_clock,
+        extras: own_extras,
         ..
     } = c
     else {
@@ -1033,6 +1038,16 @@ pub(crate) fn tick(c: &mut Core) -> bool {
         }
         for text in sim.session.take_notices() {
             sim.notices.push(messages::Text::Own(text));
+        }
+    }
+    // The statistics page's readings (option `game-stats`): read-only, nothing here reaches the world.
+    if own_extras.game_stats() {
+        let ms = game_clock.as_ref().map(|g| g.ms(time.elapsed()));
+        let history = sim.stats.get_or_insert_with(Default::default);
+        if sim.world.victory.over {
+            history.finish(&sim.world, ms);
+        } else {
+            history.record(&sim.world, ms);
         }
     }
     // Carried-goods spec, "When the file is chosen": the marks and take-overs of this cycle.

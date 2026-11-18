@@ -136,6 +136,10 @@ pub struct Flow {
     /// The slots' controllers when the game started (for the score screen's rows).
     pub start_controllers: [u8; 8],
     pub score: Option<ScoreData>,
+    /// The slots the score screen's rows show, in row order (for the statistics page).
+    pub stats_slots: Vec<u8>,
+    /// The readings of the game that ended, for the statistics page after the score screen (option `game-stats`).
+    pub stats: Option<crate::gamestats::History>,
     /// The player names of the session's slots, for a multiplayer score screen's rows (empty: "Anonymous").
     pub player_names: [String; 8],
     /// The screen shown is the multiplayer lobby ([`Step::Lobby`]); no music starts there.
@@ -477,14 +481,16 @@ pub fn end_with(flow: &mut Flow, front: &mut Front, world: &tidewater_sim::World
     let game = flow.game.unwrap_or(GameKind::Custom);
     let bdp = matches!(game, GameKind::Campaign(e) if cf::is_bdp(e));
     let race = world.players[human as usize].race;
-    let rows = if game == GameKind::Multiplayer {
-        multiplayer_rows(flow, front, world, human)
+    let (rows, slots): (Vec<_>, Vec<u8>) = if game == GameKind::Multiplayer {
+        multiplayer_rows(flow, front, world, human).into_iter().unzip()
     } else {
         cf::rows(world, human, &flow.start_controllers, bdp)
             .into_iter()
-            .map(|r| (front.net(r.label), front.net(r.name), r.stats))
-            .collect()
+            .map(|r| ((front.net(r.label), front.net(r.name), r.stats), r.slot))
+            .unzip()
     };
+    flow.stats_slots = slots;
+    flow.stats = None;
     let mission = flow.total.close(world.players[human as usize].score, victory);
     let rank_entry = cf::rank_entry(flow.total.total, race, false);
     flow.score = Some(ScoreData {
@@ -512,7 +518,7 @@ fn multiplayer_rows(
     front: &mut Front,
     world: &tidewater_sim::World,
     human: u8,
-) -> Vec<(String, String, cf::Stats)> {
+) -> Vec<((String, String, cf::Stats), u8)> {
     let races: [u8; 8] = std::array::from_fn(|s| world.players[s].race);
     let allies = world.players[human as usize].allies;
     cf::mp_rows(
@@ -533,7 +539,10 @@ fn multiplayer_rows(
             },
         };
         let label = r.label.map(|l| front.net(l));
-        (String::new(), cf::mp_row_text(&name, label.as_deref()), r.stats)
+        (
+            (String::new(), cf::mp_row_text(&name, label.as_deref()), r.stats),
+            r.slot,
+        )
     })
     .collect()
 }
@@ -3282,6 +3291,7 @@ pub(crate) fn run_dialog(c: &mut Core) {
     let Core {
         dialog: Some(dialog),
         sim,
+        extras,
         front,
         pictures,
         front_screen: cam,
@@ -3309,6 +3319,9 @@ pub(crate) fn run_dialog(c: &mut Core) {
         if !music.music().fading() {
             let Some(sim) = sim else { return };
             end_with(flow, front, &sim.world, sim.human, dialog.victory);
+            if extras.game_stats() {
+                flow.stats = sim.stats.take().filter(crate::gamestats::History::drawable);
+            }
             go_on(flow, front, keys, next, exit);
         }
         return;
@@ -3360,6 +3373,8 @@ struct ScoreScreen {
     drawn: Option<u32>,
     /// The close: a fade of all sound, then 150 ms to black, then what follows the score screen.
     closing: Option<(cf::SoundThenBlack, Step)>,
+    /// The statistics page (option `game-stats`) is showing, after the score screen's last press.
+    stats_page: bool,
 }
 
 /// Bars then the score count, one step a tick ("The score screen").
@@ -3387,13 +3402,21 @@ pub(crate) fn enter_score(c: &mut Core) {
         finished: false,
         drawn: None,
         closing: None,
+        stats_page: false,
     };
     commands.queue(move |c| c.screens.score = Some(score));
     music.start(Some(cf::score_music(s.race, s.victory)));
 }
 
 /// Draws the score screen after `ticks` ticks; returns whether the bars and the score have finished.
-fn draw_score(front: &Front, s: &ScoreData, bg: &Picture, ticks: u32, bars_done_at: Option<u32>) -> (Picture, bool) {
+fn draw_score(
+    front: &Front,
+    s: &ScoreData,
+    bg: &Picture,
+    ticks: u32,
+    bars_done_at: Option<u32>,
+    has_stats: bool,
+) -> (Picture, bool) {
     let mut p = dup(bg);
     let font = &front.font;
     let head = match (s.word.as_str(), s.victory) {
@@ -3447,6 +3470,9 @@ fn draw_score(front: &Front, s: &ScoreData, bg: &Picture, ticks: u32, bars_done_
         if shown_total == s.total {
             done = true;
             hud::text(&mut p, font, 24, 440, &format!("Rank: {}", s.rank));
+            if has_stats {
+                hud::text(&mut p, &front.small, 24, 464, "Press a key for the game statistics");
+            }
         }
     }
     (p, bars_done && done)
@@ -3492,6 +3518,32 @@ fn run_score(c: &mut Core) {
         return;
     }
     let press = pressed(keys, mouse);
+    if press && sc.finished && sc.stats_page {
+        let next_step = after_score(flow, &s);
+        sc.closing = Some((close_with_sound(music, fades::SCORE_CLOSE_OUT), next_step));
+        return;
+    }
+    if press && sc.finished && flow.stats.is_some() {
+        // Option `game-stats`: the statistics page follows the score screen; the next press closes.
+        if let Some(h) = &flow.stats {
+            let mut p = dup(&sc.background);
+            let (pw, ph) = (p.width, p.height);
+            shade(&mut p, rect(0, 0, pw, ph));
+            let who: Vec<crate::gamestats::Who> = s
+                .rows
+                .iter()
+                .zip(&flow.stats_slots)
+                .map(|((label, name, _), &slot)| crate::gamestats::Who {
+                    slot,
+                    name: if label.is_empty() { name } else { label },
+                })
+                .collect();
+            crate::gamestats::draw(&mut p, &front.big, &front.font, &front.small, h, &who);
+            set_image(pictures, &sc.image, p);
+        }
+        sc.stats_page = true;
+        return;
+    }
     if press && sc.finished {
         let next_step = after_score(flow, &s);
         sc.closing = Some((close_with_sound(music, fades::SCORE_CLOSE_OUT), next_step));
@@ -3512,7 +3564,14 @@ fn run_score(c: &mut Core) {
         }
     }
     if sc.drawn != Some(sc.ticks) {
-        let (p, finished) = draw_score(front, &s, &sc.background, sc.ticks, sc.bars_done_at);
+        let (p, finished) = draw_score(
+            front,
+            &s,
+            &sc.background,
+            sc.ticks,
+            sc.bars_done_at,
+            flow.stats.is_some(),
+        );
         if finished && !sc.finished {
             sc.finished = true;
             play_once(front, audio, cf::RANK_SOUND, AppState::Score);

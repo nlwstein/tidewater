@@ -146,7 +146,8 @@ pub(crate) fn extra_page(id: Id) -> Page {
         | Id::SmartAttackMove
         | Id::MinimapPing
         | Id::AutoReplay
-        | Id::MapZoom => Page::Interface,
+        | Id::MapZoom
+        | Id::GameStats => Page::Interface,
         Id::VolumeVoices | Id::VolumeEffects | Id::VolumeMusic => Page::Sound,
         Id::RallyPoints | Id::ProductionQueue | Id::SelectionLimit | Id::SpeedLevels | Id::ShiftQueue => Page::Gameplay,
         Id::TouchDrag
@@ -695,6 +696,9 @@ const ROW_PITCH: i32 = 30;
 /// The General page has seven rows and the game files' line and buttons under them: its rows are 28 apart so the
 /// buttons clear the description.
 const GENERAL_PITCH: i32 = 28;
+/// The Interface page has nine rows: they are 26 apart and 24 high (the smallest tap target) so they clear the description.
+const INTERFACE_PITCH: i32 = 26;
+const INTERFACE_ROW_H: u32 = 24;
 const LABEL_X: i32 = 64;
 const DROP_X: i32 = 352;
 const DROP_W: u32 = 224;
@@ -781,13 +785,13 @@ fn layout(page: Page, env: &Env) -> Layout {
     let mut targets = Vec::new();
     let mut texts = Vec::new();
     let mut y = ROWS_TOP;
-    let pitch = if page == Page::General {
-        GENERAL_PITCH
-    } else {
-        ROW_PITCH
+    let (pitch, row_h) = match page {
+        Page::General => (GENERAL_PITCH, ROW_H),
+        Page::Interface => (INTERFACE_PITCH, INTERFACE_ROW_H),
+        _ => (ROW_PITCH, ROW_H),
     };
     for item in items_on(page).into_iter().filter(|&i| shown(i, env)) {
-        targets.push((Target::Row(item), Rect::new(ROW_X, y, ROW_W, ROW_H)));
+        targets.push((Target::Row(item), Rect::new(ROW_X, y, ROW_W, row_h)));
         y += pitch;
     }
     if page == Page::General {
@@ -1815,7 +1819,8 @@ mod tests {
                 "smart-attack-move",
                 "minimap-ping",
                 "auto-replay",
-                "map-zoom"
+                "map-zoom",
+                "game-stats"
             ]
         );
         assert_eq!(names(Page::Sound), ["volume-voices", "volume-effects", "volume-music"]);

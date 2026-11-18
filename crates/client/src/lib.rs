@@ -25,6 +25,7 @@ mod fog;
 mod frontend;
 mod game;
 mod gamemenu;
+mod gamestats;
 mod gesture;
 mod groupbar;
 pub mod host;

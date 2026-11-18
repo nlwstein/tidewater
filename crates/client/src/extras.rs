@@ -53,10 +53,11 @@ pub enum Id {
     PadSwap,
     PadHideTouch,
     Controls,
+    GameStats,
 }
 
 /// How many options there are.
-pub const COUNT: usize = 32;
+pub const COUNT: usize = 33;
 
 /// Who decides an option in a game with other players.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -439,6 +440,15 @@ pub const REGISTRY: [Spec; COUNT] = [
         scope: Scope::Client,
         description: "Which devices work the game; the keyboard always does. `auto`: every device there is. `mouse`: keyboard and mouse only. `touch`: fingers. `pad`: controller. `pad-touch`: both. A missing device falls back to `auto`",
     },
+    Spec {
+        id: Id::GameStats,
+        name: "game-stats",
+        label: "Game statistics",
+        kind: Kind::Flag,
+        default: 0,
+        scope: Scope::Client,
+        description: "A statistics page after the score screen: line graphs over game time of each player's gold, lumber and oil gathered, army, workers and buildings",
+    },
 ];
 
 impl Id {
@@ -638,6 +648,11 @@ impl ClientExtras {
 
     pub fn idle_worker(&self) -> bool {
         self.get(Id::IdleWorker) != 0
+    }
+
+    /// Whether the statistics page follows the score screen (option `game-stats`).
+    pub fn game_stats(&self) -> bool {
+        self.get(Id::GameStats) != 0
     }
 
     pub fn group_bar(&self) -> bool {
