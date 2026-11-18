@@ -39,6 +39,7 @@ pub enum Id {
     AutoReplay,
     Widescreen,
     MapZoom,
+    OrderLines,
     TouchDrag,
     TouchSmartTap,
     TouchTwoFinger,
@@ -56,7 +57,7 @@ pub enum Id {
 }
 
 /// How many options there are.
-pub const COUNT: usize = 32;
+pub const COUNT: usize = 33;
 
 /// Who decides an option in a game with other players.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -312,6 +313,15 @@ pub const REGISTRY: [Spec; COUNT] = [
         default: 0,
         scope: Scope::Client,
         description: "`wheel`: the mouse wheel over the map view magnifies it up to 4 times around the pointer and back to the normal view, never showing more map than the original does (on touch devices the pinch is `touch-pinch`)",
+    },
+    Spec {
+        id: Id::OrderLines,
+        name: "order-lines",
+        label: "Order lines",
+        kind: Kind::Flag,
+        default: 0,
+        scope: Scope::Client,
+        description: "While your own units are selected, thin lines run from each to where its orders take it (green moves, red attacks, yellow work, then each shift-queued order), and from a selected training building to its rally point; also on the minimap",
     },
     Spec {
         id: Id::TouchDrag,
@@ -642,6 +652,10 @@ impl ClientExtras {
 
     pub fn group_bar(&self) -> bool {
         self.get(Id::ControlGroupBar) != 0
+    }
+
+    pub fn order_lines(&self) -> bool {
+        self.get(Id::OrderLines) != 0
     }
 
     pub fn smart_attack_move(&self) -> bool {

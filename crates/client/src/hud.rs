@@ -171,6 +171,8 @@ pub struct View<'a> {
     pub group_bar: &'a [crate::groupbar::Cell],
     /// The minimap pings whose marker is on (option `minimap-ping`, `ping`).
     pub pings: &'a [PingMark],
+    /// The order lines of the selected units in minimap pixels, none when the option is off (`orderlines`).
+    pub order_lines: &'a [crate::orderlines::Segment],
 }
 
 /// A ping marker on the minimap: the pixel of its tile (0 to 127 each way) and its player's minimap colour.
@@ -972,7 +974,7 @@ impl HudArt {
             // The ping rings reach 4 pixels past their tile's pixel.
             (
                 Rect::new(l.minimap.x - 4, l.minimap.y - 4, l.minimap.w + 8, l.minimap.h + 8),
-                fingerprint(mini, format_args!("{:?}", v.pings)),
+                fingerprint(mini, format_args!("{:?}{:?}", v.pings, v.order_lines)),
             ),
             (
                 l.top,
@@ -1062,6 +1064,18 @@ impl HudArt {
                     rgba: to_rgba(v.minimap, &self.pal, false, None),
                 };
                 blit(pic, l.minimap.x, l.minimap.y, &mini);
+            }
+            let size = crate::minimap::SIZE as i32;
+            for s in v.order_lines {
+                // A solid one-pixel line in the order's colour, clipped to the minimap.
+                let c = to_rgba(&[s.kind.colour()], &self.pal, false, None);
+                crate::orderlines::line_pixels(s, (0, 0, size, size), false, 0, |x, y| {
+                    fill(
+                        pic,
+                        Rect::new(l.minimap.x + x, l.minimap.y + y, 1, 1),
+                        [c[0], c[1], c[2]],
+                    );
+                });
             }
             for m in v.pings {
                 // A ring in the sender's colour round a white centre, over the minimap's pixels.

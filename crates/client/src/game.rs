@@ -27,6 +27,7 @@ use crate::clock::FrameClock;
 use crate::core::{self, Core, add_layer, remove_layers};
 use crate::input::{self, Button, Key};
 use crate::layers::{self, Pictures, Role};
+use crate::orderlines;
 use crate::panel::PanelState;
 use crate::session::{LocalSession, Recorder, ReplaySession, Session};
 use crate::{
@@ -1346,6 +1347,7 @@ fn show_picture(pictures: &mut Pictures, layer: &mut layers::Layer, width: i32, 
 /// view: buildings and ghosts, the unit passes, effects, fog, the ground marker and the selection rectangle.
 pub(crate) fn draw_view(c: &mut Core) {
     let bars = extras(c).health_bars();
+    let order_lines = extras(c).order_lines();
     let Core {
         sim: Some(sim),
         art: Some(art),
@@ -1390,6 +1392,7 @@ pub(crate) fn draw_view(c: &mut Core) {
         carried: &sim.carried,
         bars,
         hovered,
+        order_lines,
     };
     let (frame, stop) = view::frame(&sim.world, &art.view, &canvas, &local);
     // A flashing unit that is gone or not detected stops flashing at once ("Boxes").
@@ -2979,6 +2982,25 @@ pub(crate) fn draw_hud(c: &mut Core) {
             colour: minimap::player_colour(p.slot),
         })
         .collect();
+    // The order lines on the minimap: the same segments as the map view's, one minimap pixel for a tile.
+    let mini_lines: Vec<orderlines::Segment> = if ex.order_lines() {
+        let to_mini = |p: (i32, i32)| {
+            (
+                minimap::to_px(hud.map.0, p.0.div_euclid(TILE_PX)),
+                minimap::to_px(hud.map.0, p.1.div_euclid(TILE_PX)),
+            )
+        };
+        orderlines::segments(&sim.world, &sel.units)
+            .into_iter()
+            .map(|s| orderlines::Segment {
+                kind: s.kind,
+                from: to_mini(s.from),
+                to: to_mini(s.to),
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     let infos: Vec<panel::UnitInfo> = sel.units.iter().filter_map(|&id| state.unit(id)).collect();
     let slots = panel::fill(panel::choose_set(ui.mode, &infos, &state), &state, &infos);
     let buttons: Vec<(u8, u16)> = slots
@@ -3016,6 +3038,7 @@ pub(crate) fn draw_hud(c: &mut Core) {
         clock: clock_line.as_deref(),
         group_bar: &group_bar,
         pings: &ping_marks,
+        order_lines: &mini_lines,
     };
     let whole = (hud.art.whole_key(&hud.frame, &layout, &view), hud.image);
     let parts = hud.art.parts(&layout, &view);
