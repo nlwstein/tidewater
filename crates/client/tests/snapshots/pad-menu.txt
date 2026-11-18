@@ -42,8 +42,8 @@ frames	56-56	050a5f58f649cb08
 frames	57-57	e0b660907664c1a9
 shot	64	settings	6032c8d487ffbfde
 frames	58-64	6032c8d487ffbfde
-frames	65-65	2e0582ebfd2c538e
-frames	66-66	0be010428f2a2f26
+frames	65-65	c32fd3bfeb199fe2
+frames	66-66	747fdada8bbe4735
 frames	67-67	a87373752eb47c65
 frames	68-68	c7b51eadc3319988
 frames	69-69	e506cdda8ff68804

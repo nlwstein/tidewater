@@ -372,6 +372,15 @@ pub fn scenes() -> Vec<Scene> {
             extras: &[("group-bar", "on")],
             keys: "",
         },
+        // The statistics page (`game-stats`): a peasant fells trees and the Town Hall trains peasants for a while, then
+        // the game is won; the score screen, then the page of graphs after it.
+        Scene {
+            name: "extras-stats",
+            start: vec![play(0)],
+            cmds: extras_stats(),
+            extras: &[("game-stats", "on"), ("idle-worker", "on")],
+            keys: "",
+        },
         // Smart attack-move: a right-click on open ground with a fighting unit selected.
         Scene {
             name: "extras-attack",
@@ -1754,6 +1763,46 @@ fn extras_groups() -> Vec<Cmd> {
     // The second button is group 2.
     v.extend(click(250.0, 27.0));
     v.extend([Wait(3), Shot("recalled")]);
+    v
+}
+
+/// The statistics page: some play (lumber carried home, peasants trained), a win by the cheat, the score screen counted
+/// up (its hint line shows) and the page of graphs after it, then on to the next briefing.
+fn extras_stats() -> Vec<Cmd> {
+    use Cmd::*;
+    let mut v = vec![Move(400.0, 240.0), Until(AppState::Game), Wait(5)];
+    // The idle-worker key selects a peasant and centres the view on it: it goes to the gold mine above. The Town Hall
+    // (below it, kept in group 1) trains a peasant now and two more later.
+    v.extend(tap(Key::F(6)));
+    v.extend([
+        Wait(3),
+        Move(410.0, 48.0),
+        Down(Button::Right),
+        Wait(1),
+        Up(Button::Right),
+        Wait(2),
+    ]);
+    v.extend(click(370.0, 375.0));
+    v.extend([Wait(2)]);
+    v.extend(set_group(1));
+    v.extend(click(33.0, 358.0));
+    for at in [900, 1800] {
+        v.extend([UntilCycle(at)]);
+        v.extend(tap(Key::Digit(1)));
+        v.extend([Wait(2)]);
+        v.extend(click(33.0, 358.0));
+    }
+    v.extend([UntilCycle(3000), Shot("playing")]);
+    v.extend(chat("unite the clans"));
+    v.extend([UntilOutcome, Wait(5)]);
+    v.extend(tap(Key::Enter));
+    v.extend([Until(AppState::Score), Wait(20)]);
+    v.extend(tap(Key::Space));
+    v.extend([Wait(3), Shot("score")]);
+    v.extend(tap(Key::Space));
+    v.extend([Wait(3), Shot("stats")]);
+    v.extend(tap(Key::Space));
+    v.extend([Until(AppState::Briefing), Wait(10), Shot("briefing-next")]);
     v
 }
 
