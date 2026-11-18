@@ -1,0 +1,27 @@
+[package]
+name = "tidewater-editor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "A map editor for Tidewater: opens, paints and saves .pud maps with the game's own art"
+
+[[bin]]
+name = "tidewater-editor"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+png.workspace = true
+tidewater-formats.workspace = true
+tidewater-sim.workspace = true
+tidewater-replay.workspace = true
+# The window and widgets. Pinned: egui's API changes between minor releases. The OpenGL backend (glow) builds faster
+# and smaller than wgpu and is plenty for a tile canvas.
+eframe = { version = "=0.37.0", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
