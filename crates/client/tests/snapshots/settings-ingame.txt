@@ -9,16 +9,16 @@ shot	41	general	9011ab235ef1777b
 shot	62	general-later	9011ab235ef1777b
 frames	35-62	9011ab235ef1777b
 frames	63-63	ab3f267b8fa7bfc3
-frames	64-65	10efe1527378f303
-frames	66-66	4a8cb2d752a0e19c
-frames	67-68	d2e8a8ac1e833a5b
-shot	70	health-list	51670eea6f0813f2
-frames	69-70	51670eea6f0813f2
-frames	71-71	d0fcb01a097a1653
-frames	72-72	e467da899a1d6a34
-shot	74	health-always	0288008a7f64118a
-frames	73-74	0288008a7f64118a
-frames	75-75	19f3e5d6cccbf172
+frames	64-65	c47e744a2792af54
+frames	66-66	160af3d70991caf7
+frames	67-68	dd9c79c02a9ba64d
+shot	70	health-list	3253ecc1df8fdf22
+frames	69-70	3253ecc1df8fdf22
+frames	71-71	e1d76dfa7ed2935f
+frames	72-72	233469384ae2f05c
+shot	74	health-always	470f4d76408dcd9a
+frames	73-74	470f4d76408dcd9a
+frames	75-75	a54bdfd146407a79
 shot	78	gameplay	5a12275b14853f9c
 frames	76-78	5a12275b14853f9c
 frames	79-79	a5788e5d1d0cc37e

@@ -33,6 +33,7 @@ chooses it in the lobby and it travels with the game, saves and replays (see "Si
 | `auto-replay` | `--extra-auto-replay VALUE` | off, menu, always | C | off | Record every game: `menu` keeps the recording so the game menu can save it, `always` also writes each game's replay to the replays folder of the data directory as it is played |
 | `widescreen` | `--extra-widescreen VALUE` | off, 16:10, 16:9, auto | C+L | off | A wider game screen, the extra width being map: 16:10, 16:9, or auto to match the window (on touch it hides the side buttons, groups and Shift/Ctrl/Alt among them; menus and videos stay 4:3) |
 | `map-zoom` | `--extra-map-zoom VALUE` | off, wheel | C | off | `wheel`: the mouse wheel over the map view magnifies it up to 4 times around the pointer and back to the normal view, never showing more map than the original does (on touch devices the pinch is `touch-pinch`) |
+| `order-lines` | `--extra-order-lines` | on, off | C | off | While your own units are selected, thin lines run from each to where its orders take it (green moves, red attacks, yellow work, then each shift-queued order), and from a selected training building to its rally point; also on the minimap |
 | `touch-drag` | `--extra-touch-drag VALUE` | pan, pan-no-glide, box | C | pan | Touch only. A finger dragged on the map scrolls it (`pan` glides on after a flick, `pan-no-glide` stops where the finger lifts); hold it still a moment first to draw a selection box instead. `box`: a drag draws the box at once, as the mouse does |
 | `touch-smart-tap` | `--extra-touch-smart-tap VALUE` | on, off | C | on | Touch only. With your units selected, a tap on the ground, an enemy or a resource orders them there, as a right click does; a tap on your own unit or building selects it. `off`: every tap is a left click |
 | `touch-two-finger` | `--extra-touch-two-finger VALUE` | pan, box, off | C | pan | Touch only. Two fingers dragged together scroll the map (`pan`), are the corners of a selection box (`box`), or do nothing (`off`; a pinch still zooms if it is on) |
@@ -193,6 +194,32 @@ without new screen code. The file and the flags still work and are for power use
   - **State and hash.** The queue lives in `World::ext` (`State::orders`), so it is hashed, fingerprinted and saved
     only while an option is on, and never when every option is off: a game with every extra off is byte-identical to
     one without the feature.
+- **Order lines** (`order-lines`, C). While your own units are selected, a thin dashed line runs from each unit to where
+  its order takes it, then on through each shift-queued order in turn (`World::ext.orders`, the `shift-queue` queue,
+  at most 8 behind the current one), with a small diamond marker at every stop; the dashes march toward the stop.
+  A selected training building of yours draws one line to its rally point (the `rally-points` option). **Colors**
+  are the information panel's health-bar colors: green for move, patrol (there and back), follow and board; red for
+  attack, attack-move, attack-ground and demolish; yellow for harvest, build, repair and carrying goods. The same
+  lines show on the minimap, one pixel to a tile, over the terrain and under the pings. They are drawn in map pixels
+  into the map view's canvas, over the fog, so they follow scrolling, the widescreen view and the `map-zoom`
+  magnification like everything else in the view (a magnified view draws them magnified; the dash length and marker
+  are map pixels, not screen pixels). Lines are drawn all the time a unit is selected and have no timer: the order
+  ending ends the line, which is as brief as the order is.
+  - **Why it is C and not C+L.** It shows the player what they ordered and nothing about the enemy. Only units whose
+    owner is the local player are drawn from (never an enemy, an ally or a neutral unit in the selection); a goal tile
+    is the player's own click; the queue and the rally point are the player's own. An order that points at a *unit*
+    (an attack, a follow, a repair, a mine) is drawn to it only when the player can see that unit now (`hidden_from`,
+    detection) or it is their own, or it is a building they hold a remembered look of; an order whose target ran into
+    the fog is left out and the line carries on from the last stop drawn, so a chase never shows where an enemy went.
+    Units that act on their own (an idle unit reacting to an enemy it can see) draw like any attack. An observer or a
+    replay has no unit of its own, so nothing is drawn there. The rules (`orderlines::known`) are unit-tested.
+  - **Read-only.** The module reads the world and draws; no command, no sim state, nothing hashed or saved. With the
+    option off nothing runs, so every frame is what it was.
+  - **Pieces.** `orderlines.rs`: `describe` (an order's stops and kind), `route` (the chain of segments, capped at
+    10 per unit), `visible_steps` and `line_pixels` (clipping and dashes counted from the unit, so a line does not
+    shimmer while the view scrolls), `segments` (from the world). `view::draw_lines` draws them over the map and
+    `hud` over the minimap. The scene `extras-lines` shows a group with queued moves and an attack, a harvesting
+    peon and a rally point.
 - **Replay saving** (`auto-replay`, C). A client-only option, off by default (`--record-replay` still works on its own).
   `always` records every game, single-player or network, and writes the file to the `replays` folder of the user data
   directory as the game is played, through `Storage::write_replay` (the same file `--record-replay` writes).
@@ -360,6 +387,6 @@ for the C+L options that set wins over the local settings; the C options stay ea
 ## Checks that keep the defaults honest
 
 - The frame snapshot (`crates/client/tests/frames.rs`) runs its original scenes with every extra off and is never
-  re-blessed for an extra (the main menu's frames changed once, for the Settings link, which is not an extra); the scenes `extras`, `extras-bars`, `extras-groups`, `extras-attack` and `extras-keys` turn options on and have their own entries; the scene `settings-screen` shows the Settings screen and `settings-ingame` the Settings screen over a game.
+  re-blessed for an extra (the main menu's frames changed once, for the Settings link, which is not an extra); the scenes `extras`, `extras-bars`, `extras-groups`, `extras-attack`, `extras-lines` and `extras-keys` turn options on and have their own entries; the scene `settings-screen` shows the Settings screen and `settings-ingame` the Settings screen over a game.
 - `Trims::default()` leaves the mixed sound identical; the audio snapshot of the original scenes shows it.
 - The oracle traces and the whole-map snapshot run on the sim, which an empty `Extras` does not change.

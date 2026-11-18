@@ -143,6 +143,7 @@ pub(crate) fn extra_page(id: Id) -> Page {
         | Id::IdleWorker
         | Id::GameClock
         | Id::ControlGroupBar
+        | Id::OrderLines
         | Id::SmartAttackMove
         | Id::MinimapPing
         | Id::AutoReplay
@@ -695,6 +696,12 @@ const ROW_PITCH: i32 = 30;
 /// The General page has seven rows and the game files' line and buttons under them: its rows are 28 apart so the
 /// buttons clear the description.
 const GENERAL_PITCH: i32 = 28;
+/// A page with more than eight rows (Interface, with nine) packs them 26 apart and 24 tall, the least a tap target
+/// may be, so the last still clears the description.
+const CROWDED_PITCH: i32 = 26;
+const CROWDED_H: u32 = 24;
+/// The most rows a page lays out at the normal pitch.
+const NORMAL_ROWS: usize = 8;
 const LABEL_X: i32 = 64;
 const DROP_X: i32 = 352;
 const DROP_W: u32 = 224;
@@ -781,13 +788,16 @@ fn layout(page: Page, env: &Env) -> Layout {
     let mut targets = Vec::new();
     let mut texts = Vec::new();
     let mut y = ROWS_TOP;
-    let pitch = if page == Page::General {
-        GENERAL_PITCH
+    let rows: Vec<Item> = items_on(page).into_iter().filter(|&i| shown(i, env)).collect();
+    let (pitch, height) = if page == Page::General {
+        (GENERAL_PITCH, ROW_H)
+    } else if rows.len() > NORMAL_ROWS {
+        (CROWDED_PITCH, CROWDED_H)
     } else {
-        ROW_PITCH
+        (ROW_PITCH, ROW_H)
     };
-    for item in items_on(page).into_iter().filter(|&i| shown(i, env)) {
-        targets.push((Target::Row(item), Rect::new(ROW_X, y, ROW_W, ROW_H)));
+    for item in rows {
+        targets.push((Target::Row(item), Rect::new(ROW_X, y, ROW_W, height)));
         y += pitch;
     }
     if page == Page::General {
@@ -1815,7 +1825,8 @@ mod tests {
                 "smart-attack-move",
                 "minimap-ping",
                 "auto-replay",
-                "map-zoom"
+                "map-zoom",
+                "order-lines"
             ]
         );
         assert_eq!(names(Page::Sound), ["volume-voices", "volume-effects", "volume-music"]);
