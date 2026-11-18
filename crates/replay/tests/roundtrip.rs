@@ -11,7 +11,8 @@ use tidewater_formats::install::Install;
 use tidewater_formats::pud::Pud;
 use tidewater_replay::format::CHECKPOINT_EVERY;
 use tidewater_replay::run::{first_desync, verify};
-use tidewater_replay::start::{build_world, choose_start, map_hash, new_world, rules_tag};
+use tidewater_replay::seek::{Progress, Seeker, Vision};
+use tidewater_replay::start::{build_world, choose_start, map_hash, new_world, origin_world, rules_tag};
 use tidewater_replay::{Header, Replay, ReplayError};
 use tidewater_sim::economy::kind;
 use tidewater_sim::setup::{Lobby, Setup};
@@ -269,4 +270,154 @@ fn a_replay_checks_the_rules_it_was_recorded_under() {
         err.downcast_ref::<ReplayError>(),
         Some(ReplayError::Rules { .. })
     ));
+}
+
+/// The state hash after every cycle of a straight playthrough: index `n` is the hash with the counter at `n`.
+fn straight_hashes(g: &mut Game, replay: &Replay) -> Vec<u64> {
+    let mut world = new_world(&mut g.install, &g.map, &replay.header).unwrap();
+    let mut hashes = vec![world.state_hash()];
+    for _ in 0..replay.cycles {
+        world.step(replay.commands_at(world.tick));
+        hashes.push(world.state_hash());
+    }
+    hashes
+}
+
+/// Seeks to `target` and plays the jump out, with the recording's own checkpoints compared on the way. Returns the
+/// number of `work` calls it took.
+fn jump(seeker: &mut Seeker, world: &mut World, replay: &Replay, target: u32) -> u32 {
+    seeker.seek(world, target);
+    let mut calls = 0;
+    loop {
+        calls += 1;
+        let done = seeker
+            .work(world, replay, 250, |tick, hash| {
+                assert_eq!(Some(hash), replay.checkpoint_at(tick), "checkpoint {tick} on the way");
+                Ok(())
+            })
+            .expect("no mismatch");
+        if done != Progress::Running {
+            assert!(matches!(done, Progress::Arrived | Progress::Idle));
+            break;
+        }
+    }
+    assert_eq!(world.tick, target.min(replay.cycles));
+    calls
+}
+
+#[test]
+fn seeking_back_and_forth_gives_the_straight_playthrough_s_hash_at_every_stop() {
+    let Some(mut g) = game() else {
+        eprintln!("skipped: set TIDEWATER_INSTALL to run");
+        return;
+    };
+    let (replay, _) = record(&mut g);
+    let want = straight_hashes(&mut g, &replay);
+    let origin = origin_world(&mut g.install, &g.map, &replay.header).unwrap();
+    let mut seeker = Seeker::new(origin, &replay);
+    // Play it through once, as the client does, so the copies are made.
+    let mut world = new_world(&mut g.install, &g.map, &replay.header).unwrap();
+    while world.tick < replay.cycles {
+        world.step(replay.commands_at(world.tick));
+        seeker.note(&world);
+    }
+    assert_eq!(seeker.keyframes().ticks().collect::<Vec<_>>(), [500, 1000, 1500]);
+    assert_eq!(world.state_hash(), want[1500]);
+    // Back and forth: before the first copy (the origin), on a copy, between copies, ahead and back, the very end,
+    // the very start and past the end.
+    for target in [1100, 200, 1400, 650, 500, 1000, 999, 0, 1500, 1, 1499, 760, 1200, 2000] {
+        let calls = jump(&mut seeker, &mut world, &replay, target);
+        let at = target.min(replay.cycles);
+        assert_eq!(world.state_hash(), want[at as usize], "after seeking to {target}");
+        assert!(calls <= 5, "a jump to {target} took {calls} calls of 250 cycles");
+    }
+    // The world that a jump leaves is one the replay plays on from: a straight run of 100 more cycles agrees too.
+    jump(&mut seeker, &mut world, &replay, 700);
+    for _ in 0..100 {
+        world.step(replay.commands_at(world.tick));
+        assert_eq!(world.state_hash(), want[world.tick as usize]);
+    }
+}
+
+#[test]
+fn another_player_s_view_and_everyone_s_leave_the_hash_alone() {
+    let Some(mut g) = game() else {
+        eprintln!("skipped: set TIDEWATER_INSTALL to run");
+        return;
+    };
+    let (replay, _) = record(&mut g);
+    let want = straight_hashes(&mut g, &replay);
+    let origin = origin_world(&mut g.install, &g.map, &replay.header).unwrap();
+    let mut seeker = Seeker::new(origin, &replay);
+    let mut world = new_world(&mut g.install, &g.map, &replay.header).unwrap();
+    assert_eq!(seeker.vision(), Vision::Player(g.slots[0]));
+    assert!(seeker.players().contains(&g.slots[1]));
+    jump(&mut seeker, &mut world, &replay, 900);
+    let mine = world.vision.local;
+    let explored_of = |w: &World| w.vision.flags(tidewater_sim::vision::Map::Explored).to_vec();
+    let first = explored_of(&world);
+
+    // The other player: the game is played again from the start with that player's maps, to the same cycle.
+    seeker.set_vision(&mut world, Vision::Player(g.slots[1]));
+    assert_eq!(world.tick, 0, "the new view starts over");
+    let mut calls = 0;
+    while seeker.work(&mut world, &replay, 250, |_, _| Ok(())).unwrap() == Progress::Running {
+        calls += 1;
+    }
+    assert_eq!(world.tick, 900);
+    assert!(calls >= 3, "the jump is spread over frames");
+    assert_eq!(world.vision.local, g.slots[1]);
+    assert_ne!(world.vision.local, mine);
+    assert_eq!(world.state_hash(), want[900], "the other seat's world has the same hash");
+    assert_ne!(explored_of(&world), first, "and its own explored map");
+
+    // Back and forth in that view still matches, and so does everyone's.
+    for target in [300, 1300, 650] {
+        jump(&mut seeker, &mut world, &replay, target);
+        assert_eq!(world.state_hash(), want[target as usize]);
+    }
+    seeker.set_vision(&mut world, Vision::Everyone);
+    assert!(world.observing && seeker.vision() == Vision::Everyone);
+    for target in [1000, 100, 1500] {
+        jump(&mut seeker, &mut world, &replay, target);
+        assert!(world.observing, "a restored world shows everyone too");
+        assert_eq!(world.state_hash(), want[target as usize]);
+    }
+    // Everyone's is only the flag: switching it on or off keeps the world and its tick.
+    seeker.set_vision(&mut world, Vision::Player(g.slots[1]));
+    assert!(!world.observing);
+    assert_eq!(world.tick, 1500);
+}
+
+#[test]
+fn a_recorded_replay_with_a_wrong_command_stops_a_seek_at_the_checkpoint() {
+    let Some(mut g) = game() else {
+        eprintln!("skipped: set TIDEWATER_INSTALL to run");
+        return;
+    };
+    let (replay, _) = record(&mut g);
+    let mut bad = replay.clone();
+    bad.commands.retain(|c| c.cycle != 700);
+    let origin = origin_world(&mut g.install, &g.map, &bad.header).unwrap();
+    let mut seeker = Seeker::new(origin, &bad);
+    let mut world = new_world(&mut g.install, &g.map, &bad.header).unwrap();
+    seeker.seek(&mut world, 1200);
+    let m = loop {
+        match seeker.work(&mut world, &bad, 250, |tick, hash| {
+            match bad.checkpoint_at(tick) {
+                Some(r) if r != hash => Err(tidewater_replay::run::Mismatch {
+                    cycle: tick,
+                    recorded: r,
+                    got: hash,
+                }),
+                _ => Ok(()),
+            }
+        }) {
+            Ok(Progress::Running) => {}
+            Ok(p) => panic!("arrived ({p:?}) on a replay that does not match"),
+            Err(m) => break m,
+        }
+    };
+    assert_eq!(m.cycle, 800);
+    assert_eq!(seeker.target(), None, "a mismatch ends the jump");
 }
