@@ -274,6 +274,22 @@ Fidelity is measured, not assumed. The simulation is deterministic and integer-o
 
 Some screens are our own layout, because the original's dialog definition files are not specified yet: the menus, dialogs, briefing and score screen look different from the original.
 
+## Map editor (prototype)
+
+`tidewater-editor` is an early map editor: open a `.pud` map, see it with your installation's own tiles and unit
+sprites, paint terrain (the transitions between water, coast, ground, forest and rock fix themselves up), place,
+move and delete units, buildings, gold mines, oil patches and start locations for players 1 to 8, set each player's
+race, controller and starting resources and the map's description, undo and redo, save, and **Play in Tidewater**
+to start the game on the map. It reads the art from your installation and bundles none.
+
+```sh
+cargo run --release -p tidewater-editor -- --install <path-to-game> [MAP.pud]
+```
+
+A map saved without changes is the same file byte for byte. Not built yet: walls, unit and upgrade data, and an
+exact copy of the original's region map numbering, so a map whose terrain you changed plays in Tidewater but is not
+yet guaranteed to load in the original game. Details, controls and limits: [docs/editor.md](docs/editor.md).
+
 ## Settings
 
 **Open Settings from the main menu: press F2, or click or tap the "Settings (F2)" link at the bottom right.** Choose a
@@ -497,6 +513,7 @@ The code is a Cargo workspace:
 | `crates/sim` | The deterministic game simulation, with no engine types. |
 | `crates/client` | The game client: an engine-neutral core that composes each frame, and the `tidewater` binary, the SDL 3 shell. |
 | `crates/twtool` | The inspection and verification tool. |
+| `crates/editor` | The map editor (`tidewater-editor`, egui), see [docs/editor.md](docs/editor.md). |
 | `crates/ios`, `crates/android` | The phone apps' native libraries; the Xcode and Gradle projects are in `platform/`. The Vita app is the `tidewater` binary built by `platform/vita/build.sh`. |
 
 ## Development
