@@ -320,6 +320,15 @@ pub fn scenes() -> Vec<Scene> {
             extras: &[("health-bars", "hovered"), ("widescreen", "16:9")],
             keys: "",
         },
+        // A game left to run, for a map given on the command line (`tidewater --script playtest MAP`): the map
+        // editor's play test. Without a map it plays the first campaign mission.
+        Scene {
+            name: "playtest",
+            start: vec![play(0)],
+            cmds: playtest(),
+            extras: &[],
+            keys: "",
+        },
         Scene {
             name: "build",
             start: vec![play(0)],
@@ -1596,6 +1605,17 @@ fn lobby_extras() -> Vec<Cmd> {
 
 /// A farm placed: a peasant selected, the build commands by their keys, the placement image over good and bad ground,
 /// then placed; the chat line edited and cancelled; the load dialog's list moved with the wheel.
+fn playtest() -> Vec<Cmd> {
+    use Cmd::*;
+    vec![
+        Until(AppState::Game),
+        Wait(60),
+        Shot("playtest-start"),
+        Wait(600),
+        Shot("playtest-later"),
+    ]
+}
+
 fn build() -> Vec<Cmd> {
     use Cmd::*;
     use Key as K;

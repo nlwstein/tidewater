@@ -1,0 +1,13 @@
+# mixed sound fingerprints of the scripted scene `playtest` (hashes only): 22050 Hz stereo 16-bit, one-second blocks
+blocks	0-0	05d3c37d3d292a6f
+blocks	1-1	7dc85e32bacbedee
+blocks	2-2	0f997db10a53e278
+blocks	3-3	e786e93a24f9bdcf
+blocks	4-4	838a8db979e98a89
+blocks	5-5	c9cded89f5aceeff
+blocks	6-6	6965fadf39342268
+blocks	7-7	5d1c710a544d736d
+blocks	8-8	e9b1b8fc4378479f
+blocks	9-9	2cb1cd974241a10b
+blocks	10-10	d21db7dcb0d4b3d7
+tail	1470	1cc6ae1894eb5461

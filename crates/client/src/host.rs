@@ -312,7 +312,18 @@ pub fn launch(mut args: Args) -> Result<Launch> {
             map: replay.header.map_name.clone(),
             setup: Some(replay.header.setup),
         }],
-        (None, Some((scene, _)), None) => scene.start.clone(),
+        // A map on the command line replaces the scene's own (`playtest` is made for this: the map editor's check).
+        (None, Some((scene, _)), None) => scene
+            .start
+            .iter()
+            .map(|st| match (st, &args.map) {
+                (frontend::Step::Play { setup, .. }, Some(m)) => frontend::Step::Play {
+                    map: m.clone(),
+                    setup: *setup,
+                },
+                (st, _) => st.clone(),
+            })
+            .collect(),
         (None, None, None) => start_steps(&args, &prefs, &mut flow, &mut front)?,
     };
     flow.steps = steps.into();
