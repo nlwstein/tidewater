@@ -352,6 +352,11 @@ fn another_player_s_view_and_everyone_s_leave_the_hash_alone() {
     let mut world = new_world(&mut g.install, &g.map, &replay.header).unwrap();
     assert_eq!(seeker.vision(), Vision::Player(g.slots[0]));
     assert!(seeker.players().contains(&g.slots[1]));
+    assert!(
+        seeker.has_fog(g.slots[0]) && seeker.has_fog(g.slots[1]),
+        "both are humans"
+    );
+    assert!(!seeker.has_fog(7), "a slot nobody plays has none");
     jump(&mut seeker, &mut world, &replay, 900);
     let mine = world.vision.local;
     let explored_of = |w: &World| w.vision.flags(tidewater_sim::vision::Map::Explored).to_vec();
@@ -367,8 +372,13 @@ fn another_player_s_view_and_everyone_s_leave_the_hash_alone() {
     assert_eq!(world.tick, 900);
     assert!(calls >= 3, "the jump is spread over frames");
     assert_eq!(world.vision.local, g.slots[1]);
+    assert_eq!(seeker.seat(), g.slots[1]);
     assert_ne!(world.vision.local, mine);
-    assert_eq!(world.state_hash(), want[900], "the other seat's world has the same hash");
+    assert_eq!(
+        world.state_hash(),
+        want[900],
+        "the other seat's world has the same hash"
+    );
     assert_ne!(explored_of(&world), first, "and its own explored map");
 
     // Back and forth in that view still matches, and so does everyone's.
@@ -403,15 +413,13 @@ fn a_recorded_replay_with_a_wrong_command_stops_a_seek_at_the_checkpoint() {
     let mut world = new_world(&mut g.install, &g.map, &bad.header).unwrap();
     seeker.seek(&mut world, 1200);
     let m = loop {
-        match seeker.work(&mut world, &bad, 250, |tick, hash| {
-            match bad.checkpoint_at(tick) {
-                Some(r) if r != hash => Err(tidewater_replay::run::Mismatch {
-                    cycle: tick,
-                    recorded: r,
-                    got: hash,
-                }),
-                _ => Ok(()),
-            }
+        match seeker.work(&mut world, &bad, 250, |tick, hash| match bad.checkpoint_at(tick) {
+            Some(r) if r != hash => Err(tidewater_replay::run::Mismatch {
+                cycle: tick,
+                recorded: r,
+                got: hash,
+            }),
+            _ => Ok(()),
         }) {
             Ok(Progress::Running) => {}
             Ok(p) => panic!("arrived ({p:?}) on a replay that does not match"),

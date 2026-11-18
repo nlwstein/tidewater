@@ -11,16 +11,17 @@
 //! `World::observing`, which is what a network observer's game uses, and [`Vision::Player`] makes the world's
 //! `vision.local` another player's. The fog maps are the local player's alone and grow as the game goes on, so a new
 //! local player means playing the game again from the start; the copies are dropped and the jump to where the viewer
-//! was is made from the origin.
+//! was is made from the origin. Only human players have fog (the sim gives a computer player no sight), so the view
+//! of a computer player is the whole map with that player's resources and units: [`Seeker::has_fog`].
 //!
 //! Seeking is for replay playback only: nothing here is reachable from a live game, and with the seeker unused a
 //! replay plays exactly as it did.
 
+use tidewater_sim::Command;
 use tidewater_sim::World;
 use tidewater_sim::ai::controller;
 use tidewater_sim::cheats::Flags;
 use tidewater_sim::timing::{CLASSIC_MS, CLASSIC_ROW, enhanced_ms};
-use tidewater_sim::Command;
 
 use crate::format::Replay;
 use crate::run::Mismatch;
@@ -53,7 +54,10 @@ pub struct Keyframes<T> {
 
 impl<T> Keyframes<T> {
     pub fn new(every: u32, cap: usize) -> Self {
-        assert!(every > 0 && cap >= 2 && cap.is_multiple_of(2), "a spacing and an even count");
+        assert!(
+            every > 0 && cap >= 2 && cap.is_multiple_of(2),
+            "a spacing and an even count"
+        );
         Keyframes {
             every,
             cap,
@@ -219,9 +223,13 @@ pub struct Seeker {
     keyframes: Keyframes<World>,
     target: Option<u32>,
     total: u32,
+    /// The human player whose fog maps the world carries.
     local: u8,
+    /// The player the viewer shows (the resources, the selection): `local`, or another human, or a computer player.
+    seat: u8,
     everyone: bool,
     players: Vec<u8>,
+    humans: Vec<u8>,
     clock: Clock,
 }
 
@@ -229,6 +237,7 @@ impl Seeker {
     /// A seeker for `replay`, whose world was built from `origin`: the world as [`crate::start::origin_world`] makes
     /// it, before the start-up cycles. The viewer starts in the recording player's own view.
     pub fn new(origin: World, replay: &Replay) -> Seeker {
+        // The computer and human players of the map that have a start: a slot the map names but nobody plays has no units.
         let players = origin
             .players
             .iter()
@@ -236,6 +245,7 @@ impl Seeker {
             .enumerate()
             .filter(|(_, p)| p.controller == controller::COMPUTER || p.controller == controller::HUMAN)
             .map(|(i, _)| i as u8)
+            .filter(|&i| origin.units.iter().any(|u| u.owner == i))
             .collect();
         Seeker {
             start_cheats: replay.header.start_cheats,
@@ -243,7 +253,16 @@ impl Seeker {
             target: None,
             total: replay.cycles,
             local: origin.vision.local,
+            seat: origin.vision.local,
             everyone: false,
+            humans: origin
+                .players
+                .iter()
+                .take(8)
+                .enumerate()
+                .filter(|(_, p)| p.controller == controller::HUMAN)
+                .map(|(i, _)| i as u8)
+                .collect(),
             players,
             clock: Clock::new(replay, &origin),
             origin,
@@ -255,7 +274,7 @@ impl Seeker {
         self.total
     }
 
-    /// The players a viewer can take the view of: the computer and human players of the map.
+    /// The players a viewer can take the view of: the computer and human players of the map that have units.
     pub fn players(&self) -> &[u8] {
         &self.players
     }
@@ -265,13 +284,23 @@ impl Seeker {
         if self.everyone {
             Vision::Everyone
         } else {
-            Vision::Player(self.local)
+            Vision::Player(self.seat)
         }
+    }
+
+    /// Whether `player` has fog of war to show: only the human players do. A computer player's view is the whole map.
+    pub fn has_fog(&self, player: u8) -> bool {
+        self.humans.contains(&player)
+    }
+
+    /// Whether the world shows the whole map for the vision now: everyone's, or a computer player's.
+    fn shows_all(&self) -> bool {
+        self.everyone || !self.has_fog(self.seat)
     }
 
     /// The vision after this one when the key that cycles it is pressed: each player in turn, then everyone.
     pub fn next_vision(&self) -> Vision {
-        let at = self.players.iter().position(|&p| p == self.local);
+        let at = self.players.iter().position(|&p| p == self.seat);
         match (self.everyone, at) {
             (false, Some(i)) if i + 1 < self.players.len() => Vision::Player(self.players[i + 1]),
             (false, _) => Vision::Everyone,
@@ -279,9 +308,9 @@ impl Seeker {
         }
     }
 
-    /// The player whose maps the world carries.
-    pub fn local(&self) -> u8 {
-        self.local
+    /// The player the viewer shows the resources and selection of.
+    pub fn seat(&self) -> u8 {
+        self.seat
     }
 
     /// The cycle a jump is heading for, if one is under way.
@@ -322,18 +351,16 @@ impl Seeker {
         self.target = (world.tick != target).then_some(target);
     }
 
-    /// Changes the vision. Everyone, or a player whose maps the world already carries, is the flag alone; another
-    /// player's view plays the game again from the start to where the viewer was (or is heading).
+    /// Changes the vision. Everyone's, a computer player's, or a human player whose maps the world already carries, is
+    /// the flag alone; another human player's view plays the game again from the start to where the viewer was (or is
+    /// heading).
     pub fn set_vision(&mut self, world: &mut World, vision: Vision) {
         match vision {
-            Vision::Everyone => {
-                self.everyone = true;
-                world.observing = true;
-            }
+            Vision::Everyone => self.everyone = true,
             Vision::Player(p) => {
                 self.everyone = false;
-                world.observing = false;
-                if p != self.local {
+                self.seat = p;
+                if self.has_fog(p) && p != self.local {
                     let back_to = self.target.unwrap_or(world.tick);
                     self.local = p;
                     self.keyframes.clear();
@@ -342,6 +369,7 @@ impl Seeker {
                 }
             }
         }
+        world.observing = self.shows_all();
     }
 
     /// Plays the pending jump forward by at most `budget` cycles, comparing each checkpoint the recording has on the
@@ -385,7 +413,7 @@ impl Seeker {
     fn rebuild(&self, world: &mut World) {
         let mut w = self.origin.clone();
         w.vision.local = self.local;
-        w.observing = self.everyone;
+        w.observing = self.shows_all();
         w.start_up();
         if self.start_cheats != 0 {
             w.start_cheats(Flags(self.start_cheats));
@@ -400,7 +428,7 @@ impl Seeker {
             .expect("the copy was found a moment ago");
         *world = kf.clone();
         quiet(world);
-        world.observing = self.everyone;
+        world.observing = self.shows_all();
     }
 }
 
@@ -471,7 +499,10 @@ mod tests {
             k.offer(t, || t);
         }
         assert!(k.len() <= KEYFRAME_CAP);
-        let worst = (0..=200_000).map(|t| t - k.at_or_before(t).map_or(0, |f| f.0)).max().unwrap();
+        let worst = (0..=200_000)
+            .map(|t| t - k.at_or_before(t).map_or(0, |f| f.0))
+            .max()
+            .unwrap();
         assert!(worst <= 8_000, "{worst}");
     }
 

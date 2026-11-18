@@ -28,6 +28,7 @@ use crate::core::{self, Core, add_layer, remove_layers};
 use crate::input::{self, Button, Key};
 use crate::layers::{self, Pictures, Role};
 use crate::panel::PanelState;
+use crate::replayview;
 use crate::session::{LocalSession, Recorder, ReplaySession, Session};
 use crate::{
     attackmove, audio, campaign, display, fog, frontend, groupbar, hud, idle, info, mapview, messages, minimap, mouse,
@@ -63,6 +64,8 @@ pub struct Sim {
     pub carried: carry::Carried,
     /// The commands the player has given so far, for the clock overlay's actions per minute (`overlay`).
     pub actions: u32,
+    /// The replay viewer's pointer and refresh state (`replayview`); idle in a live game.
+    pub viewer: replayview::Ui,
 }
 
 impl Sim {
@@ -495,6 +498,9 @@ fn load_game(c: &mut Core, map: &str, setup: Option<tidewater_sim::setup::Setup>
             (None, None) => crate::extras::local_sim_extras(&c.extras),
         };
     }
+    // A replay's viewer can start the game over with another player's view: it keeps the world as built, before the
+    // start-up cycles (`replayview`).
+    let replay_origin = replay.is_some().then(|| scene.world.clone());
     start_world(&mut scene.world, resume.as_deref(), wall, c.flow.cheat_used)?;
     // The game data a recording notes in its header (`tidewater_formats::identity`).
     let data_id = if record {
@@ -515,7 +521,11 @@ fn load_game(c: &mut Core, map: &str, setup: Option<tidewater_sim::setup::Setup>
                 "replaying {} ({} cycles) as player {}",
                 r.header.map_name, r.cycles, r.header.local
             );
-            Box::new(ReplaySession::new(*r))
+            let session = ReplaySession::new(*r);
+            Box::new(match replay_origin {
+                Some(origin) => session.with_origin(origin),
+                None => session,
+            })
         }
         None if net.is_some() => {
             let n = net.take().expect("checked above");
@@ -888,6 +898,7 @@ pub(crate) fn setup(c: &mut Core) {
         ui_sounds: Vec::new(),
         carried: carry::Carried::default(),
         actions: 0,
+        viewer: replayview::Ui::default(),
     };
     commands.queue(move |c| {
         c.sim = Some(sim);
@@ -994,6 +1005,10 @@ pub(crate) fn tick(c: &mut Core) -> bool {
     }
     sim.pings.expire(sim.world.tick);
     sim.session.observe_speed(sim.world.speed);
+    // A replay's jump is played out by `seek_frame`; the game's own cycles wait for it.
+    if sim.session.seeking() {
+        return false;
+    }
     let ready = sim.session.ready_commands(sim.world.tick);
     // A network game's wait for other players, and who has gone (`net/lockstep.md`, "Stalls"; `net/leave-and-drop.md`).
     if sim.session.take_deadline_reset() {
@@ -1026,6 +1041,7 @@ pub(crate) fn tick(c: &mut Core) -> bool {
         return sim.session.is_network();
     };
     sim.world.step(&cmds);
+    sim.session.note_cycle(&sim.world);
     if sim.world.victory.over || sim.session.wants_hash(sim.world.tick) {
         let (tick, hash) = (sim.world.tick, sim.world.state_hash());
         if let Err(m) = sim.session.checkpoint(tick, hash) {
@@ -1103,6 +1119,128 @@ pub(crate) fn tick(c: &mut Core) -> bool {
     let real = [p.gold, p.lumber, p.oil];
     sim.counter.update(real);
     false
+}
+
+/// The replay viewer's timeline as the bar shows it, in a replay only.
+fn replay_bar(sim: &Sim) -> Option<replayview::Bar> {
+    let info = sim.session.seek_info()?;
+    let tick = info.target.unwrap_or(sim.world.tick).min(info.total);
+    Some(replayview::Bar {
+        tick,
+        total: info.total,
+        now_ms: sim.session.seek_ms_at(tick),
+        total_ms: info.total_ms,
+        vision: replayview::vision_text(info.vision, info.computer),
+        seeking: info.target.is_some(),
+    })
+}
+
+/// A jump to cycle `tick` of the replay (`Session::seek`); `seek_frame` plays it out and `finish_seek` then makes the
+/// screen follow.
+fn request_seek(sim: &mut Sim, tick: u32) {
+    sim.session.seek(&mut sim.world, tick);
+    sim.viewer.refresh = true;
+}
+
+/// Takes another vision in a replay: everyone's, or a player's, whose seat the view then takes.
+fn change_vision(sim: &mut Sim, vision: tidewater_replay::seek::Vision) {
+    sim.session.seek_vision(&mut sim.world, vision);
+    if let tidewater_replay::seek::Vision::Player(p) = vision
+        && p != sim.human
+    {
+        sim.human = p;
+        sim.viewer.recentre = true;
+    }
+    sim.viewer.refresh = true;
+}
+
+/// A replay viewer's key (`replayview::key_act`).
+fn replay_key(sim: &mut Sim, act: replayview::KeyAct) {
+    use replayview::KeyAct;
+    let Some(info) = sim.session.seek_info() else {
+        return;
+    };
+    let at = info.target.unwrap_or(sim.world.tick);
+    let now_ms = sim.session.seek_ms_at(at);
+    match act {
+        KeyAct::Back(ms) => request_seek(sim, sim.session.seek_tick_at(now_ms.saturating_sub(ms))),
+        KeyAct::Ahead(ms) => request_seek(sim, sim.session.seek_tick_at(now_ms + ms)),
+        KeyAct::Start => request_seek(sim, 0),
+        KeyAct::End => request_seek(sim, info.total),
+        KeyAct::NextVision => change_vision(sim, info.next_vision),
+    }
+}
+
+/// One frame of a replay's jump: plays up to `replayview::CYCLES_PER_FRAME` cycles of it (the cycles of the frame's
+/// clock slots wait, `tick`), and when it has arrived makes the screen follow. Nothing in a live game.
+pub(crate) fn seek_frame(c: &mut Core) {
+    let Some(sim) = c.sim.as_mut() else { return };
+    if sim.session.seek_info().is_none() {
+        return;
+    }
+    if sim.session.seeking() {
+        sim.session.seek_step(&mut sim.world, replayview::CYCLES_PER_FRAME);
+    }
+    if !sim.session.seeking() && std::mem::take(&mut sim.viewer.refresh) {
+        finish_seek(c);
+    }
+}
+
+/// The client's own pictures of the world after a jump or a change of vision: what they kept from the cycles they
+/// watched (the shown resources, the carried goods, the pings, the minimap, the selection) is made again from the world
+/// as it is now.
+fn finish_seek(c: &mut Core) {
+    let Core {
+        sim: Some(sim),
+        selection: Some(sel),
+        hud: Some(hud),
+        terrain_art: art,
+        view,
+        stored,
+        ..
+    } = c
+    else {
+        return;
+    };
+    let human = sim.human;
+    if std::mem::take(&mut sim.viewer.recentre) {
+        sel.units.clear();
+        sel.remembered.retain(|_| false);
+        sel.marker = None;
+        // The player's start location, or (a computer player that has none) a building of theirs, or any unit.
+        let w = &sim.world;
+        let at = w.players[human as usize]
+            .start
+            .map(|(x, y)| (x * 32 + 16, y * 32 + 16))
+            .or_else(|| {
+                w.units
+                    .iter()
+                    .filter(|u| u.owner == human && !u.dying)
+                    .max_by_key(|u| u.building)
+                    .map(tidewater_sim::Unit::centre_px)
+            });
+        if let (Some(v), Some((x, y))) = (view.as_mut(), at) {
+            centre_view(v, Vec2::new(x as f32, y as f32));
+        }
+    }
+    let w = &sim.world;
+    let p = &w.players[human as usize];
+    sim.counter.shown = [p.gold, p.lumber, p.oil].map(i64::from);
+    sim.pings = ping::Pings::default();
+    sim.carried = carry::Carried::default();
+    sim.carried.update(w);
+    let present = |id: UnitId| w.unit(id).is_some_and(tidewater_sim::Unit::stays_selected);
+    sel.units.retain(|&id| present(id));
+    sel.remembered.retain(present);
+    // The minimap is drawn again at once, from the world as it is (and for the vision's own fog).
+    if let (Some(art), Some(view)) = (art, view) {
+        let (l, t, r, b) = view.tiles();
+        let at = (l.floor().max(0.0) as i32, t.floor().max(0.0) as i32);
+        let size = ((r - l).round().max(1.0) as i32, (b - t).round().max(1.0) as i32);
+        hud.minimap.countdown.left = 1;
+        hud.minimap
+            .cycle(&mut sim.world, &art.tileset, at, size, stored.0.minimap_terrain);
+    }
 }
 
 /// Ctrl+F1 and Alt+F2 in a network game (`net/lockstep.md`, "Stalls"): leave the game while it waits for a turn, or
@@ -1894,6 +2032,39 @@ pub(crate) fn panel_input(c: &mut Core) {
     };
     // Screen spec: at a scrolling edge, clicks on the panel do nothing.
     let pressed = buttons.just_pressed(Button::Left) && scr.edge == (0, 0);
+    // The replay viewer's timeline (`replayview`): a press on the track jumps there and dragging moves the jump, a
+    // press on the button takes the next vision.
+    if let (Some(info), Some(l)) = (sim.session.seek_info(), hud.layout) {
+        let bar = replayview::bar_rect(l.viewport);
+        let track = replayview::track_rect(bar);
+        let cursor = hud.cursor(input);
+        if sim.viewer.drag {
+            if buttons.pressed(Button::Left) {
+                if let Some(c) = cursor {
+                    let at = replayview::tick_at(track, c.x, info.total);
+                    if at != info.target.unwrap_or(sim.world.tick) {
+                        request_seek(sim, at);
+                    }
+                }
+                ui.consumed = true;
+                return;
+            }
+            sim.viewer.drag = false;
+        }
+        if pressed
+            && let Some(c) = cursor
+            && bar.contains(c.x, c.y)
+        {
+            if replayview::button_rect(bar).contains(c.x, c.y) {
+                change_vision(sim, info.next_vision);
+            } else if c.x >= track.x as f32 - 4.0 && c.x < (track.x + track.w as i32) as f32 + 4.0 {
+                sim.viewer.drag = true;
+                request_seek(sim, replayview::tick_at(track, c.x, info.total));
+            }
+            ui.consumed = true;
+            return;
+        }
+    }
     // The idle-worker button (`idle`), when the option is on.
     if pressed
         && idle_on
@@ -2507,6 +2678,20 @@ pub(crate) fn keys_input(c: &mut Core) {
         return;
     };
     let keys = &input.keys;
+    // The replay viewer's keys (`replayview`), unless the chat line has the keyboard.
+    if sim.session.seek_info().is_some() && scr.status.chat.is_none() {
+        let down = |a: Key, b: Key| keys.any_pressed([a, b]);
+        let (shift, ctrl, alt) = (
+            down(Key::ShiftLeft, Key::ShiftRight),
+            down(Key::ControlLeft, Key::ControlRight),
+            down(Key::AltLeft, Key::AltRight),
+        );
+        for &k in keys.get_just_pressed() {
+            if let Some(a) = replayview::key_act(k, shift, ctrl, alt) {
+                replay_key(sim, a);
+            }
+        }
+    }
     if ui.consumed {
         return;
     }
@@ -2964,6 +3149,7 @@ pub(crate) fn draw_hud(c: &mut Core) {
         local: sim.human,
     };
     let clock_line = clock_ms.and_then(|ms| overlay::overlay_text(ex.game_clock(), ms, sim.actions));
+    let replay_bar = replay_bar(sim);
     let group_bar = if ex.group_bar() {
         group_bar_cells(&sim.world, sim.human)
     } else {
@@ -3016,6 +3202,7 @@ pub(crate) fn draw_hud(c: &mut Core) {
         clock: clock_line.as_deref(),
         group_bar: &group_bar,
         pings: &ping_marks,
+        replay: replay_bar.as_ref(),
     };
     let whole = (hud.art.whole_key(&hud.frame, &layout, &view), hud.image);
     let parts = hud.art.parts(&layout, &view);
