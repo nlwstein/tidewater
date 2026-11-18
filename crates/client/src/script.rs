@@ -342,7 +342,7 @@ pub fn scenes() -> Vec<Scene> {
                 Cmd::Move(400.0, 240.0),
                 Cmd::Until(AppState::Game),
                 Cmd::UntilCycle(3000),
-                Cmd::Wait(2),
+                Cmd::Shot("recorded"),
             ],
             extras: &[],
             keys: "",

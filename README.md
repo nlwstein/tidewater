@@ -412,7 +412,7 @@ Run `tidewater --help` for the same list. The optional positional argument is a 
 | `--demo-select <N>`, `--demo-type <N>`, `--demo-place <N>`, `--demo-site <X,Y>` | Preselect your first N units, narrow that to one unit type, start in building placement, and click a site. |
 | `--record-replay` | Record the game to a `.twrep` replay in the `replays` folder of your user data (see [Replays](#replays)). Off unless given. |
 | `--mod <NAME>` | Turn on the mod in this folder of `<data>/mods` for one run, after the ones Settings enables; repeat for several. See [Mods](#mods). |
-| `--replay <FILE>` | Play a recorded game back, as the recording player saw it. Cannot be combined with `<MAP>`, `--record-replay` or the setup options. `--force-replay` plays it even when it was recorded with other game files. |
+| `--replay <FILE>` | Play a recorded game back, as the recording player saw it. Cannot be combined with `<MAP>`, `--record-replay` or the setup options. `--force-replay` plays it even when it was recorded with other game files, and `--plain-replay` plays it without the timeline and vision keys (a development aid: its frames are the recorded game's own). |
 | `--host [PORT]`, `--join <ADDR>`, `--lobby <SPEC>`, `--observe`, `--name <NAME>` | Network play without the menus. See [Multiplayer](#multiplayer-early). |
 | `--script <NAME>`, `--script-out <DIR>`, `--headless` | Run a scripted scene for the frame snapshot test or the end-to-end network check (the `mp-*` scenes). `--script` and `--script-out` go together; `--headless` uses no window or GPU. |
 

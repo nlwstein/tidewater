@@ -500,7 +500,7 @@ fn load_game(c: &mut Core, map: &str, setup: Option<tidewater_sim::setup::Setup>
     }
     // A replay's viewer can start the game over with another player's view: it keeps the world as built, before the
     // start-up cycles (`replayview`).
-    let replay_origin = replay.is_some().then(|| scene.world.clone());
+    let replay_origin = (replay.is_some() && !c.opts.plain_replay).then(|| scene.world.clone());
     start_world(&mut scene.world, resume.as_deref(), wall, c.flow.cheat_used)?;
     // The game data a recording notes in its header (`tidewater_formats::identity`).
     let data_id = if record {

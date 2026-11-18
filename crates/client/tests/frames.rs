@@ -282,12 +282,18 @@ fn a_scene_recorded_and_replayed_gives_the_same_frames_and_sound() {
         return;
     };
     // The `carry` scene sends a peasant to fell a tree and walks it home; the replay drives the same game from the
-    // file (the scene's clicks only select and look; its orders are ignored) and must show and sound the same.
+    // file (the scene's clicks only select and look; its orders are ignored) and must show and sound the same. The
+    // timeline over the map view is the viewer's own, so it is left out here (`--plain-replay`).
     let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let (ok, want, err) = run_with(&install, "carry", a.path(), &["--record-replay".as_ref()]);
     assert!(ok, "recording failed: {err}");
     let file = recorded(a.path());
-    let (ok, got, err) = run_with(&install, "carry", b.path(), &["--replay".as_ref(), file.as_os_str()]);
+    let (ok, got, err) = run_with(
+        &install,
+        "carry",
+        b.path(),
+        &["--replay".as_ref(), file.as_os_str(), "--plain-replay".as_ref()],
+    );
     assert!(ok, "replaying failed: {err}");
     assert!(!want.is_empty());
     assert_eq!(first_difference(&want, &got), None, "the replay shows something else");
