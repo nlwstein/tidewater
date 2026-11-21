@@ -16,7 +16,14 @@
 //! - **Hidden information.** The numbers are the sim's, for every player. They are shown only on the page that follows
 //!   the score screen, when the game is over.
 //!
-//! Drawing is in [`draw`]; the scaling rules ([`nice_max`], [`plot_x`], [`plot_y`]) are plain functions with tests.
+//! - **The page.** A legend (a color square and the name of every player, wrapped onto more lines if the names are wide)
+//!   over up to six graphs, two to a row; a graph where nobody has anything (oil on a map with no water) is left out, and
+//!   a last graph on its own spans the width. Each graph names its unit at the top right, labels its vertical axis at
+//!   every grid line (round numbers, [`axis`]) and its horizontal axis from the first to the last game time. Every size
+//!   is taken from the fonts it is given, so a wider font (the clear font) moves things instead of overlapping them.
+//!
+//! Drawing is in [`draw`]; the scaling rules ([`axis`], [`plot_x`], [`plot_y`]) and the layout ([`graph_rects`],
+//! [`legend_cells`]) are plain functions with tests.
 
 use tidewater_formats::fnt::Font;
 use tidewater_formats::udta::flags;
@@ -42,6 +49,8 @@ pub const NAMES: [&str; METRICS] = [
     "Workers",
     "Buildings",
 ];
+/// What each number counts, shown at the top right of its graph.
+pub const UNITS: [&str; METRICS] = ["gold", "lumber", "oil", "units", "workers", "buildings"];
 
 /// One reading of every player.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -162,18 +171,45 @@ impl History {
     }
 }
 
-/// The axis top for a largest value: 1, 2 or 5 times a power of ten that is not below it, and at least 5 so a graph of
-/// small counts doesn't stretch one unit over the whole height. 0 gives 5.
-pub fn nice_max(v: u32) -> u32 {
-    let mut step = 1u64;
+/// Most grid intervals a graph's vertical axis has.
+const MAX_INTERVALS: u64 = 5;
+
+/// A graph's vertical axis: a grid line every `step`, the highest at `top` (a whole number of steps).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Axis {
+    pub step: u32,
+    pub top: u32,
+}
+
+/// The axis for a largest value: the smallest step of 1, 2 or 5 times a power of ten that needs at most `max` grid
+/// intervals (2 to [`MAX_INTERVALS`]; a short graph takes fewer so its labels don't touch) to reach it, and at least
+/// two, so a graph of small counts doesn't stretch one unit over the whole height. With 5: 21,000 gives steps of
+/// 5,000 up to 25,000; 3 gives steps of 1 up to 3; 0 gives 1 and 2.
+pub fn axis(peak: u32, max: u64) -> Axis {
+    let max = max.clamp(2, MAX_INTERVALS);
+    let mut base = 1u64;
     loop {
         for m in [1u64, 2, 5] {
-            let top = m * step;
-            if top >= u64::from(v) && top >= 5 {
-                return u32::try_from(top).unwrap_or(u32::MAX);
+            let step = m * base;
+            let n = u64::from(peak).div_ceil(step).max(2);
+            if n <= max {
+                let top = u32::try_from(n * step).unwrap_or(u32::MAX);
+                return Axis {
+                    step: u32::try_from(step).unwrap_or(u32::MAX),
+                    top,
+                };
             }
         }
-        step *= 10;
+        base *= 10;
+    }
+}
+
+/// A grid line's label: whole thousands as `25k`, anything else in full.
+pub fn tick_label(v: u32) -> String {
+    if v >= 1000 && v.is_multiple_of(1000) {
+        format!("{}k", v / 1000)
+    } else {
+        v.to_string()
     }
 }
 
@@ -218,36 +254,93 @@ pub struct Who<'a> {
 
 const GOLD: [u8; 3] = [200, 170, 60];
 const GRID: [u8; 3] = [70, 60, 30];
+const BASE: [u8; 3] = [130, 110, 50];
 const PANEL: [u8; 3] = [14, 12, 8];
 
+/// The page's side margin and the bottom of the graphs.
+const MARGIN: i32 = 16;
+const GRAPHS_BOTTOM: i32 = 440;
+/// The gap between graphs, and the tallest one (so a page of one or two graphs isn't a pair of tall boxes).
+const GAP: i32 = 8;
+const MAX_GRAPH_H: i32 = 150;
+/// The legend's color square and the room between its entries.
+const SWATCH: i32 = 10;
+const ENTRY_GAP: i32 = 14;
+
+/// Where the legend's entries go: the top-left of each entry's color square row (x, y) for entries of the widths
+/// given (name widths in pixels), starting at `y0`, wrapping at the page's right margin; and the y under the last row.
+pub fn legend_cells(widths: &[i32], line_h: i32, y0: i32, page_w: i32) -> (Vec<(i32, i32)>, i32) {
+    let (mut x, mut y) = (MARGIN, y0);
+    let mut at = Vec::new();
+    for &w in widths {
+        let cell = SWATCH + 4 + w;
+        if x > MARGIN && x + cell > page_w - MARGIN {
+            x = MARGIN;
+            y += line_h;
+        }
+        at.push((x, y));
+        x += cell + ENTRY_GAP;
+    }
+    (at, y + line_h)
+}
+
+/// The boxes of `count` graphs in two columns between `top` and [`GRAPHS_BOTTOM`] on a page `page_w` wide; a last
+/// graph with no partner spans both columns.
+pub fn graph_rects(count: usize, top: i32, page_w: i32) -> Vec<Rect> {
+    let rows = count.div_ceil(2).max(1) as i32;
+    let h = ((GRAPHS_BOTTOM - top - GAP * (rows - 1)) / rows).clamp(40, MAX_GRAPH_H);
+    let full = page_w - 2 * MARGIN;
+    let half = (full - GAP) / 2;
+    (0..count)
+        .map(|k| {
+            let (col, row) = (k as i32 % 2, k as i32 / 2);
+            let alone = k + 1 == count && count % 2 == 1;
+            Rect {
+                x: MARGIN + if alone { 0 } else { col * (half + GAP) },
+                y: top + row * (h + GAP),
+                w: (if alone { full } else { half }) as u32,
+                h: h as u32,
+            }
+        })
+        .collect()
+}
+
 /// Draws the page over `p` (the score screen's background, already shaded by the caller's choice): the heading, a
-/// legend and six graphs in two columns, at 640 x 480.
+/// legend and the graphs, at 640 x 480.
 pub fn draw(p: &mut Picture, big: &Font, font: &Font, small: &Font, h: &History, who: &[Who]) {
     let head = "Statistics";
     let hw = big.width(head.as_bytes()) as i32;
     hud::text(p, big, (p.width as i32 - hw) / 2, 8, head);
-    // The legend: a colour square and the name, spread across the width.
+    // The legend: a color square and the name of every player.
     let slots: Vec<u8> = who.iter().map(|w| w.slot).collect();
-    let cell = 608 / who.len().clamp(1, 8) as i32;
-    for (i, w) in who.iter().enumerate() {
-        let x = 16 + i as i32 * cell;
-        hud::fill(p, Rect { x, y: 56, w: 10, h: 10 }, PLAYER_RGB[w.slot as usize & 7]);
-        let name = clip(small, w.name, (cell - 16).max(8) as u32);
-        hud::text(p, small, x + 14, 54, &name);
+    let line_h = i32::from(small.height).max(SWATCH) + 4;
+    let names: Vec<String> = who.iter().map(|w| clip(small, w.name, 300)).collect();
+    let widths: Vec<i32> = names.iter().map(|n| small.width(n.as_bytes()) as i32).collect();
+    let y0 = (12 + i32::from(big.height)).max(46);
+    let (cells, below) = legend_cells(&widths, line_h, y0, p.width as i32);
+    for ((w, name), &(x, y)) in who.iter().zip(&names).zip(&cells) {
+        let sy = y + (line_h - 4 - SWATCH) / 2;
+        hud::fill(
+            p,
+            Rect {
+                x,
+                y: sy,
+                w: SWATCH as u32,
+                h: SWATCH as u32,
+            },
+            PLAYER_RGB[w.slot as usize & 7],
+        );
+        hud::text(p, small, x + SWATCH + 4, y, name);
     }
-    for (k, name) in NAMES.iter().enumerate() {
-        let (col, row) = (k as i32 % 2, k as i32 / 2);
-        let r = Rect {
-            x: 16 + col * 312,
-            y: 76 + row * 116,
-            w: 296,
-            h: 108,
-        };
-        graph(p, font, small, r, name, h, k, &slots);
+    // Only the graphs that have something to show.
+    let shown: Vec<usize> = (0..METRICS).filter(|&k| h.peak(k, &slots) > 0).collect();
+    for (&k, r) in shown.iter().zip(graph_rects(shown.len(), below + 4, p.width as i32)) {
+        graph(p, font, small, r, k, h, &slots);
     }
-    let foot = format!("Game time {}   Press a key to continue", time_text(h.end_ms()));
+    let foot = "Horizontal axis: game time (minutes:seconds)   Press a key to continue";
+    let foot = clip(small, foot, p.width - 2 * MARGIN as u32);
     let fw = small.width(foot.as_bytes()) as i32;
-    hud::text(p, small, (p.width as i32 - fw) / 2, 440, &foot);
+    hud::text(p, small, (p.width as i32 - fw) / 2, GRAPHS_BOTTOM + 8, &foot);
 }
 
 /// `s` cut to fit `max` pixels.
@@ -264,10 +357,7 @@ fn clip(font: &Font, s: &str, max: u32) -> String {
     out
 }
 
-#[allow(clippy::too_many_arguments)]
-fn graph(p: &mut Picture, font: &Font, small: &Font, r: Rect, title: &str, h: &History, metric: usize, slots: &[u8]) {
-    hud::fill(p, r, PANEL);
-    // A one-pixel gold frame, as the score screen's bars.
+fn frame(p: &mut Picture, r: Rect) {
     for edge in [
         Rect {
             x: r.x,
@@ -296,20 +386,42 @@ fn graph(p: &mut Picture, font: &Font, small: &Font, r: Rect, title: &str, h: &H
     ] {
         hud::fill(p, edge, GOLD);
     }
-    let top = nice_max(h.peak(metric, slots));
+}
+
+/// One graph of number `metric` in box `r`: title and unit on top, a labeled grid, a line per player, the times below.
+fn graph(p: &mut Picture, font: &Font, small: &Font, r: Rect, metric: usize, h: &History, slots: &[u8]) {
+    hud::fill(p, r, PANEL);
+    // A one-pixel gold frame, as the score screen's bars.
+    frame(p, r);
+    let (fh, sh) = (i32::from(font.height).max(8), i32::from(small.height).max(6));
+    let title = NAMES[metric];
     hud::text(p, font, r.x + 6, r.y + 2, title);
-    let label = top.to_string();
-    let lw = small.width(label.as_bytes()) as i32;
-    hud::text(p, small, r.x + r.w as i32 - lw - 6, r.y + 4, &label);
-    // The plot, inside the frame with room for the title above and the times below.
+    let (tw, unit) = (font.width(title.as_bytes()) as i32, UNITS[metric]);
+    let uw = small.width(unit.as_bytes()) as i32;
+    if tw + uw + 18 <= r.w as i32 {
+        hud::text(p, small, r.x + r.w as i32 - uw - 6, r.y + 2 + (fh - sh).max(0), unit);
+    }
+    // The most grid lines whose labels fit one above the other in the box.
+    let room = i64::from(r.h) - i64::from(fh) - 12 - i64::from(sh) * 2;
+    let ax = axis(h.peak(metric, slots), (room / i64::from(sh + 6)).max(2) as u64);
+    let ticks: Vec<u32> = (0..=ax.top / ax.step).map(|k| k * ax.step).collect();
+    let label_w = ticks
+        .iter()
+        .map(|&t| small.width(tick_label(t).as_bytes()) as i32)
+        .max()
+        .unwrap_or(0);
+    // The plot, inside the frame: labels to its left, the title above, the times below; half a label of room above
+    // and below the plot so the first and last labels stay inside the frame.
+    let left = r.x + 6 + label_w + 5;
+    let top = r.y + fh + 6 + sh / 2;
     let plot = Rect {
-        x: r.x + 8,
-        y: r.y + 22,
-        w: r.w - 16,
-        h: r.h - 22 - 16,
+        x: left,
+        y: top,
+        w: (r.x + r.w as i32 - 8 - left).max(8) as u32,
+        h: (r.y + r.h as i32 - 4 - sh - 2 - top).max(8) as u32,
     };
-    for frac in [0, 1, 2] {
-        let y = plot.y + plot_y(top * frac / 2, top, plot.h as i32);
+    for &t in &ticks {
+        let y = plot.y + plot_y(t, ax.top, plot.h as i32);
         hud::fill(
             p,
             Rect {
@@ -318,8 +430,11 @@ fn graph(p: &mut Picture, font: &Font, small: &Font, r: Rect, title: &str, h: &H
                 w: plot.w,
                 h: 1,
             },
-            GRID,
+            if t == 0 { BASE } else { GRID },
         );
+        let l = tick_label(t);
+        let lw = small.width(l.as_bytes()) as i32;
+        hud::text(p, small, plot.x - 4 - lw, y - sh / 2, &l);
     }
     let start = h.samples.first().map_or(0, |s| s.ms);
     let end = h.end_ms();
@@ -328,7 +443,7 @@ fn graph(p: &mut Picture, font: &Font, small: &Font, r: Rect, title: &str, h: &H
         for s in &h.samples {
             let pt = (
                 plot.x + plot_x(s.ms, start, end, plot.w as i32),
-                plot.y + plot_y(s.players[slot as usize & 7][metric], top, plot.h as i32),
+                plot.y + plot_y(s.players[slot as usize & 7][metric], ax.top, plot.h as i32),
             );
             if let Some(a) = prev {
                 line(p, a, pt, PLAYER_RGB[slot as usize & 7]);
@@ -336,7 +451,7 @@ fn graph(p: &mut Picture, font: &Font, small: &Font, r: Rect, title: &str, h: &H
             prev = Some(pt);
         }
     }
-    let y = plot.y + plot.h as i32 + 3;
+    let y = plot.y + plot.h as i32 + 4;
     hud::text(p, small, plot.x, y, &time_text(start));
     let e = time_text(end);
     let ew = small.width(e.as_bytes()) as i32;
@@ -377,16 +492,91 @@ mod tests {
     }
 
     #[test]
-    fn nice_max_rounds_up_to_1_2_5() {
-        assert_eq!(nice_max(0), 5);
-        assert_eq!(nice_max(3), 5);
-        assert_eq!(nice_max(5), 5);
-        assert_eq!(nice_max(6), 10);
-        assert_eq!(nice_max(11), 20);
-        assert_eq!(nice_max(20), 20);
-        assert_eq!(nice_max(21), 50);
-        assert_eq!(nice_max(12_400), 20_000);
-        assert_eq!(nice_max(u32::MAX), u32::MAX, "no overflow");
+    fn axis_rounds_up_to_whole_steps_of_1_2_5() {
+        assert_eq!(axis(0, 5), Axis { step: 1, top: 2 });
+        assert_eq!(axis(3, 5), Axis { step: 1, top: 3 });
+        assert_eq!(axis(5, 5), Axis { step: 1, top: 5 });
+        assert_eq!(axis(6, 5), Axis { step: 2, top: 6 });
+        assert_eq!(axis(11, 5), Axis { step: 5, top: 15 });
+        assert_eq!(
+            axis(21_000, 5),
+            Axis {
+                step: 5000,
+                top: 25_000
+            }
+        );
+        assert_eq!(
+            axis(12_400, 5),
+            Axis {
+                step: 5000,
+                top: 15_000
+            }
+        );
+        assert_eq!(
+            axis(100_000, 5),
+            Axis {
+                step: 20_000,
+                top: 100_000
+            }
+        );
+        let a = axis(u32::MAX, 5);
+        assert_eq!(a.top, u32::MAX, "no overflow");
+        for v in [0, 1, 7, 99, 1234, 56_789, 3_000_000] {
+            let a = axis(v, 5);
+            assert!(
+                a.top >= v && a.top.is_multiple_of(a.step) && a.top / a.step <= 5,
+                "{v}: {a:?}"
+            );
+        }
+        assert_eq!(
+            axis(21_000, 3),
+            Axis {
+                step: 10_000,
+                top: 30_000
+            },
+            "fewer lines in a short graph"
+        );
+        assert_eq!(axis(7, 1), axis(7, 2), "at least two intervals");
+        assert_eq!(tick_label(0), "0");
+        assert_eq!(tick_label(500), "500");
+        assert_eq!(tick_label(25_000), "25k");
+        assert_eq!(tick_label(2500), "2500");
+    }
+
+    #[test]
+    fn graphs_fill_the_page_without_overlap() {
+        for count in 1..=6 {
+            let rs = graph_rects(count, 70, 640);
+            assert_eq!(rs.len(), count);
+            for (i, a) in rs.iter().enumerate() {
+                assert!(
+                    a.x >= MARGIN && a.x + a.w as i32 <= 640 - MARGIN,
+                    "{count} {i} in width"
+                );
+                assert!(a.y >= 70 && a.y + a.h as i32 <= GRAPHS_BOTTOM, "{count} {i} in height");
+                for b in &rs[i + 1..] {
+                    let apart = a.x + a.w as i32 <= b.x
+                        || b.x + b.w as i32 <= a.x
+                        || a.y + a.h as i32 <= b.y
+                        || b.y + b.h as i32 <= a.y;
+                    assert!(apart, "{count}: {a:?} and {b:?} overlap");
+                }
+            }
+        }
+        let five = graph_rects(5, 70, 640);
+        assert_eq!(five[4].w, 608, "a lone last graph spans the width");
+    }
+
+    #[test]
+    fn the_legend_wraps_instead_of_overflowing() {
+        let (at, below) = legend_cells(&[60, 60, 60], 14, 50, 640);
+        assert_eq!(at, vec![(16, 50), (104, 50), (192, 50)]);
+        assert_eq!(below, 64);
+        let wide = [200; 8];
+        let (at, below) = legend_cells(&wide, 14, 50, 640);
+        assert!(at.iter().all(|&(x, _)| x + 214 <= 640 - MARGIN), "{at:?}");
+        assert!(at.windows(2).all(|w| w[1].1 >= w[0].1));
+        assert!(below > 50 + 14, "wrapped onto more lines: {below}");
     }
 
     #[test]

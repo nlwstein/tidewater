@@ -223,22 +223,28 @@ without new screen code. The file and the flags still work and are for power use
   both are on. The scene `extras-zoom` shows it.
 - **Game statistics** (`game-stats`, C). Off by default, which leaves the original's score screen and what follows it as
   they are. With it on, a game's per-player numbers are sampled as it runs, and when the score screen has counted up
-  and shows "Press a key for the game statistics", a key or click opens a page of six line graphs over game time (two
-  columns of three, at 640 x 480, in the score screen's font and gold, over its darkened background): gold, lumber and
-  oil gathered, army size, workers and buildings, one line per player in that player's colour (the minimap's player
-  colours; black is drawn grey so it shows), with a legend of the rows' names and the game's length at the foot. The
-  next key closes it and the flow goes on as it always does. The original score screen is not changed: with the option
+  and shows "Press a key for the game statistics", a key or click opens a page of line graphs over game time (at
+  640 x 480, in the score screen's font and gold, over its darkened background): gold, lumber and oil gathered, army
+  size, workers and buildings, one line per player in that player's colour (the minimap's player colours; black is
+  drawn grey so it shows). The legend above the graphs gives every player's colour and name ("You", then the
+  computer players' nation names; the lines wrap if the names are wide). The graphs sit two to a row; one where nobody
+  has anything (oil on a map with no water) is left out, and a last one on its own spans the width. Each names its unit
+  at the top right, labels every grid line with a round number (steps of 1, 2 or 5 times a power of ten, at most five
+  intervals, fewer in a short graph; thousands as `25k`) and its first and last game time below; the foot says the
+  horizontal axis is game time. All sizes come from the fonts, so a wider font moves the labels instead of overlapping
+  them. The next key closes the page and the flow goes on as it always does. The original score screen is not changed: with the option
   off nothing is sampled and nothing extra is drawn.
   **Sampling** (`gamestats::History`) reads the world after a game cycle, every 120 cycles at first, and never writes to
   it, so the sim, its hash, saved games and replays are what they were. The sample holds the game clock's milliseconds
   for the horizontal axis. At 1,024 samples every second one is dropped and the interval doubles, so a long game stays
   small. **Army** is a player's finished units that are not workers or oil tankers, **workers** are peasants and
   peons, **buildings** are finished buildings that count in the score. **Saved and loaded games:** sampling is part of
-  the running client, not the save, so a loaded game's graphs start at the load. The same goes for turning the option on
-  during a game. **Replays** are sampled like played games. **Multiplayer:** the numbers are the sim's, for every
+  the running client, not the save, so a loaded game's graphs start at the load (the first time label is the load's game time, and the lines start at the totals then). The same goes for turning the option on
+  during a game. **Replays** are sampled like played games, but a replay ends held on its last cycle without the outcome dialog or the score screen, so no page follows one. **Multiplayer:** the numbers are the sim's, for every
   player, which would be hidden information during play; they are only drawn on the page after the game is over, so
   it gives no edge and the option is client-only (C). Not done: a timeline table of key moments (first kill, first
-  building lost); the sim does not keep those. The scene `extras-stats` shows it; rules and drawing in `gamestats.rs`.
+  building lost); the sim does not keep those. The scene `extras-stats` shows it: you against three computer players on Gold Rush, about 14 game minutes, won by the
+  victory cheat; rules and drawing in `gamestats.rs`.
 
 ## Rebindable keys
 

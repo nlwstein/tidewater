@@ -138,6 +138,9 @@ pub struct Flow {
     pub score: Option<ScoreData>,
     /// The slots the score screen's rows show, in row order (for the statistics page).
     pub stats_slots: Vec<u8>,
+    /// The names the statistics page's legend shows for those slots: "You" for the local player, the nation's name for
+    /// a computer player, the row's line in a multiplayer game.
+    pub stats_names: Vec<String>,
     /// The readings of the game that ended, for the statistics page after the score screen (option `game-stats`).
     pub stats: Option<crate::gamestats::History>,
     /// The player names of the session's slots, for a multiplayer score screen's rows (empty: "Anonymous").
@@ -489,6 +492,17 @@ pub fn end_with(flow: &mut Flow, front: &mut Front, world: &tidewater_sim::World
             .map(|r| ((front.net(r.label), front.net(r.name), r.stats), r.slot))
             .unzip()
     };
+    flow.stats_names = rows
+        .iter()
+        .zip(&slots)
+        .map(|((label, name, _), &slot)| {
+            if !label.is_empty() && slot == human || name.is_empty() {
+                label.clone()
+            } else {
+                name.clone()
+            }
+        })
+        .collect();
     flow.stats_slots = slots;
     flow.stats = None;
     let mission = flow.total.close(world.players[human as usize].score, victory);
@@ -3529,14 +3543,11 @@ fn run_score(c: &mut Core) {
             let mut p = dup(&sc.background);
             let (pw, ph) = (p.width, p.height);
             shade(&mut p, rect(0, 0, pw, ph));
-            let who: Vec<crate::gamestats::Who> = s
-                .rows
+            let who: Vec<crate::gamestats::Who> = flow
+                .stats_names
                 .iter()
                 .zip(&flow.stats_slots)
-                .map(|((label, name, _), &slot)| crate::gamestats::Who {
-                    slot,
-                    name: if label.is_empty() { name } else { label },
-                })
+                .map(|(name, &slot)| crate::gamestats::Who { slot, name })
                 .collect();
             crate::gamestats::draw(&mut p, &front.big, &front.font, &front.small, h, &who);
             set_image(pictures, &sc.image, p);
