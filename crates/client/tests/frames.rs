@@ -105,17 +105,54 @@ fn first_difference(want: &str, got: &str) -> Option<String> {
     ))
 }
 
+/// The installation from `TIDEWATER_INSTALL`, seen through a temporary folder whose `Maps` holds only the
+/// root-level `.pud` files. The Select Scenario dialog lists every `.pud` under `Maps`, so a full extract (with
+/// `Classic`, `Ladder` and `Scenario` subfolders) would otherwise show other lists than the flat copy the snapshots
+/// were blessed on. Every other top-level entry is a symlink to the real one.
+fn flat_install() -> Option<tempfile::TempDir> {
+    let real = PathBuf::from(std::env::var_os("TIDEWATER_INSTALL")?);
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    for entry in std::fs::read_dir(&real).expect("the installation folder") {
+        let entry = entry.expect("an installation entry");
+        if entry.file_name().eq_ignore_ascii_case("maps") {
+            let maps = dir.path().join(entry.file_name());
+            std::fs::create_dir(&maps).expect("the flat Maps folder");
+            for pud in std::fs::read_dir(entry.path()).expect("the Maps folder") {
+                let pud = pud.expect("a Maps entry");
+                let name = pud.file_name();
+                let is_pud = Path::new(&name)
+                    .extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("pud"));
+                if is_pud && pud.path().is_file() {
+                    symlink(pud.path(), maps.join(&name));
+                }
+            }
+        } else {
+            symlink(entry.path(), dir.path().join(entry.file_name()));
+        }
+    }
+    Some(dir)
+}
+
+fn symlink(from: PathBuf, to: PathBuf) {
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&from, &to).expect("a symlink");
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_file(&from, &to).expect("a symlink");
+}
+
 #[test]
 fn every_scene_shows_and_sounds_as_snapshotted() {
-    let Some(install) = std::env::var_os("TIDEWATER_INSTALL") else {
+    let Some(flat) = flat_install() else {
         eprintln!("skipped: set TIDEWATER_INSTALL to run");
         return;
     };
+    let install = flat.path().as_os_str();
     let bless = on("TIDEWATER_SNAPSHOT_BLESS");
     let mut failures = Vec::new();
     for scene in SCENES {
         let dir = tempfile::tempdir().expect("a temporary folder");
-        let got = run(&install, scene, dir.path(), true);
+        let got = run(install, scene, dir.path(), true);
         let got_audio =
             std::fs::read_to_string(dir.path().join(format!("{scene}-audio.txt"))).expect("the run's mixed sound");
         for (file, got) in [(snapshot(scene), got), (audio_snapshot(scene), got_audio)] {
@@ -176,15 +213,16 @@ fn the_first_run_screen_shows_as_snapshotted() {
 #[test]
 #[ignore = "opens a window"]
 fn the_window_shows_the_composed_frames() {
-    let Some(install) = std::env::var_os("TIDEWATER_INSTALL") else {
+    let Some(flat) = flat_install() else {
         eprintln!("skipped: set TIDEWATER_INSTALL to run");
         return;
     };
+    let install = flat.path().as_os_str();
     let mut report = Vec::new();
     for scene in SCENES {
         let tmp = tempfile::tempdir().expect("a temporary folder");
         let out = std::env::var_os("TIDEWATER_SCRIPT_OUT").map_or_else(|| tmp.path().to_path_buf(), PathBuf::from);
-        let windowed = run(&install, scene, &out, false);
+        let windowed = run(install, scene, &out, false);
         let compare = std::fs::read_to_string(out.join(format!("{scene}-compare.txt"))).expect("the comparison");
         for line in compare.lines() {
             let (shot, differing) = line.split_once('\t').expect("shot and count");
@@ -237,17 +275,18 @@ fn recorded(out: &Path) -> PathBuf {
 
 #[test]
 fn a_scene_recorded_and_replayed_gives_the_same_frames_and_sound() {
-    let Some(install) = std::env::var_os("TIDEWATER_INSTALL") else {
+    let Some(flat) = flat_install() else {
         eprintln!("skipped: set TIDEWATER_INSTALL to run");
         return;
     };
+    let install = flat.path().as_os_str();
     // The `carry` scene sends a peasant to fell a tree and walks it home; the replay drives the same game from the
     // file (the scene's clicks only select and look; its orders are ignored) and must show and sound the same.
     let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    let (ok, want, err) = run_with(&install, "carry", a.path(), &["--record-replay".as_ref()]);
+    let (ok, want, err) = run_with(install, "carry", a.path(), &["--record-replay".as_ref()]);
     assert!(ok, "recording failed: {err}");
     let file = recorded(a.path());
-    let (ok, got, err) = run_with(&install, "carry", b.path(), &["--replay".as_ref(), file.as_os_str()]);
+    let (ok, got, err) = run_with(install, "carry", b.path(), &["--replay".as_ref(), file.as_os_str()]);
     assert!(ok, "replaying failed: {err}");
     assert!(!want.is_empty());
     assert_eq!(first_difference(&want, &got), None, "the replay shows something else");
@@ -262,7 +301,7 @@ fn a_scene_recorded_and_replayed_gives_the_same_frames_and_sound() {
     let bad = b.path().join("bad.twrep");
     std::fs::write(&bad, &bytes).unwrap();
     let c = tempfile::tempdir().unwrap();
-    let (ok, _, err) = run_with(&install, "carry", c.path(), &["--replay".as_ref(), bad.as_os_str()]);
+    let (ok, _, err) = run_with(install, "carry", c.path(), &["--replay".as_ref(), bad.as_os_str()]);
     assert!(!ok, "a damaged replay must not run");
     assert!(err.contains("bad.twrep") && !err.contains("panicked"), "{err}");
 }
