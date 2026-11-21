@@ -392,6 +392,20 @@ pub fn scenes() -> Vec<Scene> {
             ],
             keys: "",
         },
+        // Production progress bars under your own buildings at work, and the income rates in the resource bar.
+        Scene {
+            name: "extras-progress",
+            start: vec![play(4)],
+            cmds: extras_progress(),
+            extras: &[
+                ("progress-income", "both"),
+                ("idle-worker", "on"),
+                ("shift-queue", "on"),
+                ("rally-points", "on"),
+                ("production-queue", "on"),
+            ],
+            keys: "",
+        },
         // Rebound keys: the Move button on J, the pause key on Ctrl+U (Ctrl+P no longer pauses), the idle key on Ctrl+I.
         Scene {
             name: "extras-keys",
@@ -1791,6 +1805,73 @@ fn extras_sim() -> Vec<Cmd> {
         v.push(Wait(2));
     }
     v.extend([Wait(3), Shot("queued")]);
+    v
+}
+
+/// Production progress and income: a Town Hall training peasants, a minute of play, the numbers beside the counters.
+fn extras_progress() -> Vec<Cmd> {
+    use Cmd::*;
+    // A click, then a pause for the command panel to follow the new selection.
+    let pick = |x: f32, y: f32| {
+        let mut c = click(x, y).to_vec();
+        c.push(Wait(3));
+        c
+    };
+    let mut v = vec![Move(400.0, 240.0), Until(AppState::Game), Wait(5), Shot("start")];
+    // Money and quick building (cheats), then the idle peasant builds a Farm and, queued behind it, a Lumber Mill.
+    v.extend(chat("glittering prizes"));
+    v.extend(chat("make it so"));
+    v.extend(tap(Key::F(6)));
+    v.extend([Wait(3)]);
+    v.extend(tap(Key::Letter('B')));
+    v.extend([Wait(3)]);
+    v.extend(pick(33.0, 358.0));
+    v.extend(pick(470.0, 215.0));
+    v.extend(tap(Key::Letter('B')));
+    v.extend([Wait(3)]);
+    v.extend(pick(33.0, 405.0));
+    v.extend([Press(Key::ShiftLeft), Wait(1)]);
+    v.extend(pick(480.0, 290.0));
+    v.extend([Release(Key::ShiftLeft), Wait(30), Shot("sites")]);
+    // Once the Farm stands, the Town Hall trains peasants.
+    v.extend([Wait(330)]);
+    v.extend(pick(305.0, 350.0));
+    v.extend(pick(33.0, 358.0));
+    v.extend(pick(33.0, 358.0));
+    v.extend([Wait(60), Shot("training")]);
+    v.extend([Wait(500), Shot("mill-done")]);
+    // The two new peasants (a box round them) and the builder go to cut wood.
+    v.extend([
+        Move(200.0, 305.0),
+        Down(Button::Left),
+        Wait(1),
+        Move(250.0, 365.0),
+        Wait(1),
+        Up(Button::Left),
+        Wait(3),
+        Shot("box"),
+        Move(232.0, 452.0),
+        Down(Button::Right),
+        Wait(1),
+        Up(Button::Right),
+        Wait(2),
+    ]);
+    v.extend(pick(445.0, 292.0));
+    v.extend([
+        Shot("one"),
+        Move(210.0, 448.0),
+        Down(Button::Right),
+        Wait(1),
+        Up(Button::Right),
+        Wait(2),
+    ]);
+    v.extend([Wait(3200), Shot("income")]);
+    // Then the Lumber Mill researches an upgrade and the Town Hall trains: bars under both, the income under the counters.
+    v.extend(pick(510.0, 330.0));
+    v.extend(pick(33.0, 358.0));
+    v.extend(pick(305.0, 350.0));
+    v.extend(pick(33.0, 358.0));
+    v.extend([Wait(120), Shot("both")]);
     v
 }
 
