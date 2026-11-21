@@ -1572,6 +1572,22 @@ fn lobby() -> Vec<Cmd> {
     v
 }
 
+/// The screen y of row `row` of the lobby's Extras list. The list opens above its box with its last row fixed, so the
+/// rows move up as options are added to the registry; this is computed from the registry (the row the scenes
+/// clicked at 173 and 293 when the list had eight rows).
+fn extras_row_y(row: usize) -> f32 {
+    let rows = crate::lobbyscreen::SIM_EXTRAS + crate::extras::lobby_specs().count();
+    (173 + 20 * row) as f32 - 20.0 * (rows as f32 - 8.0)
+}
+
+/// The row of the lobby's C+L option `id` in the Extras list.
+fn extras_row_of(id: crate::extras::Id) -> usize {
+    crate::lobbyscreen::SIM_EXTRAS
+        + crate::extras::lobby_specs()
+            .position(|s| s.id == id)
+            .expect("a lobby option")
+}
+
 /// The creator's lobby with the Extras box showing: its list opened, a C+L row cycled, then the Observers list.
 fn lobby_extras() -> Vec<Cmd> {
     use Cmd::*;
@@ -1590,9 +1606,12 @@ fn lobby_extras() -> Vec<Cmd> {
     v.extend([Wait(6), Shot("box")]);
     v.extend(click(480.0, 336.0));
     v.extend([Wait(3), Shot("list")]);
-    // The list opens above its box (it has eight rows): the seventh is the second C+L option. One pick changes it and
+    // The list opens above its box (its rows come from the registry): the pick is smart attack-move, the second C+L option. One pick changes it and
     // the list stays open.
-    v.extend(click(480.0, 293.0));
+    v.extend(click(
+        480.0,
+        extras_row_y(extras_row_of(crate::extras::Id::SmartAttackMove)),
+    ));
     v.extend([Wait(3), Shot("picked")]);
     v.extend(tap(K::Escape));
     v.extend(click(490.0, 246.0));
@@ -2647,9 +2666,12 @@ fn mp_host(way: Way) -> Vec<Cmd> {
     // Extras: rally points (a simulation option) and smart attack-move (C+L) on, for everyone.
     v.extend(click(480.0, 336.0));
     v.extend([Wait(3)]);
-    v.extend(click(480.0, 173.0));
+    v.extend(click(480.0, extras_row_y(0)));
     v.extend([Wait(2)]);
-    v.extend(click(480.0, 293.0));
+    v.extend(click(
+        480.0,
+        extras_row_y(extras_row_of(crate::extras::Id::SmartAttackMove)),
+    ));
     v.extend([Wait(2), Shot("extras-list")]);
     v.extend(tap(K::Escape));
     v.push(Wait(2));

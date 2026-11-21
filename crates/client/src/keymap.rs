@@ -445,13 +445,8 @@ pub fn rows() -> Vec<Row> {
                     format!("F{}", crate::idle::KEY),
                     format!("F{} (with or without Ctrl, Alt or Shift)", crate::idle::KEY),
                 ),
-                Some(Bind::Select(n)) => {
-                    let d = SELECT_DEFAULTS[n].text();
-                    (
-                        d.clone(),
-                        format!("{d} (option quick-select; the original leaves it unbound)"),
-                    )
-                }
+                // The original leaves both keys unbound.
+                Some(Bind::Select(n)) => (SELECT_DEFAULTS[n].text(), "no key".to_string()),
                 Some(Bind::Button(_)) => ("own letter".to_string(), "the letter on the button".to_string()),
                 Some(Bind::Slot(_)) | None => ("-".to_string(), "none".to_string()),
             };

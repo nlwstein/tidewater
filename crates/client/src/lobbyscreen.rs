@@ -1238,7 +1238,7 @@ impl Lobby {
 }
 
 /// How many rows of the Extras list are the simulation's options; the client-only ones (C+L) follow.
-const SIM_EXTRAS: usize = 5;
+pub(crate) const SIM_EXTRAS: usize = 5;
 
 /// The observers list: how many places the creator allows.
 fn observer_labels() -> Vec<String> {

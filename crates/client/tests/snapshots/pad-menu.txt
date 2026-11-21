@@ -46,7 +46,7 @@ frames	65-65	2e0582ebfd2c538e
 frames	66-66	0be010428f2a2f26
 frames	67-67	7e8de2e0c8b0c179
 frames	68-68	d5a83410eb5da0a7
-frames	69-69	bca60bf72fe6df5f
+frames	69-69	3cb1f0f246f52e1b
 shot	75	controller	da070334cca595ae
 frames	70-76	da070334cca595ae
 frames	77-77	a205092fc4bb37fe
