@@ -30,6 +30,7 @@ mod groupbar;
 pub mod host;
 mod hud;
 mod idle;
+mod income;
 mod info;
 pub mod input;
 mod jukebox;
