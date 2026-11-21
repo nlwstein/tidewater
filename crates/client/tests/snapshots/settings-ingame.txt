@@ -19,15 +19,15 @@ frames	72-72	e467da899a1d6a34
 shot	74	health-always	0288008a7f64118a
 frames	73-74	0288008a7f64118a
 frames	75-75	19f3e5d6cccbf172
-shot	78	gameplay	5a12275b14853f9c
-frames	76-78	5a12275b14853f9c
-frames	79-79	a5788e5d1d0cc37e
-shot	82	gameplay-click	e54034c3faf25660
-frames	80-82	e54034c3faf25660
-frames	83-83	32369f8b2ba9d30f
-shot	89	keys	af4d862ba93d22ba
-frames	84-89	af4d862ba93d22ba
-frames	90-90	9c6c8d09fa981728
+shot	78	gameplay	7b5049e297161e59
+frames	76-78	7b5049e297161e59
+frames	79-79	4db9458c55398a2f
+shot	82	gameplay-click	abd0d43c6c3fa44d
+frames	80-82	abd0d43c6c3fa44d
+frames	83-83	feccc4b64c873efa
+shot	89	keys	09ee8af2872ed03b
+frames	84-89	09ee8af2872ed03b
+frames	90-90	c88d4ae2484304b5
 frames	91-91	c130c5ad080cc87e
 frames	92-128	22204420bbc12765
 shot	131	applied	4eeee8ac3538594d

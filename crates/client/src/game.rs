@@ -31,7 +31,7 @@ use crate::panel::PanelState;
 use crate::session::{LocalSession, Recorder, ReplaySession, Session};
 use crate::{
     attackmove, audio, campaign, display, fog, frontend, groupbar, hud, idle, info, mapview, messages, minimap, mouse,
-    overlay, palette, panel, ping, savefile, savegame, scene, screen, sound, view,
+    overlay, palette, panel, ping, quickselect, savefile, savegame, scene, screen, sound, view,
 };
 
 pub struct Loaded(pub Option<scene::Scene>);
@@ -2225,6 +2225,7 @@ fn centre_view(view: &mut mapview::MapView, c: Vec2) {
 pub(crate) fn mouse_input(c: &mut Core) {
     let smart_attack = extras(c).smart_attack_move();
     let ping_on = extras(c).minimap_ping();
+    let quick = extras(c).quick_select();
     let Core {
         time,
         view,
@@ -2279,6 +2280,14 @@ pub(crate) fn mouse_input(c: &mut Core) {
                     }
                     None => (px(from), px(to)),
                 };
+                // Option `quick-select`: a double-click under Classic rules (Enhanced has its own rule).
+                if quick
+                    && press.double
+                    && mouse::PxRect::between(from, to).small()
+                    && let Some(p) = quickselect::double_click(b, from, &sel.units)
+                {
+                    return p;
+                }
                 mouse::release(b, from, to, press, &sel.units, &mut sel.remembered)
             });
             if let mouse::Pick::Set { units, sound } = pick {
@@ -2378,7 +2387,7 @@ pub(crate) fn mouse_input(c: &mut Core) {
             mouse::Action::Select => {
                 let Some(at) = at else { continue };
                 let now = time.elapsed_secs_f64();
-                let double = enhanced
+                let double = (enhanced || quick)
                     && sel.last_press.is_some_and(|(t, p)| {
                         now - t <= mouse::DOUBLE_MS as f64 / 1000.0
                             && (at - p).abs().max_element() <= mouse::SMALL as f32
@@ -2490,6 +2499,7 @@ fn group_press(
 /// ones that open menus and dialogs, and Ctrl+S, are handled by `gamemenu`.
 pub(crate) fn keys_input(c: &mut Core) {
     let idle_on = c.extras.idle_worker();
+    let quick = extras(c).quick_select();
     let Core {
         time,
         sim: Some(sim),
@@ -2532,6 +2542,23 @@ pub(crate) fn keys_input(c: &mut Core) {
             select_idle(sim, sel, Some(&mut *mv));
             continue;
         }
+        // Option `quick-select` (`quickselect`): Ctrl+A and Alt+A select the fighting units; the keys are not the
+        // original's, so a key it uses is never taken here.
+        if quick && !sim.world.paused {
+            let reach = [(0, quickselect::Reach::Screen), (1, quickselect::Reach::Map)]
+                .into_iter()
+                .find(|&(n, _)| stored.0.keys.select_pressed(n, k, m))
+                .map(|(_, r)| r);
+            if let Some(reach) = reach {
+                let units = with_board(&sim.world, human, art.as_ref(), mv.tiles(), |b| {
+                    quickselect::combat(b, &|id| quickselect::is_combat(&sim.world, human, id), reach)
+                });
+                if !units.is_empty() {
+                    sel.set(sim, units, true);
+                }
+                continue;
+            }
+        }
         // The client plays one human player; while the chat line is open, `chat` has taken the typing keys already.
         // The key map (`keymap`) turns a rebound key into the chord of its action first; without a `[keys]` section it
         // is the pressed key.
@@ -2556,6 +2583,29 @@ pub(crate) fn keys_input(c: &mut Core) {
                 sim.pending.push(Command::Speed { player: human, speed });
             }
             mouse::KeyAction::Pause => sim.pending.push(pause_or_resume(&sim.world, &sim.pending, human)),
+            // Option `quick-select`: Ctrl+Shift+digit adds the selection to the group instead of replacing it.
+            mouse::KeyAction::Group(mouse::GroupKey::Set, g)
+                if quick
+                    && m.shift
+                    && m.ctrl
+                    && sim.world.rules.enhanced
+                    && !sim.world.paused
+                    && game_key(k) == Some(mouse::Key::Digit(g)) =>
+            {
+                let group = sim.world.selections[human as usize]
+                    .groups
+                    .get(g as usize)
+                    .cloned()
+                    .unwrap_or_default();
+                let units = quickselect::add_to_group(&group, &sel.units, sim.world.rules.extras.selection_cap());
+                if !units.is_empty() {
+                    sel.set(sim, units, false);
+                    sim.pending.push(Command::SetGroup {
+                        player: human,
+                        group: g,
+                    });
+                }
+            }
             mouse::KeyAction::Group(key, g) => {
                 let mode = matches!(ui.mode, panel::Mode::Target(_) | panel::Mode::Place(_));
                 let now = (time.elapsed_secs_f64() * 1000.0) as u64;

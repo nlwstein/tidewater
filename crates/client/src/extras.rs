@@ -53,10 +53,11 @@ pub enum Id {
     PadSwap,
     PadHideTouch,
     Controls,
+    QuickSelect,
 }
 
 /// How many options there are.
-pub const COUNT: usize = 32;
+pub const COUNT: usize = 33;
 
 /// Who decides an option in a game with other players.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -439,6 +440,15 @@ pub const REGISTRY: [Spec; COUNT] = [
         scope: Scope::Client,
         description: "Which devices work the game; the keyboard always does. `auto`: every device there is. `mouse`: keyboard and mouse only. `touch`: fingers. `pad`: controller. `pad-touch`: both. A missing device falls back to `auto`",
     },
+    Spec {
+        id: Id::QuickSelect,
+        name: "quick-select",
+        label: "Quick select",
+        kind: Kind::Flag,
+        default: 0,
+        scope: Scope::ClientLobby,
+        description: "Faster selecting: a double-click on one of your units selects all of its type on screen under Classic rules too, Ctrl+A selects your fighting units on screen, Alt+A all of them on the map, and Ctrl+Shift+digit adds the selection to a control group",
+    },
 ];
 
 impl Id {
@@ -646,6 +656,10 @@ impl ClientExtras {
 
     pub fn smart_attack_move(&self) -> bool {
         self.get(Id::SmartAttackMove) != 0
+    }
+
+    pub fn quick_select(&self) -> bool {
+        self.get(Id::QuickSelect) != 0
     }
 
     pub fn minimap_ping(&self) -> bool {

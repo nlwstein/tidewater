@@ -148,7 +148,12 @@ pub(crate) fn extra_page(id: Id) -> Page {
         | Id::AutoReplay
         | Id::MapZoom => Page::Interface,
         Id::VolumeVoices | Id::VolumeEffects | Id::VolumeMusic => Page::Sound,
-        Id::RallyPoints | Id::ProductionQueue | Id::SelectionLimit | Id::SpeedLevels | Id::ShiftQueue => Page::Gameplay,
+        Id::RallyPoints
+        | Id::ProductionQueue
+        | Id::SelectionLimit
+        | Id::SpeedLevels
+        | Id::ShiftQueue
+        | Id::QuickSelect => Page::Gameplay,
         Id::TouchDrag
         | Id::TouchSmartTap
         | Id::TouchTwoFinger
@@ -269,9 +274,10 @@ pub(crate) fn shown(item: Item, env: &Env) -> bool {
 }
 
 /// Whether the row is shown but cannot be changed here: during a game the Gameplay page's options are the game's rules
-/// (`Rules::extras`), fixed when it started.
+/// (`Rules::extras`), fixed when it started. (Quick select is the player's own client option and stays editable.)
 pub(crate) fn read_only(item: Item, env: &Env) -> bool {
-    env.in_game && matches!(item, Item::Extra(id) if extra_page(id) == Page::Gameplay)
+    env.in_game
+        && matches!(item, Item::Extra(id) if extra_page(id) == Page::Gameplay && id.spec().scope == crate::extras::Scope::Sim)
 }
 
 /// A button that is not a drop-down.
@@ -1826,7 +1832,8 @@ mod tests {
                 "production-queue",
                 "selection-limit",
                 "speed-levels",
-                "shift-queue"
+                "shift-queue",
+                "quick-select"
             ]
         );
         assert_eq!(items_on(Page::General).first(), Some(&Item::Window));

@@ -54,6 +54,7 @@ mod panel;
 pub mod phases;
 mod ping;
 mod prefs;
+mod quickselect;
 mod savedlg;
 mod savefile;
 mod savegame;

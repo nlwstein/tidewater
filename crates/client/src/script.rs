@@ -380,6 +380,14 @@ pub fn scenes() -> Vec<Scene> {
             extras: &[("smart-attack-move", "on")],
             keys: "",
         },
+        // Quick select: Ctrl+A and Alt+A pick the fighting units, Ctrl+Shift+digit adds to a control group.
+        Scene {
+            name: "extras-select",
+            start: vec![play(0)],
+            cmds: extras_select(),
+            extras: &[("quick-select", "on")],
+            keys: "",
+        },
         // Rally points and the production queue: a barracks-type building selected, a rally flag, jobs waiting.
         Scene {
             name: "extras-sim",
@@ -1774,6 +1782,36 @@ fn extras_attack() -> Vec<Cmd> {
         Up(Button::Right),
     ]);
     v.extend([Wait(3), Shot("worker-moves")]);
+    v
+}
+
+/// Quick select: the fighting units on screen (Ctrl+A) and on the map (Alt+A), then a group built up with
+/// Ctrl+Shift+digit from a fighter and a worker, and recalled.
+fn extras_select() -> Vec<Cmd> {
+    use Cmd::*;
+    let mut v = vec![Move(400.0, 240.0), Until(AppState::Game), Wait(5), Shot("none")];
+    v.extend(ctrl_tap(Key::Letter('A')));
+    v.extend([Wait(3), Shot("ctrl-a")]);
+    v.extend(click(300.0, 400.0));
+    v.extend([Wait(2), Press(Key::AltLeft), Wait(1)]);
+    v.extend(tap(Key::Letter('A')));
+    v.extend([Release(Key::AltLeft), Wait(3), Shot("alt-a")]);
+    v.extend(click(511.0, 248.0));
+    v.extend([Wait(2)]);
+    v.extend(set_group(1));
+    v.extend(click(416.0, 318.0));
+    v.extend([Wait(2), Press(Key::ControlLeft), Press(Key::ShiftLeft), Wait(1)]);
+    v.extend(tap(Key::Digit(1)));
+    v.extend([
+        Release(Key::ShiftLeft),
+        Release(Key::ControlLeft),
+        Wait(3),
+        Shot("added"),
+    ]);
+    v.extend(click(300.0, 400.0));
+    v.extend([Wait(2)]);
+    v.extend(tap(Key::Digit(1)));
+    v.extend([Wait(3), Shot("recalled")]);
     v
 }
 
