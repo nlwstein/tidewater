@@ -143,6 +143,7 @@ pub(crate) fn extra_page(id: Id) -> Page {
         | Id::IdleWorker
         | Id::GameClock
         | Id::ControlGroupBar
+        | Id::ProgressIncome
         | Id::SmartAttackMove
         | Id::MinimapPing
         | Id::AutoReplay
@@ -302,6 +303,7 @@ impl Action {
 pub(crate) const CHOICE_WORDS: &[(Id, &[&str])] = &[
     (Id::HealthBars, &["Off", "Hovered", "Selected", "Always"]),
     (Id::GameClock, &["Off", "Clock", "Clock and APM"]),
+    (Id::ProgressIncome, &["Off", "Progress bars", "Income rates", "Both"]),
     (Id::Scaling, &["Automatic", "Whole numbers", "Sharp (fills)"]),
     (Id::SelectionLimit, &["9 (original)", "12", "18", "Unlimited"]),
     (Id::SpeedLevels, &["Off", "1 more", "2 more", "3 more"]),
@@ -695,6 +697,10 @@ const ROW_PITCH: i32 = 30;
 /// The General page has seven rows and the game files' line and buttons under them: its rows are 28 apart so the
 /// buttons clear the description.
 const GENERAL_PITCH: i32 = 28;
+/// A page of more than eight rows (the Interface page's ninth option) packs them 26 pixels apart, so the description
+/// under them stays clear.
+const ROOMY_ROWS: usize = 8;
+const CROWDED_PITCH: i32 = 26;
 const LABEL_X: i32 = 64;
 const DROP_X: i32 = 352;
 const DROP_W: u32 = 224;
@@ -781,13 +787,22 @@ fn layout(page: Page, env: &Env) -> Layout {
     let mut targets = Vec::new();
     let mut texts = Vec::new();
     let mut y = ROWS_TOP;
+    let items: Vec<Item> = items_on(page).into_iter().filter(|&i| shown(i, env)).collect();
     let pitch = if page == Page::General {
         GENERAL_PITCH
+    } else if items.len() > ROOMY_ROWS {
+        CROWDED_PITCH
     } else {
         ROW_PITCH
     };
-    for item in items_on(page).into_iter().filter(|&i| shown(i, env)) {
-        targets.push((Target::Row(item), Rect::new(ROW_X, y, ROW_W, ROW_H)));
+    // A crowded page's rows are as tall as their pitch allows, so the description below them stays clear.
+    let height = if pitch == CROWDED_PITCH {
+        (pitch - 2) as u32
+    } else {
+        ROW_H
+    };
+    for item in items {
+        targets.push((Target::Row(item), Rect::new(ROW_X, y, ROW_W, height)));
         y += pitch;
     }
     if page == Page::General {
@@ -1815,7 +1830,8 @@ mod tests {
                 "smart-attack-move",
                 "minimap-ping",
                 "auto-replay",
-                "map-zoom"
+                "map-zoom",
+                "progress-income"
             ]
         );
         assert_eq!(names(Page::Sound), ["volume-voices", "volume-effects", "volume-music"]);

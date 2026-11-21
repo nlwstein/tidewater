@@ -30,8 +30,8 @@ use crate::layers::{self, Pictures, Role};
 use crate::panel::PanelState;
 use crate::session::{LocalSession, Recorder, ReplaySession, Session};
 use crate::{
-    attackmove, audio, campaign, display, fog, frontend, groupbar, hud, idle, info, mapview, messages, minimap, mouse,
-    overlay, palette, panel, ping, savefile, savegame, scene, screen, sound, view,
+    attackmove, audio, campaign, display, fog, frontend, groupbar, hud, idle, income, info, mapview, messages, minimap,
+    mouse, overlay, palette, panel, ping, savefile, savegame, scene, screen, sound, view,
 };
 
 pub struct Loaded(pub Option<scene::Scene>);
@@ -63,6 +63,8 @@ pub struct Sim {
     pub carried: carry::Carried,
     /// The commands the player has given so far, for the clock overlay's actions per minute (`overlay`).
     pub actions: u32,
+    /// What the player gathered over the last game minute (option `progress-income`, `income`); only fed while on.
+    pub income: income::Meter,
 }
 
 impl Sim {
@@ -888,6 +890,7 @@ pub(crate) fn setup(c: &mut Core) {
         ui_sounds: Vec::new(),
         carried: carry::Carried::default(),
         actions: 0,
+        income: income::Meter::default(),
     };
     commands.queue(move |c| {
         c.sim = Some(sim);
@@ -929,6 +932,7 @@ fn freezes(multiplayer: bool, has_window: bool, focused: bool) -> bool {
 /// Returns whether a network game is waiting for the other players' turns: the cycle did not run, and the frame's step
 /// is given back to the clock (`FrameClock::unspend`) so a short wait is caught up as the original does.
 pub(crate) fn tick(c: &mut Core) -> bool {
+    let income_on = extras(c).income_rates();
     let Core {
         sim: Some(sim),
         selection: Some(sel),
@@ -1102,6 +1106,10 @@ pub(crate) fn tick(c: &mut Core) -> bool {
     let p = &sim.world.players[human as usize];
     let real = [p.gold, p.lumber, p.oil];
     sim.counter.update(real);
+    if income_on {
+        let minute = (60.0 / cycle_secs(sim.world.rules.enhanced, sim.world.speed)).round() as u32;
+        sim.income.update(sim.world.tick, p.gathered, minute);
+    }
     false
 }
 
@@ -1346,6 +1354,7 @@ fn show_picture(pictures: &mut Pictures, layer: &mut layers::Layer, width: i32, 
 /// view: buildings and ghosts, the unit passes, effects, fog, the ground marker and the selection rectangle.
 pub(crate) fn draw_view(c: &mut Core) {
     let bars = extras(c).health_bars();
+    let progress_on = extras(c).progress_bars();
     let Core {
         sim: Some(sim),
         art: Some(art),
@@ -1390,6 +1399,7 @@ pub(crate) fn draw_view(c: &mut Core) {
         carried: &sim.carried,
         bars,
         hovered,
+        progress: progress_on,
     };
     let (frame, stop) = view::frame(&sim.world, &art.view, &canvas, &local);
     // A flashing unit that is gone or not detected stops flashing at once ("Boxes").
@@ -3014,6 +3024,10 @@ pub(crate) fn draw_hud(c: &mut Core) {
             .idle_worker()
             .then(|| (idle::idle_workers(&sim.world, sim.human).len(), idle_key.as_str())),
         clock: clock_line.as_deref(),
+        income: ex.income_rates().then(|| hud::IncomeView {
+            rates: sim.income.rates(),
+            below_groups: ex.group_bar(),
+        }),
         group_bar: &group_bar,
         pings: &ping_marks,
     };

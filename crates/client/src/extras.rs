@@ -53,10 +53,11 @@ pub enum Id {
     PadSwap,
     PadHideTouch,
     Controls,
+    ProgressIncome,
 }
 
 /// How many options there are.
-pub const COUNT: usize = 32;
+pub const COUNT: usize = 33;
 
 /// Who decides an option in a game with other players.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -101,6 +102,10 @@ pub struct Spec {
 pub const HEALTH_BAR_MODES: &[&str] = &["off", "hovered", "selected", "always"];
 /// The clock overlay modes.
 pub const CLOCK_MODES: &[&str] = &["off", "clock", "clock-apm"];
+
+/// The values of `progress-income`: the progress bars under your own buildings at work, your income rates in the
+/// resource bar, both or neither.
+pub const PROGRESS_INCOME_MODES: &[&str] = &["off", "progress", "income", "both"];
 
 /// The picture scaling modes (option `scaling`).
 pub const SCALING_MODES: &[&str] = &["auto", "integer", "sharp"];
@@ -439,6 +444,15 @@ pub const REGISTRY: [Spec; COUNT] = [
         scope: Scope::Client,
         description: "Which devices work the game; the keyboard always does. `auto`: every device there is. `mouse`: keyboard and mouse only. `touch`: fingers. `pad`: controller. `pad-touch`: both. A missing device falls back to `auto`",
     },
+    Spec {
+        id: Id::ProgressIncome,
+        name: "progress-income",
+        label: "Progress and income",
+        kind: Kind::Choice(PROGRESS_INCOME_MODES),
+        default: 0,
+        scope: Scope::Client,
+        description: "Your own information only: `progress` a thin bar under each of your buildings that is training, researching, upgrading or being built; `income` the gold, lumber and oil you gather per game minute, under the resource counters; `both` shows both",
+    },
 ];
 
 impl Id {
@@ -634,6 +648,16 @@ impl ClientExtras {
             2 => Scaling::Sharp,
             _ => Scaling::Auto,
         }
+    }
+
+    /// Whether the progress bars under the player's own buildings at work show (`progress-income`).
+    pub fn progress_bars(&self) -> bool {
+        matches!(self.get(Id::ProgressIncome), 1 | 3)
+    }
+
+    /// Whether the per-minute income rates show in the resource bar (`progress-income`).
+    pub fn income_rates(&self) -> bool {
+        matches!(self.get(Id::ProgressIncome), 2 | 3)
     }
 
     pub fn idle_worker(&self) -> bool {
