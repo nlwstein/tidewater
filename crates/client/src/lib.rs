@@ -58,6 +58,7 @@ mod panel;
 pub mod phases;
 mod ping;
 mod prefs;
+mod quickselect;
 mod replayview;
 mod savedlg;
 mod savefile;

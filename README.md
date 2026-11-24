@@ -288,7 +288,7 @@ original's main-menu buttons are unchanged.
 | **General** | Window or full screen (desktop), Scaling, Widescreen, Controls, Mouse lock (desktop), Intro video, Check for updates (desktop release builds), the imported game files with **Import game files again...**, and **Open settings folder** (desktop). | Window, Scaling, Controls and Mouse lock at once; Widescreen from the next game; Intro video and Check for updates the next time Tidewater starts |
 | **Interface** | Health bars, idle worker button, game clock, control group bar, smart attack-move, minimap ping, record replays, magnifying zoom. | At once or from the next game |
 | **Sound** | Unit voices, sound effects and music, 0 to 100 percent in steps of 10. | At once |
-| **Gameplay** | Rally points, production queue, selection limit, extra game speeds, shift-queued orders. These change the game rules: they apply to single-player games you start, and in a multiplayer game the host chooses them in the lobby. | From the next game |
+| **Gameplay** | Rally points, production queue, selection limit, extra game speeds, shift-queued orders, quick select. Except for quick select, these change the game rules: they apply to single-player games you start, and in a multiplayer game the host chooses them in the lobby. | From the next game |
 | **Mods** | Which mods to use and in what order. Shown only when the `mods` folder holds a mod. See [Mods](#mods). | The next start |
 | **Keys** | Every key you can rebind, in a scrolling list, with **Reset keys**. Desktop only (a phone has no keyboard to rebind). | At once |
 | **Touch** | How a drag, a tap, two fingers, the pinch and the holds work, the button size and which side bar is which. Shown where touch is in use. | At once |
@@ -327,7 +327,7 @@ Tidewater adds a few optional improvements that the original game does not have.
 sounds and plays as the original does.** Turn them on in the [Settings screen](#settings) (the Interface, Sound, Gameplay,
 Touch and Controller pages, and Scaling, Widescreen, Controls and Progress and income on General). Power users can also use the `[extras]` section of the
 settings file (`settings.txt`), or for one run a flag; `--no-extra-NAME` puts an option back to its default.
-The idle-worker key is F6; keys can be rebound on the Settings screen's Keys page. How the options work, the `[keys]` file format and how to add an option is in [`docs/design/extras.md`](docs/design/extras.md).
+The idle-worker key is F6 (with `quick-select`, Ctrl+A selects your fighting units on screen and Alt+A on the whole map); keys can be rebound on the Settings screen's Keys page. How the options work, the `[keys]` file format and how to add an option is in [`docs/design/extras.md`](docs/design/extras.md).
 
 | Option | Flag | Values | Default | What it does |
 |---|---|---|---|---|
@@ -367,8 +367,9 @@ The idle-worker key is F6; keys can be rebound on the Settings screen's Keys pag
 | `font` | `--extra-font VALUE` | original, clear | original | The letters of the game's text. `original`: the game's own. `clear`: plain letters without serifs or shading, easier to read on a small screen (the titles keep the game's) |
 | `game-stats` | `--extra-game-stats` | on, off | off | A statistics page after the score screen: line graphs over game time of each player's gold, lumber and oil gathered, army, workers and buildings |
 | `progress-income` | `--extra-progress-income VALUE` | off, progress, income, both | off | Your own information only: `progress` a thin bar under each of your buildings that is training, researching, upgrading or being built; `income` the gold, lumber and oil you gather per game minute, under the resource counters; `both` shows both |
+| `quick-select` | `--extra-quick-select` | on, off | off | Faster selecting: a double-click on one of your units selects all of its type on screen under Classic rules too, Ctrl+A selects your fighting units on screen, Alt+A all of them on the map, and Ctrl+Shift+digit adds the selection to a control group (C+L) |
 
-**C+L** marks an option that gives you an edge (health bars, smart attack-move, widescreen). In a game with other players the host chooses it in the lobby's "Extras" box (from the command line, `--lobby extras=health-bars=always/widescreen=16:9`; the host's own settings stand for the ones not named) and every player, observers included, plays with the host's choice, whatever their own setting. In single-player games and replays you get your own. **S** marks an option that changes the simulation (rally points, the production queue, shift-queued orders,
+**C+L** marks an option that gives you an edge (health bars, smart attack-move, quick select, widescreen). In a game with other players the host chooses it in the lobby's "Extras" box (from the command line, `--lobby extras=health-bars=always/widescreen=16:9`; the host's own settings stand for the ones not named) and every player, observers included, plays with the host's choice, whatever their own setting. In single-player games and replays you get your own. **S** marks an option that changes the simulation (rally points, the production queue, shift-queued orders,
 the selection limit and the extra speed levels): the flag or the setting starts a single-player game with it, and in a
 network game the host turns it on in the lobby's "Extras" box and everyone plays with the host's choice. The game is
 saved and recorded with it.

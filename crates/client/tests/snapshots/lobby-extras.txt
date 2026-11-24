@@ -22,12 +22,12 @@ frames	46-46	b2e724c44cdb8d05
 shot	53	box	2b4a43f45d649965
 frames	47-53	2b4a43f45d649965
 frames	54-54	78e689a804f943ff
-shot	58	list	71462560c80ff767
-frames	55-58	71462560c80ff767
-frames	59-59	5c75b482edd74276
-shot	63	picked	c4a205b3ad37ad90
-frames	60-63	c4a205b3ad37ad90
-frames	64-64	b5aa891c3ae1dc1f
+shot	58	list	e5040330a5df89de
+frames	55-58	e5040330a5df89de
+frames	59-59	8668d91e55071dab
+shot	63	picked	162c1aa2663cc5f9
+frames	60-63	162c1aa2663cc5f9
+frames	64-64	7acb242c4013fd19
 frames	65-65	e044d5c324e3318a
 shot	69	observers	2e71a6388985bcd8
 frames	66-69	2e71a6388985bcd8

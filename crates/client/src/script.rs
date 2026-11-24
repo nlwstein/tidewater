@@ -449,6 +449,14 @@ pub fn scenes() -> Vec<Scene> {
             ],
             keys: "",
         },
+        // Quick select: Ctrl+A and Alt+A pick the fighting units, Ctrl+Shift+digit adds to a control group.
+        Scene {
+            name: "extras-select",
+            start: vec![play(0)],
+            cmds: extras_select(),
+            extras: &[("quick-select", "on")],
+            keys: "",
+        },
         // Rally points and the production queue: a barracks-type building selected, a rally flag, jobs waiting.
         Scene {
             name: "extras-sim",
@@ -1714,6 +1722,22 @@ fn lobby() -> Vec<Cmd> {
     v
 }
 
+/// The screen y of row `row` of the lobby's Extras list. The list opens above its box with its last row fixed, so the
+/// rows move up as options are added to the registry; this is computed from the registry (the row the scenes
+/// clicked at 173 and 293 when the list had eight rows).
+fn extras_row_y(row: usize) -> f32 {
+    let rows = crate::lobbyscreen::SIM_EXTRAS + crate::extras::lobby_specs().count();
+    (173 + 20 * row) as f32 - 20.0 * (rows as f32 - 8.0)
+}
+
+/// The row of the lobby's C+L option `id` in the Extras list.
+fn extras_row_of(id: crate::extras::Id) -> usize {
+    crate::lobbyscreen::SIM_EXTRAS
+        + crate::extras::lobby_specs()
+            .position(|s| s.id == id)
+            .expect("a lobby option")
+}
+
 /// The creator's lobby with the Extras box showing: its list opened, a C+L row cycled, then the Observers list.
 fn lobby_extras() -> Vec<Cmd> {
     use Cmd::*;
@@ -1732,9 +1756,12 @@ fn lobby_extras() -> Vec<Cmd> {
     v.extend([Wait(6), Shot("box")]);
     v.extend(click(480.0, 336.0));
     v.extend([Wait(3), Shot("list")]);
-    // The list opens above its box (it has eight rows): the seventh is the second C+L option. One pick changes it and
+    // The list opens above its box (its rows come from the registry): the pick is smart attack-move, the second C+L option. One pick changes it and
     // the list stays open.
-    v.extend(click(480.0, 293.0));
+    v.extend(click(
+        480.0,
+        extras_row_y(extras_row_of(crate::extras::Id::SmartAttackMove)),
+    ));
     v.extend([Wait(3), Shot("picked")]);
     v.extend(tap(K::Escape));
     v.extend(click(490.0, 246.0));
@@ -2102,6 +2129,36 @@ fn extras_lines() -> Vec<Cmd> {
     v.extend([Wait(2), Shot("harvest")]);
     // Magnified: the lines follow the view.
     v.extend([Move(500.0, 330.0), Wheel(1.0), Wait(3), Shot("zoomed")]);
+    v
+}
+
+/// Quick select: the fighting units on screen (Ctrl+A) and on the map (Alt+A), then a group built up with
+/// Ctrl+Shift+digit from a fighter and a worker, and recalled.
+fn extras_select() -> Vec<Cmd> {
+    use Cmd::*;
+    let mut v = vec![Move(400.0, 240.0), Until(AppState::Game), Wait(5), Shot("none")];
+    v.extend(ctrl_tap(Key::Letter('A')));
+    v.extend([Wait(3), Shot("ctrl-a")]);
+    v.extend(click(300.0, 400.0));
+    v.extend([Wait(2), Press(Key::AltLeft), Wait(1)]);
+    v.extend(tap(Key::Letter('A')));
+    v.extend([Release(Key::AltLeft), Wait(3), Shot("alt-a")]);
+    v.extend(click(511.0, 248.0));
+    v.extend([Wait(2)]);
+    v.extend(set_group(1));
+    v.extend(click(416.0, 318.0));
+    v.extend([Wait(2), Press(Key::ControlLeft), Press(Key::ShiftLeft), Wait(1)]);
+    v.extend(tap(Key::Digit(1)));
+    v.extend([
+        Release(Key::ShiftLeft),
+        Release(Key::ControlLeft),
+        Wait(3),
+        Shot("added"),
+    ]);
+    v.extend(click(300.0, 400.0));
+    v.extend([Wait(2)]);
+    v.extend(tap(Key::Digit(1)));
+    v.extend([Wait(3), Shot("recalled")]);
     v
 }
 
@@ -3009,9 +3066,12 @@ fn mp_host(way: Way) -> Vec<Cmd> {
     // Extras: rally points (a simulation option) and smart attack-move (C+L) on, for everyone.
     v.extend(click(480.0, 336.0));
     v.extend([Wait(3)]);
-    v.extend(click(480.0, 173.0));
+    v.extend(click(480.0, extras_row_y(0)));
     v.extend([Wait(2)]);
-    v.extend(click(480.0, 293.0));
+    v.extend(click(
+        480.0,
+        extras_row_y(extras_row_of(crate::extras::Id::SmartAttackMove)),
+    ));
     v.extend([Wait(2), Shot("extras-list")]);
     v.extend(tap(K::Escape));
     v.push(Wait(2));

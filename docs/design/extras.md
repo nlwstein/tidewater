@@ -51,6 +51,7 @@ chooses it in the lobby and it travels with the game, saves and replays (see "Si
 | `font` | `--extra-font VALUE` | original, clear | C | original | The letters of the game's text. `original`: the game's own. `clear`: plain letters without serifs or shading, easier to read on a small screen (the titles keep the game's) |
 | `game-stats` | `--extra-game-stats` | on, off | C | off | A statistics page after the score screen: line graphs over game time of each player's gold, lumber and oil gathered, army, workers and buildings |
 | `progress-income` | `--extra-progress-income VALUE` | off, progress, income, both | C | off | Your own information only: `progress` a thin bar under each of your buildings that is training, researching, upgrading or being built; `income` the gold, lumber and oil you gather per game minute, under the resource counters; `both` shows both |
+| `quick-select` | `--extra-quick-select` | on, off | C+L | off | Faster selecting: a double-click on one of your units selects all of its type on screen under Classic rules too, Ctrl+A selects your fighting units on screen, Alt+A all of them on the map, and Ctrl+Shift+digit adds the selection to a control group |
 
 - **Default** is the value when nothing says otherwise. For a volume, 100 means "leave the sound as the game's own
   dialog sets it", so the original sound dialog keeps its look and meaning.
@@ -153,6 +154,19 @@ without new screen code. The file and the flags still work and are for power use
   unit is yours, can attack, and is not a worker, an oil tanker or a building; one peasant in the selection keeps the
   normal move. The simulation is not changed. It follows the session in a game with other players because it saves an
   order. Rules in `attackmove.rs`.
+- **Quick select** (`quick-select`, C+L). Selecting faster, as StarCraft, Age of Empires II and OpenRA do. The original
+  already has the main gesture under Enhanced rules (Ctrl-click, or a double-click on a selected unit, takes the units of
+  that type on screen; Ctrl+digit sets a control group), and that stays exactly as it is. The option adds three things.
+  **Double-click under Classic rules**, where the original has no such rule: the same ring search and selection limit
+  as Enhanced, own units only. **Ctrl+A** selects your fighting units on screen and **Alt+A** all of them on the map
+  (rebindable as `select-screen` and `select-map`; the original leaves both keys unbound): fighting means the same as
+  for smart attack-move, so workers, oil tankers and buildings are left out, and a unit must be pickable and selectable
+  by rectangle. Over the selection limit (`selection-limit`) the units nearest the middle of the view win.
+  **Ctrl+Shift+digit** (Enhanced; Classic has no groups) makes the group's units plus the selection the selection and
+  then the group, up to the limit, so it adds to a group instead of replacing it; Ctrl+digit still replaces. All of it
+  is the normal Select command, so the simulation is not changed; it follows the session in a game with other players
+  because it saves clicks. Touch: a double-tap is two taps within the double-click time and distance, so the double-click
+  rule works unchanged (not separately tested on a device). Rules in `quickselect.rs`.
 - **Separate volumes** (`volume-voices`, `volume-effects`, `volume-music`). Master trims on top of the game menu's
   digital and music volumes, applied in the mixer (`audio.rs`, `Trims`). Voices are unit speech and acknowledgements;
   effects are every other sound (a screen's sounds and narration included); music is the jukebox. At 100 the mixer
@@ -339,7 +353,8 @@ idle-worker=ctrl+i
   `group-recall-9`, `group-show-0` to `group-show-9` (Alt+digit), `goto-view-1` to `goto-view-3`, `remember-view-1` to
   `remember-view-3`, `game-menu`, `options`, `help-menu`, `keyboard-help`, `sound-dialog`, `speed-dialog`,
   `preferences`, `tips`, `save-game`, `load-game`, `restart`, `quit`, `quit-dialog`, `toggle-music`, `toggle-sounds`,
-  and `idle-worker` (the key of the `idle-worker` option; F6 with any modifiers by default).
+  `idle-worker` (the key of the `idle-worker` option; F6 with any modifiers by default), and `select-screen` and
+  `select-map` (the keys of the `quick-select` option; Ctrl+A and Alt+A by default).
 - **Command buttons** take a bare letter or digit. `button-move`, `button-attack`, `button-patrol`, `button-stop`,
   `button-stand-ground`, `button-harvest`, `button-repair`, `button-return-goods`, `button-unload`,
   `button-attack-ground`, `button-demolish`, `button-build-basic` and `button-build-advanced` give the button with that
@@ -455,7 +470,6 @@ for the C+L options that set wins over the local settings; the C options stay ea
 ## Checks that keep the defaults honest
 
 - The frame snapshot (`crates/client/tests/frames.rs`) runs its original scenes with every extra off and is never
-  re-blessed for an extra (the main menu's frames changed once, for the Settings link, which is not an extra); the scenes `extras`, `extras-bars`, `extras-groups`, `extras-attack`, `extras-lines`, `extras-keys` and `extras-font` turn options on and have their own entries; the scene `settings-screen` shows the Settings screen and `settings-ingame` the Settings screen over a game.
-  re-blessed for an extra (the main menu's frames changed once, for the Settings link, which is not an extra); the scenes `extras`, `extras-bars`, `extras-groups`, `extras-attack`, `extras-keys` and `extras-progress` turn options on and have their own entries; the scene `settings-screen` shows the Settings screen and `settings-ingame` the Settings screen over a game.
+  re-blessed for an extra (the main menu's frames changed once, for the Settings link, which is not an extra); the scenes `extras`, `extras-bars`, `extras-groups`, `extras-attack`, `extras-lines`, `extras-keys`, `extras-progress`, `extras-select` and `extras-font` turn options on and have their own entries; the scene `settings-screen` shows the Settings screen and `settings-ingame` the Settings screen over a game.
 - `Trims::default()` leaves the mixed sound identical; the audio snapshot of the original scenes shows it.
 - The oracle traces and the whole-map snapshot run on the sim, which an empty `Extras` does not change.

@@ -530,9 +530,9 @@ pub fn smart_tap(board: &Board, p: (i32, i32), radius: i32, sel: &[UnitId], wall
     commanding && !for_own
 }
 
-/// The click rules (Enhanced only); `None` hands the click to the box rules.
-fn click_rules(board: &Board, p: (i32, i32), m: Mods, sel: &[UnitId], rem: &mut Remembered) -> Option<Pick> {
-    // 1. Find the unit.
+/// The unit a click at map pixel `p` finds: among the units that can be picked and whose box holds the point, the
+/// one on top (click rule 1).
+pub(crate) fn find_at<'a>(board: &'a Board, p: (i32, i32)) -> Option<&'a Cand> {
     let mut best: Option<&Cand> = None;
     for c in board
         .units
@@ -546,6 +546,13 @@ fn click_rules(board: &Board, p: (i32, i32), m: Mods, sel: &[UnitId], rem: &mut 
             Some(b) => b,
         });
     }
+    best
+}
+
+/// The click rules (Enhanced only); `None` hands the click to the box rules.
+fn click_rules(board: &Board, p: (i32, i32), m: Mods, sel: &[UnitId], rem: &mut Remembered) -> Option<Pick> {
+    // 1. Find the unit.
+    let best = find_at(board, p);
     let Some(found) = best else {
         return Some(Pick::Keep);
     };
@@ -612,7 +619,7 @@ fn ring(c: (i32, i32), side: i32) -> Vec<(i32, i32)> {
 }
 
 /// The same-type search of click rule 4: the found unit first, then the rings outward.
-fn same_type(board: &Board, found: &Cand) -> Vec<UnitId> {
+pub(crate) fn same_type(board: &Board, found: &Cand) -> Vec<UnitId> {
     let mut taken = vec![found.id];
     let limit = 2 * board.view.view_tiles.max(1);
     let mut side = 3;

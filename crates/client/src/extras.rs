@@ -57,10 +57,11 @@ pub enum Id {
     Font,
     GameStats,
     ProgressIncome,
+    QuickSelect,
 }
 
 /// How many options there are.
-pub const COUNT: usize = 36;
+pub const COUNT: usize = 37;
 
 /// Who decides an option in a game with other players.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -486,6 +487,15 @@ pub const REGISTRY: [Spec; COUNT] = [
         scope: Scope::Client,
         description: "Your own information only: `progress` a thin bar under each of your buildings that is training, researching, upgrading or being built; `income` the gold, lumber and oil you gather per game minute, under the resource counters; `both` shows both",
     },
+    Spec {
+        id: Id::QuickSelect,
+        name: "quick-select",
+        label: "Quick select",
+        kind: Kind::Flag,
+        default: 0,
+        scope: Scope::ClientLobby,
+        description: "Faster selecting: a double-click on one of your units selects all of its type on screen under Classic rules too, Ctrl+A selects your fighting units on screen, Alt+A all of them on the map, and Ctrl+Shift+digit adds the selection to a control group",
+    },
 ];
 
 impl Id {
@@ -712,6 +722,10 @@ impl ClientExtras {
 
     pub fn smart_attack_move(&self) -> bool {
         self.get(Id::SmartAttackMove) != 0
+    }
+
+    pub fn quick_select(&self) -> bool {
+        self.get(Id::QuickSelect) != 0
     }
 
     pub fn minimap_ping(&self) -> bool {
