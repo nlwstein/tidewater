@@ -12,6 +12,7 @@ mod carry;
 mod chat;
 mod cheats;
 pub mod chrome;
+pub mod clearfont;
 mod clock;
 pub mod compose;
 mod controls;

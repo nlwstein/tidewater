@@ -370,6 +370,7 @@ impl Core {
         }
         // 3. The flow's change of screen.
         run_transitions(c);
+        crate::clearfont::apply(c);
         // A game starting or ending changes the screen's width.
         let screen = screen_size(c, window);
         if screen != c.screen {

@@ -47,6 +47,7 @@ chooses it in the lobby and it travels with the game, saves and replays (see "Si
 | `pad-swap` | `--extra-pad-swap` | on, off | C | off | Controller only. The right face button clicks and the bottom one right-clicks, for pads with Nintendo's layout |
 | `pad-hide-touch` | `--extra-pad-hide-touch VALUE` | on, off | C | on | Controller and touch mode. While a controller is connected the touch screen's side bars hide (taps still work, and the shoulder buttons are Shift and Ctrl) |
 | `controls` | `--extra-controls VALUE` | auto, mouse, touch, pad, pad-touch | C | auto | Which devices work the game; the keyboard always does. `auto`: every device there is. `mouse`: keyboard and mouse only. `touch`: fingers. `pad`: controller. `pad-touch`: both. A missing device falls back to `auto` |
+| `font` | `--extra-font VALUE` | original, clear | C | original | The letters of the game's text. `original`: the game's own. `clear`: plain letters without serifs or shading, easier to read on a small screen (the titles keep the game's) |
 
 - **Default** is the value when nothing says otherwise. For a volume, 100 means "leave the sound as the game's own
   dialog sets it", so the original sound dialog keeps its look and meaning.
@@ -220,6 +221,17 @@ without new screen code. The file and the flags still work and are for power use
   minimap or the interface does nothing. Turning the option off in the Settings screen during a game puts the view back
   to the original's. `--free-zoom` stays a development aid with its own range (1/4 to 8, wheel anywhere) and wins when
   both are on. The scene `extras-zoom` shows it.
+- **Clear font** (`font`, C). Off (`original`) by default, which draws every text in the game's own fonts. With
+  `clear`, the two text fonts, `font10x` (the game screen and the menus' small text) and `font12x` (the menu screens,
+  dialogs and briefings), draw the printable ASCII characters in plain sans-serif letters: Pixel Operator Bold, a
+  public-domain (CC0) pixel font drawn at its 16-pixel design size, flat in the face colour with a one-pixel shadow
+  (`clearfont.rs`; `tools/gen_clear_font.py` writes its glyph table). It asks nothing of the game files beyond the fonts
+  it stands in for. The letters are 9 pixels tall with 2-pixel strokes, about `font10x`'s size, and stand on the game
+  fonts' baselines in their line heights, so text keeps its place, its line spacing and the menus' space width; in
+  `font12x`'s places they are smaller than the game's letters. Other characters (accented letters), the title fonts
+  (`font32`, `font50`) and the hit point digits (`font6`) keep the game's glyphs. The change shows at once, on the
+  menus and on a running game's interface (`clearfont::apply`, once a frame). Players asked for it on small screens
+  such as the PS Vita, where the game's shaded serif letters are hard to read. The scene `extras-font` shows it.
 
 ## Rebindable keys
 
@@ -360,6 +372,6 @@ for the C+L options that set wins over the local settings; the C options stay ea
 ## Checks that keep the defaults honest
 
 - The frame snapshot (`crates/client/tests/frames.rs`) runs its original scenes with every extra off and is never
-  re-blessed for an extra (the main menu's frames changed once, for the Settings link, which is not an extra); the scenes `extras`, `extras-bars`, `extras-groups`, `extras-attack` and `extras-keys` turn options on and have their own entries; the scene `settings-screen` shows the Settings screen and `settings-ingame` the Settings screen over a game.
+  re-blessed for an extra (the main menu's frames changed once, for the Settings link, which is not an extra); the scenes `extras`, `extras-bars`, `extras-groups`, `extras-attack`, `extras-keys` and `extras-font` turn options on and have their own entries; the scene `settings-screen` shows the Settings screen and `settings-ingame` the Settings screen over a game.
 - `Trims::default()` leaves the mixed sound identical; the audio snapshot of the original scenes shows it.
 - The oracle traces and the whole-map snapshot run on the sim, which an empty `Extras` does not change.

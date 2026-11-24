@@ -489,6 +489,8 @@ pub struct HudArt {
     font: Font,
     /// A smaller font for the hit point text, if the install has one.
     small: Option<Font>,
+    /// The game's own [`HudArt::font`], kept while the clear font (`clearfont`) stands in.
+    game_font: Option<Font>,
     names: StringTable,
     /// The local race is orc: the race pointers' orc versions.
     orc: bool,
@@ -582,11 +584,32 @@ impl HudArt {
             small: SMALL_FONT
                 .iter()
                 .find_map(|n| install.read(n).ok().and_then(|d| Font::parse(&d).ok())),
+            game_font: None,
             names,
             orc: race != 0,
             pal: pal.clone(),
             pieces,
         })
+    }
+
+    /// Draws text in the clear font (`clearfont`, option `font`) or in the game's own; the hit point digits keep the
+    /// game's small font. Returns whether anything changed.
+    pub fn set_clear_font(&mut self, on: bool) -> bool {
+        match (on, self.game_font.take()) {
+            (true, None) => {
+                let clear = crate::clearfont::clear(&self.font);
+                self.game_font = Some(std::mem::replace(&mut self.font, clear));
+                true
+            }
+            (false, Some(game)) => {
+                self.font = game;
+                true
+            }
+            (_, kept) => {
+                self.game_font = kept;
+                false
+            }
+        }
     }
 
     pub fn layout(&self, canvas: (u32, u32)) -> Layout {
