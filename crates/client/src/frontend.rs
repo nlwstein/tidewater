@@ -3470,11 +3470,28 @@ fn draw_score(
         .map(|k| s.rows.iter().map(|r| r.2.values()[k]).max().unwrap_or(0))
         .collect();
     let mut bars_done = true;
+    // The seven columns share 196 to 616, the room left of 196 being the rows' names'. A column is its header's width
+    // and a gap, at least an even share; a long header ("Buildings") takes its width from the short ones so no header
+    // runs into the next.
     let x0 = 196;
-    let col_w = 60;
+    let header: Vec<i32> = cf::Stats::NAMES
+        .iter()
+        .map(|name| front.small.width(name.as_bytes()) as i32 + 10)
+        .collect();
+    let widths = |share: i32| header.iter().map(move |&h| h.max(share));
+    let share = (1..=60).rev().find(|&w| widths(w).sum::<i32>() <= 420).unwrap_or(1);
+    let col_w: Vec<i32> = widths(share).collect();
+    let col_x: Vec<i32> = col_w
+        .iter()
+        .scan(x0, |x, w| {
+            let at = *x;
+            *x += w;
+            Some(at)
+        })
+        .collect();
     let mut y = 70;
     for (k, name) in cf::Stats::NAMES.iter().enumerate() {
-        hud::text(&mut p, &front.small, x0 + k as i32 * col_w, y, name);
+        hud::text(&mut p, &front.small, col_x[k], y, name);
     }
     y += 24;
     for (label, name, stats) in &s.rows {
@@ -3489,11 +3506,11 @@ fn draw_score(
         for (k, v) in stats.values().iter().enumerate() {
             let shown = cf::counted(*v, cf::bar_step(maxes[k]), ticks);
             bars_done &= shown == *v;
-            let x = x0 + k as i32 * col_w;
+            let x = col_x[k];
             let len = if maxes[k] == 0 {
                 0
             } else {
-                (shown as u64 * (col_w as u64 - 8) / maxes[k] as u64) as u32
+                (u64::from(shown) * (col_w[k] as u64 - 8) / u64::from(maxes[k])) as u32
             };
             hud::fill(&mut p, rect(x, y + 20, len.max(1), 8), [200, 170, 60]);
             hud::text(&mut p, &front.small, x, y, &shown.to_string());
