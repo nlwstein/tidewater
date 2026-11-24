@@ -13,6 +13,7 @@ pub mod mpq;
 mod mpq_codec;
 pub mod pcx;
 pub mod pud;
+pub mod pudfile;
 pub mod raw;
 pub mod script;
 pub mod smk;

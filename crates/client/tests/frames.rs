@@ -31,6 +31,7 @@ const SCENES: &[&str] = &[
     "ending",
     "load",
     "build",
+    "playtest",
     "carry",
     "flow",
     "custom",
