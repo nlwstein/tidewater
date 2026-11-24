@@ -156,7 +156,7 @@ pub(crate) fn extra_page(id: Id) -> Page {
         | Id::AutoReplay
         | Id::MapZoom
         | Id::Font => Page::Interface,
-        Id::OrderLines => Page::Overlays,
+        Id::OrderLines | Id::GameStats => Page::Overlays,
         Id::VolumeVoices | Id::VolumeEffects | Id::VolumeMusic => Page::Sound,
         Id::RallyPoints | Id::ProductionQueue | Id::SelectionLimit | Id::SpeedLevels | Id::ShiftQueue => Page::Gameplay,
         Id::TouchDrag
@@ -1840,7 +1840,7 @@ mod tests {
                 "font"
             ]
         );
-        assert_eq!(names(Page::Overlays), ["order-lines"]);
+        assert_eq!(names(Page::Overlays), ["order-lines", "game-stats"]);
         assert_eq!(names(Page::Sound), ["volume-voices", "volume-effects", "volume-music"]);
         assert_eq!(
             names(Page::Gameplay),

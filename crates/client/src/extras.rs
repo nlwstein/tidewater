@@ -55,6 +55,7 @@ pub enum Id {
     PadHideTouch,
     Controls,
     Font,
+    GameStats,
 }
 
 /// How many options there are.
@@ -461,6 +462,13 @@ pub const REGISTRY: [Spec; COUNT] = [
         default: 0,
         scope: Scope::Client,
         description: "The letters of the game's text. `original`: the game's own. `clear`: plain letters without serifs or shading, easier to read on a small screen (the titles keep the game's)",
+        id: Id::GameStats,
+        name: "game-stats",
+        label: "Game statistics",
+        kind: Kind::Flag,
+        default: 0,
+        scope: Scope::Client,
+        description: "A statistics page after the score screen: line graphs over game time of each player's gold, lumber and oil gathered, army, workers and buildings",
     },
 ];
 
@@ -661,6 +669,11 @@ impl ClientExtras {
 
     pub fn idle_worker(&self) -> bool {
         self.get(Id::IdleWorker) != 0
+    }
+
+    /// Whether the statistics page follows the score screen (option `game-stats`).
+    pub fn game_stats(&self) -> bool {
+        self.get(Id::GameStats) != 0
     }
 
     pub fn group_bar(&self) -> bool {

@@ -13,6 +13,7 @@ use crate::compose::Frame;
 use crate::core::Core;
 use crate::frontend::{AppState, Step};
 use crate::input::{Button, Key, KeyEvent, PadAxis, PadButton, PadEvent, Touch, TouchPhase, Wheel, WindowGeom};
+use tidewater_sim::setup::Setup;
 
 /// One step of a scene's input.
 #[derive(Clone, Debug, PartialEq)]
@@ -407,6 +408,23 @@ pub fn scenes() -> Vec<Scene> {
             start: vec![play(0)],
             cmds: extras_groups(),
             extras: &[("group-bar", "on")],
+            keys: "",
+        },
+        // The statistics page (`game-stats`): peasants mine and fell trees, a farm goes up and the Town Hall trains
+        // peasants, then the game is won; the score screen, then the page of graphs after it.
+        Scene {
+            name: "extras-stats",
+            start: vec![Step::Play {
+                map: "Maps\\Gold Rush BNE.pud".to_string(),
+                setup: Some(Setup::parse("custom:race=human,opponents=3").expect("a valid setup")),
+            }],
+            cmds: extras_stats(),
+            extras: &[
+                ("game-stats", "on"),
+                ("rally-points", "on"),
+                ("production-queue", "on"),
+                ("idle-worker", "on"),
+            ],
             keys: "",
         },
         // Smart attack-move: a right-click on open ground with a fighting unit selected.
@@ -1916,6 +1934,85 @@ fn extras_groups() -> Vec<Cmd> {
     // The second button is group 2.
     v.extend(click(250.0, 27.0));
     v.extend([Wait(3), Shot("recalled")]);
+    v
+}
+
+/// The statistics page: about two and a half game minutes of play (gold mined, lumber cut, a farm built, peasants
+/// trained), a win by the cheat, the score screen counted up (its hint line shows) and the page of graphs after it.
+fn extras_stats() -> Vec<Cmd> {
+    use Cmd::*;
+    let mut v = vec![Move(400.0, 240.0), Until(AppState::Game), Wait(5)];
+    // The map is shown, so the orders below reach ground the fog still covers; the idle-worker key selects a peasant and
+    // puts the view on it, which is where the pixels below are read from.
+    v.extend(chat("on screen"));
+    v.extend(tap(Key::F(6)));
+    v.extend([Wait(5), Shot("start")]);
+    // The selected peasant is the builder (group 1). A second one mines, a third fells trees; the Town Hall (group 2)
+    // has its rally point on the mine, so every peasant it trains goes mining.
+    v.extend(set_group(1));
+    v.extend(click(320.0, 315.0));
+    v.extend(right_click(465.0, 255.0));
+    v.extend(click(222.0, 348.0));
+    v.extend(right_click(555.0, 320.0));
+    v.extend(click(265.0, 250.0));
+    v.extend(set_group(2));
+    v.extend(right_click(465.0, 255.0));
+    v.extend(group_build(1, 0, 225.0, 50.0));
+    v.extend([Wait(20), Shot("farm")]);
+    // The farm is up by then: the Town Hall trains a peasant and queues a second.
+    v.extend([UntilCycle(2700)]);
+    v.extend(group_train(2, 2));
+    v.extend([UntilCycle(3600), Shot("late")]);
+    v.extend(chat("unite the clans"));
+    v.extend([UntilOutcome, Wait(5)]);
+    v.extend(tap(Key::Enter));
+    v.extend([Until(AppState::Score), Wait(20)]);
+    v.extend(tap(Key::Space));
+    v.extend([Wait(3), Shot("score")]);
+    v.extend(tap(Key::Space));
+    v.extend([Move(630.0, 475.0), Wait(3), Shot("stats")]);
+    v
+}
+
+/// The control group `d` recalled, a peasant in it builds (see [`peasant_builds`]).
+fn group_build(d: u8, which: u32, x: f32, y: f32) -> Vec<Cmd> {
+    let mut v = tap(Key::Digit(d)).to_vec();
+    v.push(Cmd::Wait(2));
+    v.extend(peasant_builds(which, x, y));
+    v
+}
+
+/// The control group `d` recalled and its first training button pressed `n` times.
+fn group_train(d: u8, n: u32) -> Vec<Cmd> {
+    let mut v = tap(Key::Digit(d)).to_vec();
+    v.push(Cmd::Wait(2));
+    for _ in 0..n {
+        v.extend(click(33.0, 358.0));
+        v.push(Cmd::Wait(1));
+    }
+    v
+}
+
+/// The right button pressed and released a frame later at a screen pixel.
+fn right_click(x: f32, y: f32) -> [Cmd; 4] {
+    [
+        Cmd::Move(x, y),
+        Cmd::Down(Button::Right),
+        Cmd::Wait(1),
+        Cmd::Up(Button::Right),
+    ]
+}
+
+/// A selected peasant builds: the basic build menu, the building's button (row 0 farm, 1
+/// barracks), then the ground.
+fn peasant_builds(which: u32, x: f32, y: f32) -> Vec<Cmd> {
+    let mut v = Vec::new();
+    v.extend(click(31.0, 452.0));
+    v.push(Cmd::Wait(1));
+    v.extend(click(33.0 + 57.0 * which as f32, 358.0));
+    v.push(Cmd::Wait(1));
+    v.extend(click(x, y));
+    v.push(Cmd::Wait(2));
     v
 }
 
