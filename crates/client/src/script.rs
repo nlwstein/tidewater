@@ -50,6 +50,8 @@ pub enum Cmd {
     UntilWatchable,
     /// Wait until the creator's Start Game can be pressed (every joiner has the map, and in Classic mode is ready).
     UntilStartable,
+    /// Wait until the creator has said it finished setting the game up (`LOBBY_DONE`).
+    UntilHostDone,
     /// Wait until a message containing this text has shown (the message list or the notice line).
     UntilMessage(&'static str),
     /// From now on the run is a phone's or tablet's (`TouchState::touch_only`), as on iOS and Android.
@@ -81,7 +83,13 @@ pub struct LobbyProgress {
     pub watchers: usize,
     /// The creator's Start Game can be pressed.
     pub startable: bool,
+    /// The creator's chat line reads [`LOBBY_DONE`]: it has finished setting the game up.
+    pub host_done: bool,
 }
+
+/// What a scripted creator says in the lobby once its map and options are set, for the joiners to wait on: changing
+/// either clears the Classic Ready boxes, so a joiner ticking earlier would be undone.
+pub const LOBBY_DONE: &str = "set up";
 
 /// A scripted scene: where the flow starts and the input.
 #[derive(Clone, Debug)]
@@ -2110,6 +2118,11 @@ pub(crate) fn drive(c: &mut Core, window: Option<WindowGeom>) {
                     break;
                 }
             }
+            Cmd::UntilHostDone => {
+                if !mp.lobby.is_some_and(|l| l.host_done) {
+                    break;
+                }
+            }
             Cmd::UntilMessage(text) => {
                 if !events.saw_message(text) {
                     break;
@@ -2623,6 +2636,14 @@ fn mp_host(way: Way) -> Vec<Cmd> {
         v.push(Wait(3));
     }
     v.push(Shot("options"));
+    if way == Way::Classic {
+        // Tell the joiner the map and options are final; it ticks Ready only after.
+        v.extend(click(300.0, 56.0));
+        v.extend([Wait(2), Type(LOBBY_DONE), Wait(2)]);
+        v.extend(tap(K::Enter));
+        v.extend([Wait(2)]);
+        v.extend(tap(K::Escape));
+    }
     if matches!(way, Way::Solo | Way::Mixed) {
         // Row 2 (the third) becomes a Computer: its name box, then the drop-down's second line.
         v.extend(click(100.0, 97.0));
@@ -2723,7 +2744,8 @@ fn mp_join(way: Way, role: Role) -> Vec<Cmd> {
         v.extend([UntilLobby(2, 0), Wait(6), Shot("lobby")]);
     }
     if way == Way::Classic {
-        // The Ready box of the joiner's row (the second).
+        // The Ready box of the joiner's row (the second), once the creator has set the game up (which clears it).
+        v.push(UntilHostDone);
         v.extend(click(19.0, 82.0));
         v.extend([Wait(3), Shot("ready")]);
     }
