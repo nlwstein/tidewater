@@ -791,6 +791,24 @@ pub fn draw_waypoint(canvas: &mut Canvas, w: &Waypoint) {
     canvas.put(w.at.0, w.at.1, w.colour);
 }
 
+/// Draws the order lines (`orderlines`): a dashed line in the order's colour, marching toward its end, and a small
+/// diamond there. In map pixels, so a magnified view draws them magnified with everything else.
+pub fn draw_lines(canvas: &mut Canvas, lines: &[crate::orderlines::Segment], tick: u32) {
+    let bounds = (
+        canvas.left,
+        canvas.top,
+        canvas.left + canvas.width,
+        canvas.top + canvas.height,
+    );
+    // The dashes move one pixel every other cycle, from the unit toward the stop.
+    let phase = -((tick / 2) as i32 % (crate::orderlines::DASH_ON + crate::orderlines::DASH_OFF));
+    for s in lines {
+        let colour = s.kind.colour();
+        crate::orderlines::line_pixels(s, bounds, true, phase, |x, y| canvas.put(x, y, colour));
+        crate::orderlines::marker_pixels(s.to, |x, y| canvas.put(x, y, colour));
+    }
+}
+
 /// The pole's height and the pennant's size, in pixels.
 pub const FLAG_POLE: i32 = 14;
 pub const FLAG_PENNANT: i32 = 6;
@@ -835,6 +853,10 @@ pub struct ViewFrame {
     pub flags: Vec<RallyFlag>,
     /// The queued-order waypoints of the selected units, over the fog; empty unless the option is on.
     pub waypoints: Vec<Waypoint>,
+    /// The order lines of the selected own units (`orderlines`), over the fog; empty unless the option is on.
+    pub lines: Vec<crate::orderlines::Segment>,
+    /// The game cycle, which marches the lines' dashes.
+    pub tick: u32,
     /// Layer 6: per map tile the visible and explored codes (row by row, `fog.0` tiles wide); `None` with the
     /// reveal-map cheat.
     pub fog: Option<(usize, Vec<(u8, u8)>)>,
@@ -889,6 +911,7 @@ pub fn draw(canvas: &mut Canvas, f: &ViewFrame, art: &Art, shapes: &fog::Shapes)
     for w in &f.waypoints {
         draw_waypoint(canvas, w);
     }
+    draw_lines(canvas, &f.lines, f.tick);
     if let Some(op) = &f.marker {
         run(canvas, op);
     }
@@ -944,6 +967,8 @@ pub struct Local<'a> {
     /// The optional health bars (`overlay`): which units show one, and the unit under the pointer.
     pub bars: HealthBars,
     pub hovered: Option<UnitId>,
+    /// Draw the order lines of the selected units (option `order-lines`).
+    pub order_lines: bool,
 }
 
 /// Dead (slot released) or removed: not drawn at all.
@@ -1185,6 +1210,11 @@ pub fn frame(world: &World, art: &Art, view: &Canvas, local: &Local) -> (ViewFra
                 from = at;
             }
         }
+    }
+    // The order lines of the selected units (option `order-lines`).
+    if local.order_lines {
+        f.lines = crate::orderlines::segments(world, local.selected);
+        f.tick = world.tick;
     }
     // Layers 8 and 9.
     f.marker = local.marker.and_then(|mk| marker_op(art, mk));

@@ -62,6 +62,8 @@ use crate::scene::Picture;
 pub(crate) enum Page {
     General,
     Interface,
+    /// What the game shows of the play that the original did not: drawn on the map, over the panel, after the game.
+    Overlays,
     Sound,
     Gameplay,
     /// The mods to enable (`tidewater_formats::mods`); shown only when there is a mod to enable.
@@ -72,9 +74,10 @@ pub(crate) enum Page {
 }
 
 impl Page {
-    pub(crate) const ALL: [Page; 8] = [
+    pub(crate) const ALL: [Page; 9] = [
         Page::General,
         Page::Interface,
+        Page::Overlays,
         Page::Sound,
         Page::Gameplay,
         Page::Mods,
@@ -87,6 +90,7 @@ impl Page {
         match self {
             Page::General => "General",
             Page::Interface => "Interface",
+            Page::Overlays => "Overlays",
             Page::Sound => "Sound",
             Page::Gameplay => "Gameplay",
             Page::Mods => "Mods",
@@ -102,6 +106,10 @@ impl Page {
                 "The window, the picture, the mouse and start-up. The game files Tidewater runs on are here too."
             }
             Page::Interface => "Extra help on the game screen, and the font. Each one is off until you turn it on.",
+            Page::Overlays => {
+                "More to see of the play: what units are doing, how work and income go, the game in figures. Each one \
+                 is off until you turn it on."
+            }
             Page::Sound => {
                 "How loud the unit voices, the sound effects and the music are, as a share of the game's own volume."
             }
@@ -148,6 +156,7 @@ pub(crate) fn extra_page(id: Id) -> Page {
         | Id::AutoReplay
         | Id::MapZoom
         | Id::Font => Page::Interface,
+        Id::OrderLines => Page::Overlays,
         Id::VolumeVoices | Id::VolumeEffects | Id::VolumeMusic => Page::Sound,
         Id::RallyPoints | Id::ProductionQueue | Id::SelectionLimit | Id::SpeedLevels | Id::ShiftQueue => Page::Gameplay,
         Id::TouchDrag
@@ -694,9 +703,15 @@ const ROW_W: u32 = 528;
 /// A row's tap target; rows are 30 pixels apart.
 const ROW_H: u32 = 28;
 const ROW_PITCH: i32 = 30;
-/// The General page has seven rows and the game files' line and buttons under them, the Interface page nine rows: their
-/// rows are 28 apart so the buttons clear the description, which on the Interface page starts lower ([`desc_rect`]).
-const TIGHT_PITCH: i32 = 28;
+/// The General page has seven rows and the game files' line and buttons under them: its rows are 28 apart so the
+/// buttons clear the description.
+const GENERAL_PITCH: i32 = 28;
+/// A page with more than eight rows (Interface, with nine) packs them 26 apart and 24 tall, the least a tap target
+/// may be, so the last still clears the description.
+const CROWDED_PITCH: i32 = 26;
+const CROWDED_H: u32 = 24;
+/// The most rows a page lays out at the normal pitch.
+const NORMAL_ROWS: usize = 8;
 const LABEL_X: i32 = 64;
 const DROP_X: i32 = 352;
 const DROP_W: u32 = 224;
@@ -706,14 +721,6 @@ const ACTION_W: u32 = 224;
 const ACTION_GAP: i32 = 16;
 const DESC: Rect = Rect::new(ROW_X, 344, ROW_W, 4 * TEXT_LINE as u32);
 
-/// Where a page's description of the row in focus goes: [`DESC`], or on the Interface page, whose nine rows end at y
-/// 352, just under them (it still ends above the buttons).
-fn desc_rect(page: Page) -> Rect {
-    match page {
-        Page::Interface => Rect::new(DESC.x, ROWS_TOP + 9 * TIGHT_PITCH, DESC.w, DESC.h),
-        _ => DESC,
-    }
-}
 const BUTTON_Y: i32 = 410;
 const BUTTON_W: u32 = 106;
 const BUTTON_H: u32 = 28;
@@ -792,13 +799,16 @@ fn layout(page: Page, env: &Env) -> Layout {
     let mut targets = Vec::new();
     let mut texts = Vec::new();
     let mut y = ROWS_TOP;
-    let pitch = if matches!(page, Page::General | Page::Interface) {
-        TIGHT_PITCH
+    let rows: Vec<Item> = items_on(page).into_iter().filter(|&i| shown(i, env)).collect();
+    let (pitch, height) = if page == Page::General {
+        (GENERAL_PITCH, ROW_H)
+    } else if rows.len() > NORMAL_ROWS {
+        (CROWDED_PITCH, CROWDED_H)
     } else {
-        ROW_PITCH
+        (ROW_PITCH, ROW_H)
     };
-    for item in items_on(page).into_iter().filter(|&i| shown(i, env)) {
-        targets.push((Target::Row(item), Rect::new(ROW_X, y, ROW_W, ROW_H)));
+    for item in rows {
+        targets.push((Target::Row(item), Rect::new(ROW_X, y, ROW_W, height)));
         y += pitch;
     }
     if page == Page::General {
@@ -1499,7 +1509,7 @@ impl Screen {
         for (text, r) in &lay.texts {
             self.draw_lines(&mut p, look, small, text, *r);
         }
-        self.draw_lines(&mut p, look, small, &self.described(), desc_rect(self.page));
+        self.draw_lines(&mut p, look, small, &self.described(), DESC);
         for (t, r, label, key) in [
             (Target::Defaults, DEFAULTS, "Defaults", 'D'),
             (Target::Cancel, CANCEL, "Cancel", 'C'),
@@ -1830,6 +1840,7 @@ mod tests {
                 "font"
             ]
         );
+        assert_eq!(names(Page::Overlays), ["order-lines"]);
         assert_eq!(names(Page::Sound), ["volume-voices", "volume-effects", "volume-music"]);
         assert_eq!(
             names(Page::Gameplay),
@@ -2286,7 +2297,7 @@ mod tests {
                 for (i, (_, r)) in lay.texts.iter().enumerate() {
                     all.push((format!("text {i}"), *r));
                 }
-                all.push(("description".to_string(), desc_rect(page)));
+                all.push(("description".to_string(), DESC));
                 all.push(("heading".to_string(), HEADING));
                 for (name, r) in &all {
                     assert!(inside(*r, PANEL), "{name} on {page:?} is inside the panel: {r:?}");
@@ -2378,11 +2389,11 @@ mod tests {
     fn the_keys_page_is_a_fifth_tab_that_a_phone_does_not_have() {
         assert_eq!(
             pages(&env(false)),
-            [Page::General, Page::Interface, Page::Sound, Page::Gameplay, Page::Keys]
+            [Page::General, Page::Interface, Page::Overlays, Page::Sound, Page::Gameplay, Page::Keys]
         );
         assert_eq!(
             pages(&env(true)),
-            [Page::General, Page::Interface, Page::Sound, Page::Gameplay, Page::Touch]
+            [Page::General, Page::Interface, Page::Overlays, Page::Sound, Page::Gameplay, Page::Touch]
         );
         let s = keys_screen();
         assert_eq!(s.page(), Page::Keys);

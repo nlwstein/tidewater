@@ -417,6 +417,20 @@ pub fn scenes() -> Vec<Scene> {
             extras: &[("smart-attack-move", "on")],
             keys: "",
         },
+        // Order lines: a group with queued moves, a footman with a queued attack-move, a peasant sent to the gold mine, a
+        // Town Hall with a rally point, and the view magnified.
+        Scene {
+            name: "extras-lines",
+            start: vec![play(0)],
+            cmds: extras_lines(),
+            extras: &[
+                ("order-lines", "on"),
+                ("shift-queue", "on"),
+                ("rally-points", "on"),
+                ("map-zoom", "wheel"),
+            ],
+            keys: "",
+        },
         // Rally points and the production queue: a barracks-type building selected, a rally flag, jobs waiting.
         Scene {
             name: "extras-sim",
@@ -1922,6 +1936,61 @@ fn extras_attack() -> Vec<Cmd> {
         Up(Button::Right),
     ]);
     v.extend([Wait(3), Shot("worker-moves")]);
+    v
+}
+
+/// A right-click at a place, with Shift held when `queue`.
+fn right_click(x: f32, y: f32, queue: bool) -> Vec<Cmd> {
+    use Cmd::*;
+    let mut v = vec![Move(x, y), Wait(1)];
+    if queue {
+        v.extend([Press(Key::ShiftLeft), Wait(1)]);
+    }
+    v.extend([Down(Button::Right), Wait(1), Up(Button::Right)]);
+    if queue {
+        v.extend([Release(Key::ShiftLeft), Wait(1)]);
+    }
+    v
+}
+
+/// Order lines (`order-lines`): a footman and a peasant selected with a box and given a move and two queued moves; the
+/// footman alone with an attack-move queued behind its moves; a peasant sent to the gold mine; the Town Hall with a
+/// rally point; and the same magnified.
+fn extras_lines() -> Vec<Cmd> {
+    use Cmd::*;
+    let mut v = vec![Move(400.0, 240.0), Until(AppState::Game), Wait(5), Shot("none")];
+    // The Town Hall with a rally point.
+    v.extend(click(395.0, 435.0));
+    v.extend(right_click(330.0, 330.0, false));
+    v.extend([Wait(3), Shot("rally")]);
+    // A footman and a peasant, boxed: a move and two queued moves.
+    v.extend([
+        Move(260.0, 225.0),
+        Down(Button::Left),
+        Wait(1),
+        Move(540.0, 340.0),
+        Wait(1),
+        Up(Button::Left),
+        Wait(2),
+    ]);
+    v.extend(right_click(300.0, 290.0, false));
+    v.extend(right_click(260.0, 200.0, true));
+    v.extend(right_click(470.0, 170.0, true));
+    v.extend([Wait(2), Shot("group")]);
+    // The footman alone: an attack-move queued behind its moves.
+    v.extend(click(511.0, 248.0));
+    v.extend([Wait(1)]);
+    v.extend(tap(Key::Letter('A')));
+    v.extend([Press(Key::ShiftLeft), Wait(1)]);
+    v.extend(click(585.0, 215.0));
+    v.extend([Release(Key::ShiftLeft), Wait(2), Shot("attack-move")]);
+    // The peasant sent to the gold mine up the slope.
+    v.extend(click(410.0, 316.0));
+    v.extend([Wait(1), Shot("peasant")]);
+    v.extend(right_click(430.0, 145.0, false));
+    v.extend([Wait(2), Shot("harvest")]);
+    // Magnified: the lines follow the view.
+    v.extend([Move(500.0, 330.0), Wheel(1.0), Wait(3), Shot("zoomed")]);
     v
 }
 
