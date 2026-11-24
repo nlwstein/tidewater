@@ -156,7 +156,7 @@ pub(crate) fn extra_page(id: Id) -> Page {
         | Id::AutoReplay
         | Id::MapZoom
         | Id::Font => Page::Interface,
-        Id::OrderLines | Id::GameStats => Page::Overlays,
+        Id::OrderLines | Id::ProgressIncome | Id::GameStats => Page::Overlays,
         Id::VolumeVoices | Id::VolumeEffects | Id::VolumeMusic => Page::Sound,
         Id::RallyPoints | Id::ProductionQueue | Id::SelectionLimit | Id::SpeedLevels | Id::ShiftQueue => Page::Gameplay,
         Id::TouchDrag
@@ -312,6 +312,7 @@ impl Action {
 pub(crate) const CHOICE_WORDS: &[(Id, &[&str])] = &[
     (Id::HealthBars, &["Off", "Hovered", "Selected", "Always"]),
     (Id::GameClock, &["Off", "Clock", "Clock and APM"]),
+    (Id::ProgressIncome, &["Off", "Progress bars", "Income rates", "Both"]),
     (Id::Scaling, &["Automatic", "Whole numbers", "Sharp (fills)"]),
     (Id::SelectionLimit, &["9 (original)", "12", "18", "Unlimited"]),
     (Id::SpeedLevels, &["Off", "1 more", "2 more", "3 more"]),
@@ -1840,7 +1841,7 @@ mod tests {
                 "font"
             ]
         );
-        assert_eq!(names(Page::Overlays), ["order-lines", "game-stats"]);
+        assert_eq!(names(Page::Overlays), ["order-lines", "game-stats", "progress-income"]);
         assert_eq!(names(Page::Sound), ["volume-voices", "volume-effects", "volume-music"]);
         assert_eq!(
             names(Page::Gameplay),

@@ -325,7 +325,7 @@ A mod is a folder of loose files that replaces some of the game's own files: pic
 
 Tidewater adds a few optional improvements that the original game does not have. **With none switched on, the game looks,
 sounds and plays as the original does.** Turn them on in the [Settings screen](#settings) (the Interface, Sound, Gameplay,
-Touch and Controller pages, and Scaling, Widescreen and Controls on General). Power users can also use the `[extras]` section of the
+Touch and Controller pages, and Scaling, Widescreen, Controls and Progress and income on General). Power users can also use the `[extras]` section of the
 settings file (`settings.txt`), or for one run a flag; `--no-extra-NAME` puts an option back to its default.
 The idle-worker key is F6; keys can be rebound on the Settings screen's Keys page. How the options work, the `[keys]` file format and how to add an option is in [`docs/design/extras.md`](docs/design/extras.md).
 
@@ -366,6 +366,7 @@ The idle-worker key is F6; keys can be rebound on the Settings screen's Keys pag
 | `controls` | `--extra-controls VALUE` | auto, mouse, touch, pad, pad-touch | auto | Which devices work the game; the keyboard always does. `auto`: every device there is. `mouse`: keyboard and mouse only. `touch`: fingers. `pad`: controller. `pad-touch`: both. A missing device falls back to `auto` |
 | `font` | `--extra-font VALUE` | original, clear | original | The letters of the game's text. `original`: the game's own. `clear`: plain letters without serifs or shading, easier to read on a small screen (the titles keep the game's) |
 | `game-stats` | `--extra-game-stats` | on, off | off | A statistics page after the score screen: line graphs over game time of each player's gold, lumber and oil gathered, army, workers and buildings |
+| `progress-income` | `--extra-progress-income VALUE` | off, progress, income, both | off | Your own information only: `progress` a thin bar under each of your buildings that is training, researching, upgrading or being built; `income` the gold, lumber and oil you gather per game minute, under the resource counters; `both` shows both |
 
 **C+L** marks an option that gives you an edge (health bars, smart attack-move, widescreen). In a game with other players the host chooses it in the lobby's "Extras" box (from the command line, `--lobby extras=health-bars=always/widescreen=16:9`; the host's own settings stand for the ones not named) and every player, observers included, plays with the host's choice, whatever their own setting. In single-player games and replays you get your own. **S** marks an option that changes the simulation (rally points, the production queue, shift-queued orders,
 the selection limit and the extra speed levels): the flag or the setting starts a single-player game with it, and in a

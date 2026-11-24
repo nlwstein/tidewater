@@ -838,6 +838,25 @@ pub fn draw_bar(canvas: &mut Canvas, b: &Bar) {
     }
 }
 
+/// Draws a production progress bar: [`overlay::PROGRESS_HEIGHT`] rows, the filled part in [`overlay::PROGRESS`], inside
+/// a one-pixel black frame so it shows on light ground.
+pub fn draw_progress(canvas: &mut Canvas, b: &Bar) {
+    for row in -1..=overlay::PROGRESS_HEIGHT {
+        for x in -1..=b.width {
+            canvas.put(b.at.0 + x, b.at.1 + row, overlay::PROGRESS_FRAME);
+        }
+    }
+    for row in 0..overlay::PROGRESS_HEIGHT {
+        for x in 0..b.width {
+            canvas.put(
+                b.at.0 + x,
+                b.at.1 + row,
+                if x < b.fill { b.colour } else { overlay::EMPTY },
+            );
+        }
+    }
+}
+
 /// Everything one picture of the view needs, as plain values.
 #[derive(Clone, Debug, Default)]
 pub struct ViewFrame {
@@ -849,6 +868,9 @@ pub struct ViewFrame {
     pub effects: Vec<Op>,
     /// The optional health bars (`overlay`), over the units and effects; empty unless the option is on.
     pub bars: Vec<Bar>,
+    /// The optional production progress bars (`overlay`), under the player's own buildings at work; empty unless the
+    /// option is on.
+    pub progress: Vec<Bar>,
     /// The rally flags of the selected training buildings, over the fog; empty unless the option is on.
     pub flags: Vec<RallyFlag>,
     /// The queued-order waypoints of the selected units, over the fog; empty unless the option is on.
@@ -901,6 +923,9 @@ pub fn draw(canvas: &mut Canvas, f: &ViewFrame, art: &Art, shapes: &fog::Shapes)
     }
     for b in &f.bars {
         draw_bar(canvas, b);
+    }
+    for b in &f.progress {
+        draw_progress(canvas, b);
     }
     if let Some((width, codes)) = &f.fog {
         crate::phases::timed(crate::phases::Phase::Fog, || fog::draw(canvas, *width, codes, shapes));
@@ -969,6 +994,8 @@ pub struct Local<'a> {
     pub hovered: Option<UnitId>,
     /// Draw the order lines of the selected units (option `order-lines`).
     pub order_lines: bool,
+    /// The optional production progress bars (`overlay`) are on.
+    pub progress: bool,
 }
 
 /// Dead (slot released) or removed: not drawn at all.
@@ -1140,6 +1167,19 @@ pub fn frame(world: &World, art: &Art, view: &Canvas, local: &Local) -> (ViewFra
                 colour,
             });
         }
+        // Our own buildings at work show how far along they are (`overlay::progress_fill`), nobody else's.
+        if let Some(p) = overlay::progress_shown(local.progress, gone, u.building, u.owner, me, || {
+            crate::info::facts(world, u.id, me)
+                .filter(|s| s.busy())
+                .and_then(|s| s.progress())
+        }) {
+            f.progress.push(Bar {
+                at: (lt.0, lt.1 + bsize.1 + overlay::BAR_GAP),
+                width: bsize.0,
+                fill: overlay::progress_fill(p, bsize.0),
+                colour: overlay::PROGRESS,
+            });
+        }
         f.entries.push(Entry {
             building: u.building,
             air,
@@ -1285,6 +1325,34 @@ mod tests {
         }
         assert_eq!(c.at(2, 3), Some(CLEAR));
         assert_eq!(c.at(2, 7), Some(CLEAR));
+    }
+
+    #[test]
+    fn a_progress_bar_is_two_rows_in_a_black_frame() {
+        let mut c = Canvas::new(0, 0, 20, 10);
+        draw_progress(
+            &mut c,
+            &Bar {
+                at: (3, 4),
+                width: 8,
+                fill: 3,
+                colour: overlay::PROGRESS,
+            },
+        );
+        for row in 4..6 {
+            assert_eq!(c.at(3, row), Some(overlay::PROGRESS as u16));
+            assert_eq!(c.at(5, row), Some(overlay::PROGRESS as u16));
+            assert_eq!(c.at(6, row), Some(overlay::EMPTY as u16));
+            assert_eq!(c.at(10, row), Some(overlay::EMPTY as u16));
+            assert_eq!(c.at(2, row), Some(overlay::PROGRESS_FRAME as u16), "frame, left");
+            assert_eq!(c.at(11, row), Some(overlay::PROGRESS_FRAME as u16), "frame, right");
+        }
+        for x in 2..=11 {
+            assert_eq!(c.at(x, 3), Some(overlay::PROGRESS_FRAME as u16), "frame, above");
+            assert_eq!(c.at(x, 6), Some(overlay::PROGRESS_FRAME as u16), "frame, below");
+        }
+        assert_eq!(c.at(12, 4), Some(CLEAR));
+        assert_eq!(c.at(3, 7), Some(CLEAR));
     }
 
     #[test]

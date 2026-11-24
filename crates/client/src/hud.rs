@@ -144,6 +144,14 @@ impl InfoView<'_> {
     }
 }
 
+/// The income rates row (`income`): the gold, lumber and oil per game minute, `None` while there is too little record,
+/// and whether the control-group bar is on, which the row then sits under.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IncomeView {
+    pub rates: Option<crate::income::Amounts>,
+    pub below_groups: bool,
+}
+
 /// The changing state the interface shows.
 pub struct View<'a> {
     /// The shown gold, lumber and oil (see [`crate::screen::Counter`]).
@@ -167,6 +175,8 @@ pub struct View<'a> {
     pub idle_button: Option<(usize, &'a str)>,
     /// The game clock line over the map view's top right corner, when the option is on (`overlay`).
     pub clock: Option<&'a str>,
+    /// The income rates when the option is on (`income`).
+    pub income: Option<IncomeView>,
     /// The control-group bar's buttons, none when the option is off (`groupbar`).
     pub group_bar: &'a [crate::groupbar::Cell],
     /// The minimap pings whose marker is on (option `minimap-ping`, `ping`).
@@ -776,6 +786,24 @@ impl HudArt {
         }
     }
 
+    /// The income rates (`income`): one under each of the gold, lumber and oil counters, `+250/min` in the green text
+    /// colour, over the top rows of the map view. `below_groups` moves the row under the control-group bar's.
+    fn draw_income(
+        &self,
+        pic: &mut Picture,
+        view: Rect,
+        bar: Rect,
+        rates: Option<crate::income::Amounts>,
+        below_groups: bool,
+    ) {
+        use crate::screen::Item;
+        let y = view.y + crate::income::row_offset(below_groups);
+        for (n, item) in Item::ALL.iter().take(3).enumerate() {
+            let line = crate::income::rate_line(rates.map(|r| r[n]));
+            text_in(pic, &self.font, bar.x + item.area(false).0, y, &line, colour_code(2));
+        }
+    }
+
     /// The resource bar (screen spec, "Resource bar"): single-player positions.
     fn draw_resources(&self, pic: &mut Picture, bar: Rect, v: &View) {
         use crate::screen::{Item, amount_text};
@@ -1050,8 +1078,8 @@ impl HudArt {
             (
                 l.viewport,
                 key(format_args!(
-                    "{:?}{:?}{:?}{:?}",
-                    v.messages, v.group_bar, v.clock, v.replay
+                    "{:?}{:?}{:?}{:?}{:?}",
+                    v.messages, v.group_bar, v.clock, v.replay, v.income
                 )),
             ),
             (l.buttons, fingerprint(buttons, format_args!("{:?}", v.buttons))),
@@ -1154,6 +1182,9 @@ impl HudArt {
             self.draw_idle_button(pic, n, key);
         }
         self.draw_group_bar(pic, l.viewport, v.group_bar);
+        if let Some(i) = v.income {
+            self.draw_income(pic, l.viewport, l.top, i.rates, i.below_groups);
+        }
         if let Some(line) = v.clock {
             self.draw_clock(pic, l.viewport, line);
         }

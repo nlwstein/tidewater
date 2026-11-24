@@ -50,6 +50,7 @@ chooses it in the lobby and it travels with the game, saves and replays (see "Si
 | `controls` | `--extra-controls VALUE` | auto, mouse, touch, pad, pad-touch | C | auto | Which devices work the game; the keyboard always does. `auto`: every device there is. `mouse`: keyboard and mouse only. `touch`: fingers. `pad`: controller. `pad-touch`: both. A missing device falls back to `auto` |
 | `font` | `--extra-font VALUE` | original, clear | C | original | The letters of the game's text. `original`: the game's own. `clear`: plain letters without serifs or shading, easier to read on a small screen (the titles keep the game's) |
 | `game-stats` | `--extra-game-stats` | on, off | C | off | A statistics page after the score screen: line graphs over game time of each player's gold, lumber and oil gathered, army, workers and buildings |
+| `progress-income` | `--extra-progress-income VALUE` | off, progress, income, both | C | off | Your own information only: `progress` a thin bar under each of your buildings that is training, researching, upgrading or being built; `income` the gold, lumber and oil you gather per game minute, under the resource counters; `both` shows both |
 
 - **Default** is the value when nothing says otherwise. For a volume, 100 means "leave the sound as the game's own
   dialog sets it", so the original sound dialog keeps its look and meaning.
@@ -74,6 +75,8 @@ without new screen code. The file and the flags still work and are for power use
   the next game for the widescreen and S options. The words of a choice's values (`CHOICE_WORDS`: "Hovered", "16:10",
   "Unlimited") and the page of each option (`extra_page`, a `match` with no catch-all arm) are the only things written in
   `settings.rs`; a test checks that every option is on exactly one page and has words.
+- **Crowded pages.** A page of more than eight rows (the Interface page, with `progress-income` its ninth) packs them
+  26 pixels apart, so the description under them stays clear (`settings::CROWDED_PITCH`).
 - **Rows that are not options.** Window (`fullscreen`), Mouse lock (`mouse_lock`), Intro video (the stored
   `OPENING_FILM` bit, which start-up honours as well as `--no-intro`) and Check for updates (`update_check`) are stored
   settings in `settings.txt`'s top section; the desktop-only ones are hidden on a phone.
@@ -118,6 +121,32 @@ without new screen code. The file and the flags still work and are for power use
   interface. The message list starts 194 pixels down the screen, the notice line is at the bottom, and the game clock
   (when on) is at the top right; ten buttons are at most 400 pixels long, so they never reach the clock. Rules in
   `groupbar.rs`.
+- **Progress and income** (`progress-income`). One option with four values (`off`, `progress`, `income`, `both`) because
+  the two halves are the same kind of thing (your own economy at a glance) and one Settings row is cheaper than two; a
+  player who wants only one picks it. Only the local player's own information is ever read.
+  - *Progress.* A two-row bar [`overlay::BAR_GAP`] rows under the selection box of each of your own buildings that is
+    under construction, training, researching or upgrading: white fill on the health bars' empty colour in a one-pixel black frame (so it shows on snow
+    and sand), as wide as the box. The fill is the number the information panel's progress bar shows for that building
+    (`info::Subject::progress`, read through `info::facts`), so it equals what selecting the building would show. A
+    unit in training is not on the map yet, so its building carries the bar. It sits below the box so it never
+    covers the health bar above it. Drawn in the map view with the health bars (under the fog, which never hides your
+    own buildings), so it follows the map zoom and widescreen with the map. Rules in `overlay.rs`, drawing in `view.rs`.
+  - *Income.* The gold, lumber and oil you delivered over the last game minute, as `+85/min`, `+1.2k/min` from 1,000
+    and `-` for the first ten seconds, in the green text colour. It reads your "total gathered" statistic
+    (`Player::gathered`, the score screen's figures), so spending does not lower it. The window is a game minute
+    counted in cycles at the current speed (a pause leaves it alone), kept as one reading about every second
+    (`income.rs`, `Meter`; fed only while the option is on). **Where it sits:** the top bar has no room at 640 pixels
+    (each counter has 55 pixels of text beside its icon, which five-digit amounts nearly fill, and the idle-worker
+    button takes the bar's right end), so each rate is drawn as a row of text over the top edge of the map view, left
+    aligned under its counter (`hud::draw_income`). With the control-group bar on, the row sits under that bar's
+    buttons (`income::row_offset`). The clock is at the view's right, clear of it. Nothing in the bar moves.
+  - *Why C and not C+L.* Neither half shows anything an opponent hides, and only your own player is ever read. The
+    original shows the same progress when you select the building and the same totals over time on the counters, so
+    this saves clicks and mental sums; it does not add knowledge. That is the idle-worker button's case (also C), unlike
+    health bars, which are C+L because they reveal enemy hit points. It is still a small edge in attention, since you
+    see every building's progress at once without selecting each one; if a game ever wants strict parity the owner can
+    make it C+L by changing the registry row's scope (the code reads it through `game::extras`, so a session override
+    would then work as it does for health bars).
 - **Smart attack-move** (`smart-attack-move`, C+L). A right-click on open ground (no unit under the pointer) with only
   fighting units selected sends the Attack button's command for the ground (`Command::Issue`, command 8, no target),
   which the sim already turns into an attack-move, instead of the right-click's move. "Fighting" means every selected
@@ -427,5 +456,6 @@ for the C+L options that set wins over the local settings; the C options stay ea
 
 - The frame snapshot (`crates/client/tests/frames.rs`) runs its original scenes with every extra off and is never
   re-blessed for an extra (the main menu's frames changed once, for the Settings link, which is not an extra); the scenes `extras`, `extras-bars`, `extras-groups`, `extras-attack`, `extras-lines`, `extras-keys` and `extras-font` turn options on and have their own entries; the scene `settings-screen` shows the Settings screen and `settings-ingame` the Settings screen over a game.
+  re-blessed for an extra (the main menu's frames changed once, for the Settings link, which is not an extra); the scenes `extras`, `extras-bars`, `extras-groups`, `extras-attack`, `extras-keys` and `extras-progress` turn options on and have their own entries; the scene `settings-screen` shows the Settings screen and `settings-ingame` the Settings screen over a game.
 - `Trims::default()` leaves the mixed sound identical; the audio snapshot of the original scenes shows it.
 - The oracle traces and the whole-map snapshot run on the sim, which an empty `Extras` does not change.

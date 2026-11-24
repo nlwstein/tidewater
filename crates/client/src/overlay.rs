@@ -7,6 +7,10 @@
 //! - **Health bars.** A bar is [`BAR_HEIGHT`] rows high and as wide as the unit's selection box, [`BAR_GAP`] rows above
 //!   the box. Its colour is the information panel's health colour ([`crate::info::health_bar`]); the empty part is
 //!   [`EMPTY`], the information panel's empty colour. A unit with any hit points shows at least one filled pixel.
+//! - **Progress bars** (option `progress-income`) sit [`BAR_GAP`] rows under the selection box of the player's own
+//!   buildings that are under construction or training, researching or upgrading, [`PROGRESS_HEIGHT`] rows high and as
+//!   wide as the box, in a one-pixel black frame ([`PROGRESS_FRAME`]). The fill is the progress the information panel's bar shows for that building
+//!   ([`crate::info::Subject::progress`]), so nothing is shown that selecting the building would not.
 //! - **The clock** counts the game's own clock (`savegame::GameClock`: minutes and seconds, with hours once there are
 //!   any). **Actions per minute** are the commands the player gave (selecting included) per minute of that clock, shown
 //!   from the first full second and as a whole number.
@@ -19,6 +23,41 @@ pub const BAR_HEIGHT: i32 = 3;
 pub const BAR_GAP: i32 = 2;
 /// The palette colour of the empty part of a bar (info-panel spec, "Health bar colours").
 pub const EMPTY: u8 = 99;
+
+/// Rows of a production progress bar: thinner than a health bar, so the two read as different things.
+pub const PROGRESS_HEIGHT: i32 = 2;
+/// The palette colour of the filled part of a progress bar (the minimap's white view rectangle).
+pub const PROGRESS: u8 = 246;
+
+/// The palette colour of a progress bar's one-pixel frame: black, so the bar shows on snow and sand.
+pub const PROGRESS_FRAME: u8 = 0;
+
+/// How many of `width` pixels are filled for a shown progress `p` (0 to 255, [`crate::info::Subject::progress`], the
+/// value the information panel's bar shows). Work that has begun shows at least one pixel; 255 fills the bar.
+pub fn progress_fill(p: u8, width: i32) -> i32 {
+    if width <= 0 {
+        return 0;
+    }
+    (width as i64 * p as i64 / 255).clamp(1, width as i64) as i32
+}
+
+/// The progress a unit's bar shows, if it shows one: only the local player's own buildings (`owner` is `me`, a player
+/// 0 to 7; an observer, an ally, an enemy or a neutral building never), alive, and at work, i.e. `progress` is
+/// `Some` (`crate::info::Subject::progress` of a busy building).
+pub fn progress_shown(
+    on: bool,
+    gone: bool,
+    building: bool,
+    owner: u8,
+    me: u8,
+    progress: impl FnOnce() -> Option<u8>,
+) -> Option<u8> {
+    if on && !gone && building && me < 8 && owner == me {
+        progress()
+    } else {
+        None
+    }
+}
 
 /// Whether a unit shows a health bar under `mode`.
 pub fn bar_shown(mode: HealthBars, selected: bool, hovered: bool) -> bool {
@@ -94,6 +133,46 @@ mod tests {
         assert_eq!(bar_fill(5, 0, 31), None);
         // More than the maximum (a boosted unit) stays inside the bar.
         assert_eq!(bar_fill(90, 60, 31).map(|f| f.0), Some(31));
+    }
+
+    #[test]
+    fn a_progress_bar_fills_with_the_shown_progress() {
+        assert_eq!(progress_fill(0, 48), 1, "work that has begun shows a sliver");
+        assert_eq!(progress_fill(127, 48), 23);
+        assert_eq!(progress_fill(255, 48), 48);
+        assert_eq!(progress_fill(255, 1), 1);
+        assert_eq!(progress_fill(100, 0), 0);
+    }
+
+    #[test]
+    fn only_your_own_buildings_at_work_show_progress() {
+        let at_work = || Some(100);
+        assert_eq!(progress_shown(true, false, true, 2, 2, at_work), Some(100));
+        assert_eq!(progress_shown(false, false, true, 2, 2, at_work), None, "off");
+        assert_eq!(
+            progress_shown(true, true, true, 2, 2, at_work),
+            None,
+            "a building being destroyed"
+        );
+        assert_eq!(
+            progress_shown(true, false, false, 2, 2, at_work),
+            None,
+            "a unit is not a building"
+        );
+        assert_eq!(
+            progress_shown(true, false, true, 3, 2, at_work),
+            None,
+            "an enemy's or ally's"
+        );
+        assert_eq!(progress_shown(true, false, true, 15, 2, at_work), None, "a neutral's");
+        assert_eq!(
+            progress_shown(true, false, true, 9, 9, at_work),
+            None,
+            "an observer owns nothing"
+        );
+        assert_eq!(progress_shown(true, false, true, 2, 2, || None), None, "idle");
+        // An enemy's progress is never even looked up.
+        progress_shown(true, false, true, 3, 2, || panic!("read an enemy building"));
     }
 
     #[test]

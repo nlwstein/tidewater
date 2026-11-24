@@ -47,6 +47,7 @@ const SCENES: &[&str] = &[
     "extras-sim",
     "extras-lines",
     "extras-keys",
+    "extras-progress",
     "extras-zoom",
     "extras-font",
     "widescreen",
