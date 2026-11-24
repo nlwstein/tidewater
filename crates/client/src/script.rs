@@ -373,8 +373,8 @@ pub fn scenes() -> Vec<Scene> {
             extras: &[("group-bar", "on")],
             keys: "",
         },
-        // The statistics page (`game-stats`): a peasant fells trees and the Town Hall trains peasants for a while, then
-        // the game is won; the score screen, then the page of graphs after it.
+        // The statistics page (`game-stats`): peasants mine and fell trees, a farm goes up and the Town Hall trains
+        // peasants, then the game is won; the score screen, then the page of graphs after it.
         Scene {
             name: "extras-stats",
             start: vec![Step::Play {
@@ -1775,9 +1775,9 @@ fn extras_groups() -> Vec<Cmd> {
     v
 }
 
-/// The statistics page: some play (lumber carried home, peasants trained), a win by the cheat, the score screen counted
-/// up (its hint line shows) and the page of graphs after it, then on to the next briefing.
-fn stats_opening() -> Vec<Cmd> {
+/// The statistics page: about two and a half game minutes of play (gold mined, lumber cut, a farm built, peasants
+/// trained), a win by the cheat, the score screen counted up (its hint line shows) and the page of graphs after it.
+fn extras_stats() -> Vec<Cmd> {
     use Cmd::*;
     let mut v = vec![Move(400.0, 240.0), Until(AppState::Game), Wait(5)];
     // The map is shown, so the orders below reach ground the fog still covers; the idle-worker key selects a peasant and
@@ -1797,31 +1797,10 @@ fn stats_opening() -> Vec<Cmd> {
     v.extend(right_click(465.0, 255.0));
     v.extend(group_build(1, 0, 225.0, 50.0));
     v.extend([Wait(20), Shot("farm")]);
-    v.extend([UntilCycle(1500)]);
-    v.extend(group_build(1, 1, 350.0, 135.0));
-    v.extend([UntilCycle(3000)]);
-    v.extend(click(350.0, 135.0));
-    v.extend(set_group(3));
+    // The farm is up by then: the Town Hall trains a peasant and queues a second.
+    v.extend([UntilCycle(2700)]);
     v.extend(group_train(2, 2));
-    v.extend(group_build(1, 0, 295.0, 50.0));
-    v
-}
-
-/// The rest of the demo game: more farms and soldiers every few minutes, then the win and the two pages after it.
-fn stats_rest() -> Vec<Cmd> {
-    use Cmd::*;
-    let mut v = vec![UntilCycle(4500)];
-    v.extend(group_train(2, 2));
-    v.extend(group_build(1, 0, 365.0, 50.0));
-    for at in (6000..=18000).step_by(1500) {
-        v.extend([UntilCycle(at)]);
-        v.extend(group_train(3, 2));
-        v.extend(group_train(2, 1));
-        if at % 3000 == 0 {
-            v.extend(group_build(1, 0, 225.0 + (at as f32 - 6000.0) / 3000.0 * 70.0, 120.0));
-        }
-    }
-    v.extend([UntilCycle(21000), Shot("late")]);
+    v.extend([UntilCycle(3600), Shot("late")]);
     v.extend(chat("unite the clans"));
     v.extend([UntilOutcome, Wait(5)]);
     v.extend(tap(Key::Enter));
@@ -1830,12 +1809,6 @@ fn stats_rest() -> Vec<Cmd> {
     v.extend([Wait(3), Shot("score")]);
     v.extend(tap(Key::Space));
     v.extend([Move(630.0, 475.0), Wait(3), Shot("stats")]);
-    v
-}
-
-fn extras_stats() -> Vec<Cmd> {
-    let mut v = stats_opening();
-    v.extend(stats_rest());
     v
 }
 

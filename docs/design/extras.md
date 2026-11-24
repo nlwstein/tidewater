@@ -243,7 +243,7 @@ without new screen code. The file and the flags still work and are for power use
   during a game. **Replays** are sampled like played games, but a replay ends held on its last cycle without the outcome dialog or the score screen, so no page follows one. **Multiplayer:** the numbers are the sim's, for every
   player, which would be hidden information during play; they are only drawn on the page after the game is over, so
   it gives no edge and the option is client-only (C). Not done: a timeline table of key moments (first kill, first
-  building lost); the sim does not keep those. The scene `extras-stats` shows it: you against three computer players on Gold Rush, about 14 game minutes, won by the
+  building lost); the sim does not keep those. The scene `extras-stats` shows it: you against three computer players on Gold Rush, about two and a half game minutes, won by the
   victory cheat; rules and drawing in `gamestats.rs`.
 
 ## Rebindable keys
