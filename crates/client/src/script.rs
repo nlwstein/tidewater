@@ -351,6 +351,26 @@ pub fn scenes() -> Vec<Scene> {
             extras: &[],
             keys: "",
         },
+        // The recording `replay-seek` watches: a mission left to the computer players for 3,000 cycles (`tests/frames.rs`).
+        Scene {
+            name: "replay-record",
+            start: vec![play(2)],
+            cmds: vec![
+                Cmd::Move(400.0, 240.0),
+                Cmd::Until(AppState::Game),
+                Cmd::UntilCycle(3000),
+                Cmd::Shot("recorded"),
+            ],
+            extras: &[],
+            keys: "",
+        },
+        Scene {
+            name: "replay-seek",
+            start: vec![play(0)],
+            cmds: replay_seek(),
+            extras: &[],
+            keys: "",
+        },
         Scene {
             name: "flow",
             start: crate::frontend::startup_steps(false, false, true),
@@ -1780,6 +1800,50 @@ fn carry() -> Vec<Cmd> {
     v.extend([Wait(2), Move(90.0, 60.0), Wait(2), Shot("minimap-target")]);
     v.extend(click(90.0, 60.0));
     v.extend([Wait(8), Shot("minimap-target-marker")]);
+    v
+}
+
+/// The replay viewer (`replayview`), run as `--script replay-seek --replay FILE` on a recording of the `replay-record` scene
+/// (`tests/frames.rs` records it): the timeline over the map view, jumps by a click on it and by the keys, the other
+/// player's vision, everyone's and the start and the end. Run on a live game it only waits.
+fn replay_seek() -> Vec<Cmd> {
+    use Cmd::*;
+    let alt = |k: Key| {
+        [
+            Press(Key::AltLeft),
+            Press(k),
+            Wait(1),
+            Release(k),
+            Release(Key::AltLeft),
+        ]
+    };
+    let mut v = vec![Move(400.0, 240.0), Until(AppState::Game), Wait(5)];
+    v.extend([UntilCycle(300), Shot("bar-at-300")]);
+    // A click in the middle of the track jumps ahead; the jump is played out over some frames, with no drawing of the
+    // cycles in between, and the game goes on from there.
+    v.extend(click(395.0, 453.0));
+    v.extend([Wait(2), Shot("jumping"), Wait(40), Shot("jumped-ahead")]);
+    // Alt+Left goes back ten seconds, Alt+Shift+Left a minute.
+    v.extend(alt(Key::Left));
+    v.extend([Wait(10), Shot("back-ten-seconds")]);
+    v.extend([Press(Key::ShiftLeft)]);
+    v.extend(alt(Key::Left));
+    v.extend([Release(Key::ShiftLeft), Wait(10), Shot("back-a-minute")]);
+    // A click near the left of the track is a jump back before the first copy of the world.
+    v.extend(click(300.0, 453.0));
+    v.extend([Wait(20), Shot("jumped-back")]);
+    // Tab takes the next vision: everyone's (the whole map, no fog), then the computer player's, whose maps the game
+    // builds again from the start; the vision button takes the next, the human player's own again.
+    v.extend(tap(Key::Tab));
+    v.extend([Wait(10), Shot("vision-everyone")]);
+    v.extend(tap(Key::Tab));
+    v.extend([Wait(60), Shot("vision-other-player")]);
+    v.extend(click(560.0, 453.0));
+    v.extend([Wait(60), Shot("vision-own-again")]);
+    v.extend(alt(Key::End));
+    v.extend([Wait(60), Shot("the-end")]);
+    v.extend(alt(Key::Home));
+    v.extend([Wait(60), Shot("the-start")]);
     v
 }
 

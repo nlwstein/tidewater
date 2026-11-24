@@ -171,6 +171,8 @@ pub struct View<'a> {
     pub group_bar: &'a [crate::groupbar::Cell],
     /// The minimap pings whose marker is on (option `minimap-ping`, `ping`).
     pub pings: &'a [PingMark],
+    /// The replay viewer's timeline, in a replay only (`replayview`).
+    pub replay: Option<&'a crate::replayview::Bar>,
 }
 
 /// A ping marker on the minimap: the pixel of its tile (0 to 127 each way) and its player's minimap colour.
@@ -728,6 +730,38 @@ impl HudArt {
         text(pic, &self.font, view.x + view.w as i32 - w - 6, view.y + 4, line);
     }
 
+    /// The replay viewer's timeline (`replayview`): the time, the track with its played part and knob, and the vision
+    /// button, in the buttons' own colours.
+    fn draw_replay_bar(&self, pic: &mut Picture, view: Rect, b: &crate::replayview::Bar) {
+        use crate::replayview::{bar_rect, button_rect, knob_x, time_rect, time_text, track_rect};
+        let bar = bar_rect(view);
+        let time = format!("{} / {}", time_text(b.now_ms), time_text(b.total_ms));
+        let tr = time_rect(bar);
+        fill(pic, tr, [24, 22, 16]);
+        outline(pic, tr, [140, 120, 60]);
+        text_centred(pic, &self.font, tr, &time);
+        // The track: a groove, the part played in gold, and the knob.
+        let track = track_rect(bar);
+        let groove = Rect::new(track.x, track.y + 4, track.w, track.h.saturating_sub(8).max(2));
+        fill(pic, groove, [24, 24, 24]);
+        outline(pic, groove, [140, 120, 60]);
+        let x = knob_x(track, b.tick, b.total);
+        let played = Rect::new(
+            groove.x + 1,
+            groove.y + 1,
+            (x - groove.x - 1).max(0) as u32,
+            groove.h.saturating_sub(2),
+        );
+        fill(pic, played, if b.seeking { [150, 150, 150] } else { [200, 160, 40] });
+        let knob = Rect::new(x - 2, track.y + 1, 5, track.h.saturating_sub(2));
+        fill(pic, knob, [235, 225, 190]);
+        outline(pic, knob, [90, 70, 20]);
+        let br = button_rect(bar);
+        fill(pic, br, [40, 36, 28]);
+        outline(pic, br, [140, 120, 60]);
+        text_centred(pic, &self.font, br, &b.vision);
+    }
+
     /// One item of the resource bar or the status bar: the icon at the item's left edge `x` in `bar`, then the text
     /// [`crate::screen::TEXT_DX`] to the right, vertically centred, in spans of colour codes.
     fn item(&self, pic: &mut Picture, bar: Rect, x: i32, icon: usize, spans: &[(&str, u8)]) {
@@ -1013,7 +1047,10 @@ impl HudArt {
             (l.bottom, key(format_args!("{:?}", v.status))),
             (
                 l.viewport,
-                key(format_args!("{:?}{:?}{:?}", v.messages, v.group_bar, v.clock)),
+                key(format_args!(
+                    "{:?}{:?}{:?}{:?}",
+                    v.messages, v.group_bar, v.clock, v.replay
+                )),
             ),
             (l.buttons, fingerprint(buttons, format_args!("{:?}", v.buttons))),
             (
@@ -1105,6 +1142,9 @@ impl HudArt {
         self.draw_group_bar(pic, l.viewport, v.group_bar);
         if let Some(line) = v.clock {
             self.draw_clock(pic, l.viewport, line);
+        }
+        if let Some(bar) = v.replay {
+            self.draw_replay_bar(pic, l.viewport, bar);
         }
 
         // The command panel: frames of the icon sheet (the command icons share the unit icon sheet).

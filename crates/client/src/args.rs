@@ -47,6 +47,10 @@ pub struct Args {
     /// of sync; without this the game stops and says what differs).
     #[arg(long, requires = "replay")]
     pub force_replay: bool,
+    /// Development: play a `--replay` with no timeline, jumps or vision keys, so its frames are the recorded game's own
+    /// (`tests/frames.rs` compares them with the live run's).
+    #[arg(long, requires = "replay")]
+    pub plain_replay: bool,
     /// Host a network game of MAP on PORT (6112 without one) and wait for the players of `--lobby` to `--join` it
     /// (`docs/design/network.md`). Write the map before it (`tidewater MAP --host`): a bare `--host` followed by a
     /// word would read the word as a port. The lobby's other choices are `--setup` and `--lobby`.

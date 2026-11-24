@@ -31,8 +31,9 @@
 
 use tidewater_replay::format::CHECKPOINT_EVERY;
 use tidewater_replay::run::Mismatch;
+use tidewater_replay::seek::{Progress, Seeker, Vision};
 use tidewater_replay::{Header, Replay};
-use tidewater_sim::Command;
+use tidewater_sim::{Command, World};
 
 use crate::storage::Store;
 
@@ -108,6 +109,46 @@ pub trait Session: Send + Sync {
     /// Whether this session plays a recording, so the player's input is not the game's.
     fn is_replay(&self) -> bool {
         false
+    }
+
+    // --- the replay viewer's timeline and vision (`ReplaySession`; every other session keeps these defaults) ---
+
+    /// What the timeline shows, when this session plays a recording that can be sought in.
+    fn seek_info(&self) -> Option<SeekInfo> {
+        None
+    }
+
+    /// Whether a jump is being played out: the game's own cycles wait for it.
+    fn seeking(&self) -> bool {
+        false
+    }
+
+    /// Jumps to cycle `tick` of the recording (past the end is the end): puts `world` at the nearest place to play on
+    /// from. The rest is played out by [`seek_step`](Self::seek_step).
+    fn seek(&mut self, _world: &mut World, _tick: u32) {}
+
+    /// Plays the pending jump on by at most `budget` cycles; true when it has reached its cycle (or has none).
+    fn seek_step(&mut self, _world: &mut World, _budget: u32) -> bool {
+        true
+    }
+
+    /// Takes another vision (`seek::Vision`). True if `world` changed so much that the client must start its own
+    /// views of it over (another player's maps mean the game is played again from the start).
+    fn seek_vision(&mut self, _world: &mut World, _vision: Vision) -> bool {
+        false
+    }
+
+    /// A cycle has run on `world`: a recording keeps a copy of it now and then, for jumping back.
+    fn note_cycle(&mut self, _world: &World) {}
+
+    /// The time in milliseconds at cycle `tick` of the recording.
+    fn seek_ms_at(&self, _tick: u32) -> u64 {
+        0
+    }
+
+    /// The last cycle of the recording at or before a time in milliseconds.
+    fn seek_tick_at(&self, _ms: u64) -> u32 {
+        0
     }
 
     /// The cheat flags the world must start with, when the session knows them (a replay's); `None` lets the client
@@ -393,6 +434,21 @@ impl Drop for Recorder {
     }
 }
 
+/// What the replay viewer's timeline shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SeekInfo {
+    /// The recording's length in cycles.
+    pub total: u32,
+    pub total_ms: u64,
+    pub vision: Vision,
+    /// The cycle a jump is heading for, while one is under way.
+    pub target: Option<u32>,
+    /// The vision the key that cycles it would take.
+    pub next_vision: Vision,
+    /// The vision shows a computer player, whose view has no fog: the whole map, with that player's resources.
+    pub computer: bool,
+}
+
 /// The speeds a replay can be watched at, as multiples of the game's own.
 const RATES: [u32; 4] = [1, 2, 4, 8];
 
@@ -401,6 +457,8 @@ const RATES: [u32; 4] = [1, 2, 4, 8];
 /// changes the world, so the replay stays the recording.
 pub struct ReplaySession {
     replay: Replay,
+    /// The way about the recording (`seek`), when the game that starts it has given the world it was built from.
+    seeker: Option<Seeker>,
     held: bool,
     rate: usize,
     failed: Option<Mismatch>,
@@ -419,12 +477,20 @@ impl ReplaySession {
         }
         ReplaySession {
             replay,
+            seeker: None,
             held: false,
             rate: 0,
             failed: None,
             ended: false,
             notices,
         }
+    }
+
+    /// This session with the timeline: `origin` is the world as the header builds it, before the start-up cycles
+    /// (`tidewater_replay::start::origin_world`).
+    pub fn with_origin(mut self, origin: World) -> ReplaySession {
+        self.seeker = Some(Seeker::new(origin, &self.replay));
+        self
     }
 
     /// The first checkpoint that did not match, if playback has stopped on one.
@@ -482,19 +548,7 @@ impl Session for ReplaySession {
     }
 
     fn checkpoint(&mut self, tick: u32, hash: u64) -> Result<(), Mismatch> {
-        match self.replay.checkpoint_at(tick) {
-            Some(recorded) if recorded != hash => {
-                let m = Mismatch {
-                    cycle: tick,
-                    recorded,
-                    got: hash,
-                };
-                self.failed = Some(m);
-                self.notices.push(format!("Replay stopped: {m}."));
-                Err(m)
-            }
-            _ => Ok(()),
-        }
+        compare(&self.replay, &mut self.failed, &mut self.notices, tick, hash)
     }
 
     fn wants_hash(&self, tick: u32) -> bool {
@@ -513,8 +567,98 @@ impl Session for ReplaySession {
         true
     }
 
+    fn seek_info(&self) -> Option<SeekInfo> {
+        let s = self.seeker.as_ref()?;
+        Some(SeekInfo {
+            total: s.total(),
+            total_ms: s.ms_at(s.total()),
+            vision: s.vision(),
+            target: s.target(),
+            next_vision: s.next_vision(),
+            computer: matches!(s.vision(), Vision::Player(p) if !s.has_fog(p)),
+        })
+    }
+
+    fn seeking(&self) -> bool {
+        self.seeker.as_ref().is_some_and(|s| s.target().is_some())
+    }
+
+    fn seek(&mut self, world: &mut World, tick: u32) {
+        // A recording that has stopped on a mismatch is not played on, nor jumped about in.
+        if let (Some(s), None) = (&mut self.seeker, self.failed) {
+            s.seek(world, tick);
+            // The end of the recording is announced again if the jump lands on it.
+            self.ended = false;
+        }
+    }
+
+    fn seek_step(&mut self, world: &mut World, budget: u32) -> bool {
+        let ReplaySession {
+            seeker: Some(s),
+            replay,
+            failed,
+            notices,
+            ..
+        } = self
+        else {
+            return true;
+        };
+        match s.work(world, replay, budget, |t, h| compare(replay, failed, notices, t, h)) {
+            Ok(p) => p != Progress::Running,
+            Err(_) => true,
+        }
+    }
+
+    fn seek_vision(&mut self, world: &mut World, vision: Vision) -> bool {
+        let Some(s) = self.seeker.as_mut() else {
+            return false;
+        };
+        let before = world.tick;
+        s.set_vision(world, vision);
+        // Another player's maps mean the world is back at the start, to play on to where the viewer was.
+        self.ended = false;
+        world.tick < before
+    }
+
+    fn note_cycle(&mut self, world: &World) {
+        if let Some(s) = self.seeker.as_mut() {
+            s.note(world);
+        }
+    }
+
+    fn seek_ms_at(&self, tick: u32) -> u64 {
+        self.seeker.as_ref().map_or(0, |s| s.ms_at(tick))
+    }
+
+    fn seek_tick_at(&self, ms: u64) -> u32 {
+        self.seeker.as_ref().map_or(0, |s| s.tick_at_ms(ms))
+    }
+
     fn start_cheats(&self) -> Option<u32> {
         Some(self.replay.header.start_cheats)
+    }
+}
+
+/// Compares a hash with the recording's checkpoint at `tick`; a difference stops the playback and is noted.
+fn compare(
+    replay: &Replay,
+    failed: &mut Option<Mismatch>,
+    notices: &mut Vec<String>,
+    tick: u32,
+    hash: u64,
+) -> Result<(), Mismatch> {
+    match replay.checkpoint_at(tick) {
+        Some(recorded) if recorded != hash => {
+            let m = Mismatch {
+                cycle: tick,
+                recorded,
+                got: hash,
+            };
+            *failed = Some(m);
+            notices.push(format!("Replay stopped: {m}."));
+            Err(m)
+        }
+        _ => Ok(()),
     }
 }
 

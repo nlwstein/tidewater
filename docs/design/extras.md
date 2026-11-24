@@ -200,6 +200,8 @@ without new screen code. The file and the flags still work and are for power use
   `menu` records in memory only and adds a **Save Replay** button to the in-game menu that writes the game so far
   (and carries on writing), so a game you decide to keep after the fact is not lost. The default menu is unchanged
   while the option is off. A game started from a save, or with a `--demo-*` option, is not recorded, as before.
+  The replay viewer's timeline, jumps and vision (README "Replays") are not an option: they exist only while a replay
+  plays, so no game has them to switch off ("The replay viewer", `multiplayer-determinism.md`).
 - **Widescreen** (`widescreen`, C+L). Off by default, except that a first run on the PS Vita (no settings file yet) starts
   it at `auto`, which fits the Vita's 16:9 screen; its buttons and sticks do the side buttons' work. `16:10` makes the game screen 768 x 480, `16:9` 864 x 480 (853.3 rounded
   to a whole tile) and `auto` the tile multiple nearest the window's shape, from 640 to 864. The screen stays 480 lines
