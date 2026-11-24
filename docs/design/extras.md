@@ -76,8 +76,12 @@ without new screen code. The file and the flags still work and are for power use
   the next game for the widescreen and S options. The words of a choice's values (`CHOICE_WORDS`: "Hovered", "16:10",
   "Unlimited") and the page of each option (`extra_page`, a `match` with no catch-all arm) are the only things written in
   `settings.rs`; a test checks that every option is on exactly one page and has words.
-- **Crowded pages.** A page of more than eight rows (the Interface page, with `progress-income` its ninth) packs them
-  26 pixels apart, so the description under them stays clear (`settings::CROWDED_PITCH`).
+- **Pages.** Interface holds the help on the game screen and the font; **Overlays** holds the extra information the game
+  shows about the play: order lines on the map, production progress and income, and the statistics page after a game.
+- **Crowded pages.** A page whose rows (and note, on Mods and Gameplay) do not fit above the description at the normal
+  30-pixel pitch packs them 26 pixels apart and 24 tall, so the description stays clear (`settings::CROWDED_PITCH`):
+  Interface with its nine rows, Gameplay with seven and its note. This is the one rule for
+  a long page; the General page keeps its own 28-pixel pitch for the buttons under its rows.
 - **Rows that are not options.** Window (`fullscreen`), Mouse lock (`mouse_lock`), Intro video (the stored
   `OPENING_FILM` bit, which start-up honours as well as `--no-intro`) and Check for updates (`update_check`) are stored
   settings in `settings.txt`'s top section; the desktop-only ones are hidden on a phone.
@@ -371,7 +375,7 @@ idle-worker=ctrl+i
 
 ### The Keys page
 
-The fifth page of the Settings screen (`settings.rs`, hidden on touch-only platforms, `Env::touch`) lists every
+The sixth page of the Settings screen (`settings.rs`, hidden on touch-only platforms, `Env::touch`) lists every
 action the section can name (`keymap::rows`: 19 game keys and dialogs, 6 views, 30 control-group keys, the idle worker,
 13 command buttons and the 9 panel places, 78 rows) in the Select scenario dialog's list and scroll bar look, 8 rows
 of 24 pixels, scrolled by the wheel, the bar or the arrow keys. A row shows the key the file gives it in gold, else the
@@ -470,6 +474,6 @@ for the C+L options that set wins over the local settings; the C options stay ea
 ## Checks that keep the defaults honest
 
 - The frame snapshot (`crates/client/tests/frames.rs`) runs its original scenes with every extra off and is never
-  re-blessed for an extra (the main menu's frames changed once, for the Settings link, which is not an extra); the scenes `extras`, `extras-bars`, `extras-groups`, `extras-attack`, `extras-lines`, `extras-keys`, `extras-progress`, `extras-select` and `extras-font` turn options on and have their own entries; the scene `settings-screen` shows the Settings screen and `settings-ingame` the Settings screen over a game.
+  re-blessed for an extra (the main menu's frames changed once, for the Settings link, which is not an extra); the scenes `extras`, `extras-bars`, `extras-groups`, `extras-attack`, `extras-stats`, `extras-lines`, `extras-keys`, `extras-progress`, `extras-select`, `extras-autocast` and `extras-font` turn options on and have their own entries; the scene `settings-screen` shows the Settings screen and `settings-ingame` the Settings screen over a game (its Overlays page too).
 - `Trims::default()` leaves the mixed sound identical; the audio snapshot of the original scenes shows it.
 - The oracle traces and the whole-map snapshot run on the sim, which an empty `Extras` does not change.

@@ -713,12 +713,12 @@ const ROW_PITCH: i32 = 30;
 /// The General page has seven rows and the game files' line and buttons under them: its rows are 28 apart so the
 /// buttons clear the description.
 const GENERAL_PITCH: i32 = 28;
-/// A page with more than eight rows (Interface, with nine) packs them 26 apart and 24 tall, the least a tap target
-/// may be, so the last still clears the description.
+/// A page whose rows and note do not fit above the description at the normal pitch (Interface with nine rows, Gameplay
+/// with seven and its note) packs them 26 apart and 24 tall, the least a tap target may be, so they clear it.
 const CROWDED_PITCH: i32 = 26;
 const CROWDED_H: u32 = 24;
-/// The most rows a page lays out at the normal pitch.
-const NORMAL_ROWS: usize = 8;
+/// The height of the note under the Mods and Gameplay pages' rows, with the gap above it.
+const NOTE_H: i32 = 6 + 3 * TEXT_LINE;
 const LABEL_X: i32 = 64;
 const DROP_X: i32 = 352;
 const DROP_W: u32 = 224;
@@ -735,19 +735,41 @@ const OK: Rect = Rect::new(470, BUTTON_Y, BUTTON_W, BUTTON_H);
 const CANCEL: Rect = Rect::new(356, BUTTON_Y, BUTTON_W, BUTTON_H);
 const DEFAULTS: Rect = Rect::new(64, BUTTON_Y, BUTTON_W, BUTTON_H);
 
-/// A tab: [`TAB_W`] wide, narrower when that many do not fit the panel.
+/// The most tabs that share the row equally in the buttons' font; "Controller" just fits a sixth of it.
+const EQUAL_TABS: usize = 6;
+/// The gap between tabs when there are more than [`EQUAL_TABS`].
+const TIGHT_TAB_GAP: i32 = 4;
+
+/// A tab: [`TAB_W`] wide, narrower when that many do not fit the panel. More than [`EQUAL_TABS`] tabs (a computer with
+/// a touch screen, a controller and mods has nine) share the row by the length of their labels, closer together, and
+/// their labels are in the small font ([`tab_font`]).
 fn tab_rect(p: Page, pages: &[Page]) -> Rect {
     let n = pages.len().max(1) as i32;
-    let room = PANEL.w as i32 - 2 * TAB_GAP - (n - 1) * TAB_GAP;
-    let w = (TAB_W as i32).min(room / n);
-    let total = n * w + (n - 1) * TAB_GAP;
-    let i = pages.iter().position(|&x| x == p).unwrap_or(0) as i32;
-    Rect::new(
-        PANEL.x + (PANEL.w as i32 - total) / 2 + i * (w + TAB_GAP),
-        TAB_Y,
-        w as u32,
-        TAB_H,
-    )
+    let i = pages.iter().position(|&x| x == p).unwrap_or(0);
+    if pages.len() <= EQUAL_TABS {
+        let room = PANEL.w as i32 - 2 * TAB_GAP - (n - 1) * TAB_GAP;
+        let w = (TAB_W as i32).min(room / n);
+        let total = n * w + (n - 1) * TAB_GAP;
+        return Rect::new(
+            PANEL.x + (PANEL.w as i32 - total) / 2 + i as i32 * (w + TAB_GAP),
+            TAB_Y,
+            w as u32,
+            TAB_H,
+        );
+    }
+    // Each tab's share is its label's letters and one more; the widths are rounded down, the row centred.
+    let room = PANEL.w as i32 - 2 * TAB_GAP - (n - 1) * TIGHT_TAB_GAP;
+    let weight = |q: &Page| q.label().len() as i32 + 1;
+    let all: i32 = pages.iter().map(weight).sum();
+    let width = |q: &Page| room * weight(q) / all;
+    let total: i32 = pages.iter().map(width).sum::<i32>() + (n - 1) * TIGHT_TAB_GAP;
+    let x = PANEL.x + (PANEL.w as i32 - total) / 2 + pages[..i].iter().map(|q| width(q) + TIGHT_TAB_GAP).sum::<i32>();
+    Rect::new(x, TAB_Y, width(&pages[i]) as u32, TAB_H)
+}
+
+/// The font of the tabs' labels: the buttons' own for up to [`EQUAL_TABS`] tabs, the small font for more.
+fn tab_font<'f>(pages: &[Page], font: &'f Font, small: &'f Font) -> &'f Font {
+    if pages.len() <= EQUAL_TABS { font } else { small }
 }
 
 /// The drop-down box inside a row's tap target.
@@ -807,9 +829,14 @@ fn layout(page: Page, env: &Env) -> Layout {
     let mut texts = Vec::new();
     let mut y = ROWS_TOP;
     let rows: Vec<Item> = items_on(page).into_iter().filter(|&i| shown(i, env)).collect();
+    let note = if matches!(page, Page::Mods | Page::Gameplay) {
+        NOTE_H
+    } else {
+        0
+    };
     let (pitch, height) = if page == Page::General {
         (GENERAL_PITCH, ROW_H)
-    } else if rows.len() > NORMAL_ROWS {
+    } else if ROWS_TOP + rows.len() as i32 * ROW_PITCH + note > DESC.y {
         (CROWDED_PITCH, CROWDED_H)
     } else {
         (ROW_PITCH, ROW_H)
@@ -1428,6 +1455,7 @@ impl Screen {
             default: false,
         };
         let shown_pages = pages(&self.env);
+        let tab_font = tab_font(&shown_pages, look.font, small);
         for &page in &shown_pages {
             let t = Target::Tab(page);
             let mut s = state(t, true);
@@ -1435,7 +1463,7 @@ impl Screen {
             s.pressed |= page == self.page;
             menuscreen::draw_button(
                 &mut p,
-                look.font,
+                tab_font,
                 look.pal,
                 Some(look.faces),
                 tab_rect(page, &shown_pages),
@@ -2110,7 +2138,7 @@ mod tests {
         key(&mut s, Key::Tab);
         assert_eq!(s.focus, Target::Tab(Page::General));
         // Down walks through the tabs, then the rows in order.
-        for _ in 0..5 {
+        for _ in 0..6 {
             key(&mut s, Key::Down);
         }
         assert_eq!(s.focus, Target::Row(Item::Window));
@@ -2393,15 +2421,61 @@ mod tests {
         assert!(s.keys.capturing, "{name} waits for a key");
     }
 
+    /// Every tab's label fits its tab in the install's own fonts (`TIDEWATER_INSTALL`; skipped without one), for every
+    /// set of pages a platform can show: the buttons' font up to six tabs, the small font after.
     #[test]
-    fn the_keys_page_is_a_fifth_tab_that_a_phone_does_not_have() {
+    fn the_tab_labels_fit_their_tabs_in_the_real_fonts() {
+        let Some(root) = std::env::var_os("TIDEWATER_INSTALL") else {
+            eprintln!("skipped: set TIDEWATER_INSTALL to run");
+            return;
+        };
+        let install = tidewater_formats::install::Install::open(&root).expect("the install opens");
+        let front = crate::frontend::Front::load(install).expect("the fonts load");
+        for mask in 0..16u32 {
+            let shown: Vec<Page> = Page::ALL
+                .into_iter()
+                .filter(|p| match p {
+                    Page::Mods => mask & 1 != 0,
+                    Page::Keys => mask & 2 != 0,
+                    Page::Touch => mask & 4 != 0,
+                    Page::Controller => mask & 8 != 0,
+                    _ => true,
+                })
+                .collect();
+            let f = tab_font(&shown, &front.font, &front.small);
+            let n = shown.len();
+            for &p in &shown {
+                let (w, room) = (menuscreen::label_width(f, p.label()), tab_rect(p, &shown).w);
+                assert!(w <= room, "{p:?} is {w} wide in a {room}-pixel tab of {n}");
+            }
+            let last = tab_rect(shown[n - 1], &shown);
+            assert!(tab_rect(shown[0], &shown).x >= PANEL.x && last.x + last.w as i32 <= PANEL.x + PANEL.w as i32);
+        }
+    }
+
+    #[test]
+    fn the_keys_page_is_a_sixth_tab_that_a_phone_does_not_have() {
         assert_eq!(
             pages(&env(false)),
-            [Page::General, Page::Interface, Page::Overlays, Page::Sound, Page::Gameplay, Page::Keys]
+            [
+                Page::General,
+                Page::Interface,
+                Page::Overlays,
+                Page::Sound,
+                Page::Gameplay,
+                Page::Keys
+            ]
         );
         assert_eq!(
             pages(&env(true)),
-            [Page::General, Page::Interface, Page::Overlays, Page::Sound, Page::Gameplay, Page::Touch]
+            [
+                Page::General,
+                Page::Interface,
+                Page::Overlays,
+                Page::Sound,
+                Page::Gameplay,
+                Page::Touch
+            ]
         );
         let s = keys_screen();
         assert_eq!(s.page(), Page::Keys);
@@ -2411,7 +2485,7 @@ mod tests {
             .map(|(t, _)| t)
             .filter(|t| matches!(t, Target::Tab(_)))
             .collect();
-        assert_eq!(tabs.len(), 5);
+        assert_eq!(tabs.len(), 6);
         // On a phone PageDown never reaches it.
         let mut p = screen_with(env(true));
         p.page = Page::Gameplay;
@@ -2739,7 +2813,7 @@ mod tests {
         // The Tab order: the tabs, the list, Reset keys, then the buttons.
         let stops = s.stops();
         assert_eq!(
-            &stops[5..],
+            &stops[6..],
             [
                 Target::KeyList,
                 Target::Action(Action::ResetKeys),

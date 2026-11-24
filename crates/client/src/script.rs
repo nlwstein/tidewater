@@ -941,7 +941,7 @@ fn pad_menu() -> Vec<Cmd> {
     v.extend(pad_press(P::South));
     v.extend([Wait(30), Shot("settings")]);
     // The focus opens on the General tab; Right goes along the tabs to the Controller page.
-    for _ in 0..5 {
+    for _ in 0..6 {
         v.extend(pad_press(P::Right));
     }
     v.extend([Wait(5), Shot("controller")]);
@@ -1462,7 +1462,7 @@ fn settings() -> Vec<Cmd> {
     // The tabs.
     v.extend(click(212.0, 76.0));
     v.extend([Wait(2), Shot("interface")]);
-    v.extend(click(320.0, 76.0));
+    v.extend(click(364.0, 76.0));
     v.extend([Wait(2), Shot("sound")]);
     v.extend(click(460.0, 174.0));
     v.extend([Wait(2), Shot("music-list")]);
@@ -1504,7 +1504,7 @@ fn settings() -> Vec<Cmd> {
     // The link opens it again; the music volume is set to 30% and OK applies it.
     v.extend(click(560.0, 462.0));
     v.extend([Until(AppState::Settings), Wait(25), Shot("again"), Wait(2)]);
-    v.extend(click(320.0, 76.0));
+    v.extend(click(364.0, 76.0));
     v.extend([Wait(2), Shot("again-sound")]);
     v.extend(click(460.0, 174.0));
     v.extend([Wait(2), Move(460.0, 250.0), Wait(1)]);
@@ -1570,14 +1570,14 @@ fn extras_font() -> Vec<Cmd> {
     v.extend(tap(K::F(10)));
     v.extend([Wait(3), Shot("game-menu")]);
     v.extend(tap(K::Escape));
-    // Settings, Interface: the Font row (the ninth) and its list; Original, then OK.
+    // Settings, Interface: the Font row (the ninth, rows 26 apart) and its list; Original, then OK.
     v.extend(ctrl_tap(K::Letter('G')));
     v.extend([Wait(3)]);
     v.extend(click(212.0, 76.0));
-    v.extend([Wait(2), Move(200.0, 338.0), Wait(1), Shot("interface")]);
-    v.extend(click(460.0, 338.0));
+    v.extend([Wait(2), Move(200.0, 320.0), Wait(1), Shot("interface")]);
+    v.extend(click(460.0, 320.0));
     v.extend([Wait(2), Shot("font-list")]);
-    v.extend(click(460.0, 359.0));
+    v.extend(click(460.0, 341.0));
     v.extend([Wait(2), Shot("font-original")]);
     v.extend(click(523.0, 424.0));
     v.extend([Wait(40), Shot("game-original")]);
@@ -1589,9 +1589,9 @@ fn extras_font() -> Vec<Cmd> {
     v.extend([Wait(3)]);
     v.extend(click(212.0, 76.0));
     v.extend([Wait(2)]);
-    v.extend(click(460.0, 338.0));
+    v.extend(click(460.0, 320.0));
     v.extend([Wait(2)]);
-    v.extend(click(460.0, 379.0));
+    v.extend(click(460.0, 361.0));
     v.extend([Wait(2), Shot("font-clear")]);
     v.extend(click(523.0, 424.0));
     v.extend([Wait(40), Shot("game-clear-again")]);
@@ -1620,6 +1620,9 @@ fn settings_ingame() -> Vec<Cmd> {
     v.extend([Wait(2), Move(460.0, 195.0), Wait(1), Shot("health-list")]);
     v.extend(click(460.0, 192.0));
     v.extend([Wait(2), Shot("health-always")]);
+    // Overlays: what the game shows of the play, the pointer on its first row for the description.
+    v.extend(click(275.0, 76.0));
+    v.extend([Wait(2), Move(200.0, 114.0), Wait(1), Shot("overlays")]);
     // Gameplay: the game's rules, greyed, and a click on one does nothing.
     v.extend(click(428.0, 76.0));
     v.extend([Wait(2), Shot("gameplay")]);
@@ -2098,7 +2101,7 @@ fn extras_attack() -> Vec<Cmd> {
 }
 
 /// A right-click at a place, with Shift held when `queue`.
-fn right_click(x: f32, y: f32, queue: bool) -> Vec<Cmd> {
+fn right_click_queued(x: f32, y: f32, queue: bool) -> Vec<Cmd> {
     use Cmd::*;
     let mut v = vec![Move(x, y), Wait(1)];
     if queue {
@@ -2119,7 +2122,7 @@ fn extras_lines() -> Vec<Cmd> {
     let mut v = vec![Move(400.0, 240.0), Until(AppState::Game), Wait(5), Shot("none")];
     // The Town Hall with a rally point.
     v.extend(click(395.0, 435.0));
-    v.extend(right_click(330.0, 330.0, false));
+    v.extend(right_click_queued(330.0, 330.0, false));
     v.extend([Wait(3), Shot("rally")]);
     // A footman and a peasant, boxed: a move and two queued moves.
     v.extend([
@@ -2131,9 +2134,9 @@ fn extras_lines() -> Vec<Cmd> {
         Up(Button::Left),
         Wait(2),
     ]);
-    v.extend(right_click(300.0, 290.0, false));
-    v.extend(right_click(260.0, 200.0, true));
-    v.extend(right_click(470.0, 170.0, true));
+    v.extend(right_click_queued(300.0, 290.0, false));
+    v.extend(right_click_queued(260.0, 200.0, true));
+    v.extend(right_click_queued(470.0, 170.0, true));
     v.extend([Wait(2), Shot("group")]);
     // The footman alone: an attack-move queued behind its moves.
     v.extend(click(511.0, 248.0));
@@ -2145,7 +2148,7 @@ fn extras_lines() -> Vec<Cmd> {
     // The peasant sent to the gold mine up the slope.
     v.extend(click(410.0, 316.0));
     v.extend([Wait(1), Shot("peasant")]);
-    v.extend(right_click(430.0, 145.0, false));
+    v.extend(right_click_queued(430.0, 145.0, false));
     v.extend([Wait(2), Shot("harvest")]);
     // Magnified: the lines follow the view.
     v.extend([Move(500.0, 330.0), Wheel(1.0), Wait(3), Shot("zoomed")]);

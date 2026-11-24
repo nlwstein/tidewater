@@ -302,7 +302,8 @@ original's main-menu buttons are unchanged.
 | Page | What it holds | Takes effect |
 |---|---|---|
 | **General** | Window or full screen (desktop), Scaling, Widescreen, Controls, Mouse lock (desktop), Intro video, Check for updates (desktop release builds), the imported game files with **Import game files again...**, and **Open settings folder** (desktop). | Window, Scaling, Controls and Mouse lock at once; Widescreen from the next game; Intro video and Check for updates the next time Tidewater starts |
-| **Interface** | Health bars, idle worker button, game clock, control group bar, smart attack-move, minimap ping, record replays, magnifying zoom. | At once or from the next game |
+| **Interface** | Health bars, idle worker button, game clock, control group bar, smart attack-move, minimap ping, record replays, magnifying zoom, the clear font. | At once or from the next game |
+| **Overlays** | Order lines, production progress and income rates, the game statistics page. | At once |
 | **Sound** | Unit voices, sound effects and music, 0 to 100 percent in steps of 10. | At once |
 | **Gameplay** | Rally points, production queue, selection limit, extra game speeds, shift-queued orders, quick select. Except for quick select, these change the game rules: they apply to single-player games you start, and in a multiplayer game the host chooses them in the lobby. | From the next game |
 | **Mods** | Which mods to use and in what order. Shown only when the `mods` folder holds a mod. See [Mods](#mods). | The next start |
@@ -340,8 +341,8 @@ A mod is a folder of loose files that replaces some of the game's own files: pic
 ## Optional improvements
 
 Tidewater adds a few optional improvements that the original game does not have. **With none switched on, the game looks,
-sounds and plays as the original does.** Turn them on in the [Settings screen](#settings) (the Interface, Sound, Gameplay,
-Touch and Controller pages, and Scaling, Widescreen, Controls and Progress and income on General). Power users can also use the `[extras]` section of the
+sounds and plays as the original does.** Turn them on in the [Settings screen](#settings) (the Interface, Overlays, Sound, Gameplay,
+Touch and Controller pages, and Scaling, Widescreen and Controls on General). Power users can also use the `[extras]` section of the
 settings file (`settings.txt`), or for one run a flag; `--no-extra-NAME` puts an option back to its default.
 The idle-worker key is F6 (with `quick-select`, Ctrl+A selects your fighting units on screen and Alt+A on the whole map); keys can be rebound on the Settings screen's Keys page. How the options work, the `[keys]` file format and how to add an option is in [`docs/design/extras.md`](docs/design/extras.md).
 
