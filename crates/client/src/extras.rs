@@ -39,6 +39,7 @@ pub enum Id {
     AutoReplay,
     Widescreen,
     MapZoom,
+    OrderLines,
     TouchDrag,
     TouchSmartTap,
     TouchTwoFinger,
@@ -53,10 +54,14 @@ pub enum Id {
     PadSwap,
     PadHideTouch,
     Controls,
+    Font,
+    GameStats,
+    ProgressIncome,
+    QuickSelect,
 }
 
 /// How many options there are.
-pub const COUNT: usize = 32;
+pub const COUNT: usize = 37;
 
 /// Who decides an option in a game with other players.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -102,6 +107,10 @@ pub const HEALTH_BAR_MODES: &[&str] = &["off", "hovered", "selected", "always"];
 /// The clock overlay modes.
 pub const CLOCK_MODES: &[&str] = &["off", "clock", "clock-apm"];
 
+/// The values of `progress-income`: the progress bars under your own buildings at work, your income rates in the
+/// resource bar, both or neither.
+pub const PROGRESS_INCOME_MODES: &[&str] = &["off", "progress", "income", "both"];
+
 /// The picture scaling modes (option `scaling`).
 pub const SCALING_MODES: &[&str] = &["auto", "integer", "sharp"];
 
@@ -134,6 +143,9 @@ pub const TOUCH_HOLD_MODES: &[&str] = &["normal", "long", "longer"];
 pub const TOUCH_BUTTON_SIZES: &[&str] = &["medium", "small", "large"];
 /// The values of `touch-menu-tap`.
 pub const TOUCH_MENU_TAP: &[&str] = &["on", "off"];
+
+/// The values of `font`: the game's own text fonts, or the clear one (`clearfont`).
+pub const FONT_MODES: &[&str] = &["original", "clear"];
 
 /// The values of `pad-speed`: how fast the left stick moves the pointer.
 pub const PAD_SPEEDS: &[&str] = &["normal", "slow", "fast"];
@@ -314,6 +326,15 @@ pub const REGISTRY: [Spec; COUNT] = [
         description: "`wheel`: the mouse wheel over the map view magnifies it up to 4 times around the pointer and back to the normal view, never showing more map than the original does (on touch devices the pinch is `touch-pinch`)",
     },
     Spec {
+        id: Id::OrderLines,
+        name: "order-lines",
+        label: "Order lines",
+        kind: Kind::Flag,
+        default: 0,
+        scope: Scope::Client,
+        description: "While your own units are selected, thin lines run from each to where its orders take it (green moves, red attacks, yellow work, then each shift-queued order), and from a selected training building to its rally point; also on the minimap",
+    },
+    Spec {
         id: Id::TouchDrag,
         name: "touch-drag",
         label: "One-finger drag",
@@ -438,6 +459,42 @@ pub const REGISTRY: [Spec; COUNT] = [
         default: 0,
         scope: Scope::Client,
         description: "Which devices work the game; the keyboard always does. `auto`: every device there is. `mouse`: keyboard and mouse only. `touch`: fingers. `pad`: controller. `pad-touch`: both. A missing device falls back to `auto`",
+    },
+    Spec {
+        id: Id::Font,
+        name: "font",
+        label: "Font",
+        kind: Kind::Choice(FONT_MODES),
+        default: 0,
+        scope: Scope::Client,
+        description: "The letters of the game's text. `original`: the game's own. `clear`: plain letters without serifs or shading, easier to read on a small screen (the titles keep the game's)",
+    },
+    Spec {
+        id: Id::GameStats,
+        name: "game-stats",
+        label: "Game statistics",
+        kind: Kind::Flag,
+        default: 0,
+        scope: Scope::Client,
+        description: "A statistics page after the score screen: line graphs over game time of each player's gold, lumber and oil gathered, army, workers and buildings",
+    },
+    Spec {
+        id: Id::ProgressIncome,
+        name: "progress-income",
+        label: "Progress and income",
+        kind: Kind::Choice(PROGRESS_INCOME_MODES),
+        default: 0,
+        scope: Scope::Client,
+        description: "Your own information only: `progress` a thin bar under each of your buildings that is training, researching, upgrading or being built; `income` the gold, lumber and oil you gather per game minute, under the resource counters; `both` shows both",
+    },
+    Spec {
+        id: Id::QuickSelect,
+        name: "quick-select",
+        label: "Quick select",
+        kind: Kind::Flag,
+        default: 0,
+        scope: Scope::ClientLobby,
+        description: "Faster selecting: a double-click on one of your units selects all of its type on screen under Classic rules too, Ctrl+A selects your fighting units on screen, Alt+A all of them on the map, and Ctrl+Shift+digit adds the selection to a control group",
     },
 ];
 
@@ -636,16 +693,39 @@ impl ClientExtras {
         }
     }
 
+    /// Whether the progress bars under the player's own buildings at work show (`progress-income`).
+    pub fn progress_bars(&self) -> bool {
+        matches!(self.get(Id::ProgressIncome), 1 | 3)
+    }
+
+    /// Whether the per-minute income rates show in the resource bar (`progress-income`).
+    pub fn income_rates(&self) -> bool {
+        matches!(self.get(Id::ProgressIncome), 2 | 3)
+    }
+
     pub fn idle_worker(&self) -> bool {
         self.get(Id::IdleWorker) != 0
+    }
+
+    /// Whether the statistics page follows the score screen (option `game-stats`).
+    pub fn game_stats(&self) -> bool {
+        self.get(Id::GameStats) != 0
     }
 
     pub fn group_bar(&self) -> bool {
         self.get(Id::ControlGroupBar) != 0
     }
 
+    pub fn order_lines(&self) -> bool {
+        self.get(Id::OrderLines) != 0
+    }
+
     pub fn smart_attack_move(&self) -> bool {
         self.get(Id::SmartAttackMove) != 0
+    }
+
+    pub fn quick_select(&self) -> bool {
+        self.get(Id::QuickSelect) != 0
     }
 
     pub fn minimap_ping(&self) -> bool {
@@ -766,6 +846,11 @@ impl ClientExtras {
     /// The choice of input devices (`controls`).
     pub fn controls(&self) -> crate::controls::Mode {
         crate::controls::Mode::from_index(self.get(Id::Controls))
+    }
+
+    /// Whether text is drawn in the clear font (`clearfont`).
+    pub fn clear_font(&self) -> bool {
+        self.get(Id::Font) == 1
     }
 
     pub fn map_zoom_wheel(&self) -> bool {

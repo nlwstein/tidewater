@@ -136,6 +136,13 @@ pub struct Flow {
     /// The slots' controllers when the game started (for the score screen's rows).
     pub start_controllers: [u8; 8],
     pub score: Option<ScoreData>,
+    /// The slots the score screen's rows show, in row order (for the statistics page).
+    pub stats_slots: Vec<u8>,
+    /// The names the statistics page's legend shows for those slots: "You" for the local player, the nation's name for
+    /// a computer player, the row's line in a multiplayer game.
+    pub stats_names: Vec<String>,
+    /// The readings of the game that ended, for the statistics page after the score screen (option `game-stats`).
+    pub stats: Option<crate::gamestats::History>,
     /// The player names of the session's slots, for a multiplayer score screen's rows (empty: "Anonymous").
     pub player_names: [String; 8],
     /// The screen shown is the multiplayer lobby ([`Step::Lobby`]); no music starts there.
@@ -182,6 +189,8 @@ pub struct Front {
     pub(crate) button_faces: menuscreen::ButtonFaces,
     /// Sounds decoded for the mixer, by name; `None` for one the install lacks, so it is looked up once.
     sounds: HashMap<String, Option<Sound>>,
+    /// The game's own [`Front::font`] and [`Front::small`], kept while the clear font (`clearfont`) stands in.
+    game_fonts: Option<(Font, Font)>,
 }
 
 impl Front {
@@ -204,6 +213,7 @@ impl Front {
             arrow: None,
             button_faces: menuscreen::ButtonFaces::default(),
             sounds: HashMap::new(),
+            game_fonts: None,
         }
     }
 
@@ -248,7 +258,30 @@ impl Front {
             arrow,
             button_faces,
             sounds: HashMap::new(),
+            game_fonts: None,
         })
+    }
+
+    /// Draws text in the clear font (`clearfont`, option `font`) or in the game's own: swaps [`Front::font`] and
+    /// [`Front::small`]; the title fonts stay. Returns whether anything changed.
+    pub fn set_clear_font(&mut self, on: bool) -> bool {
+        match (on, self.game_fonts.take()) {
+            (true, None) => {
+                let game = (self.font.clone(), self.small.clone());
+                self.font = crate::clearfont::clear(&game.0);
+                self.small = crate::clearfont::clear(&game.1);
+                self.game_fonts = Some(game);
+                true
+            }
+            (false, Some((font, small))) => {
+                (self.font, self.small) = (font, small);
+                true
+            }
+            (_, kept) => {
+                self.game_fonts = kept;
+                false
+            }
+        }
     }
 
     /// A sound decoded for the mixer (`None` if the install lacks it or it isn't PCM WAV).
@@ -477,14 +510,27 @@ pub fn end_with(flow: &mut Flow, front: &mut Front, world: &tidewater_sim::World
     let game = flow.game.unwrap_or(GameKind::Custom);
     let bdp = matches!(game, GameKind::Campaign(e) if cf::is_bdp(e));
     let race = world.players[human as usize].race;
-    let rows = if game == GameKind::Multiplayer {
-        multiplayer_rows(flow, front, world, human)
+    let (rows, slots): (Vec<_>, Vec<u8>) = if game == GameKind::Multiplayer {
+        multiplayer_rows(flow, front, world, human).into_iter().unzip()
     } else {
         cf::rows(world, human, &flow.start_controllers, bdp)
             .into_iter()
-            .map(|r| (front.net(r.label), front.net(r.name), r.stats))
-            .collect()
+            .map(|r| ((front.net(r.label), front.net(r.name), r.stats), r.slot))
+            .unzip()
     };
+    flow.stats_names = rows
+        .iter()
+        .zip(&slots)
+        .map(|((label, name, _), &slot)| {
+            if !label.is_empty() && slot == human || name.is_empty() {
+                label.clone()
+            } else {
+                name.clone()
+            }
+        })
+        .collect();
+    flow.stats_slots = slots;
+    flow.stats = None;
     let mission = flow.total.close(world.players[human as usize].score, victory);
     let rank_entry = cf::rank_entry(flow.total.total, race, false);
     flow.score = Some(ScoreData {
@@ -512,7 +558,7 @@ fn multiplayer_rows(
     front: &mut Front,
     world: &tidewater_sim::World,
     human: u8,
-) -> Vec<(String, String, cf::Stats)> {
+) -> Vec<((String, String, cf::Stats), u8)> {
     let races: [u8; 8] = std::array::from_fn(|s| world.players[s].race);
     let allies = world.players[human as usize].allies;
     cf::mp_rows(
@@ -533,7 +579,10 @@ fn multiplayer_rows(
             },
         };
         let label = r.label.map(|l| front.net(l));
-        (String::new(), cf::mp_row_text(&name, label.as_deref()), r.stats)
+        (
+            (String::new(), cf::mp_row_text(&name, label.as_deref()), r.stats),
+            r.slot,
+        )
     })
     .collect()
 }
@@ -3282,6 +3331,7 @@ pub(crate) fn run_dialog(c: &mut Core) {
     let Core {
         dialog: Some(dialog),
         sim,
+        extras,
         front,
         pictures,
         front_screen: cam,
@@ -3309,6 +3359,9 @@ pub(crate) fn run_dialog(c: &mut Core) {
         if !music.music().fading() {
             let Some(sim) = sim else { return };
             end_with(flow, front, &sim.world, sim.human, dialog.victory);
+            if extras.game_stats() {
+                flow.stats = sim.stats.take().filter(crate::gamestats::History::drawable);
+            }
             go_on(flow, front, keys, next, exit);
         }
         return;
@@ -3360,6 +3413,8 @@ struct ScoreScreen {
     drawn: Option<u32>,
     /// The close: a fade of all sound, then 150 ms to black, then what follows the score screen.
     closing: Option<(cf::SoundThenBlack, Step)>,
+    /// The statistics page (option `game-stats`) is showing, after the score screen's last press.
+    stats_page: bool,
 }
 
 /// Bars then the score count, one step a tick ("The score screen").
@@ -3387,13 +3442,21 @@ pub(crate) fn enter_score(c: &mut Core) {
         finished: false,
         drawn: None,
         closing: None,
+        stats_page: false,
     };
     commands.queue(move |c| c.screens.score = Some(score));
     music.start(Some(cf::score_music(s.race, s.victory)));
 }
 
 /// Draws the score screen after `ticks` ticks; returns whether the bars and the score have finished.
-fn draw_score(front: &Front, s: &ScoreData, bg: &Picture, ticks: u32, bars_done_at: Option<u32>) -> (Picture, bool) {
+fn draw_score(
+    front: &Front,
+    s: &ScoreData,
+    bg: &Picture,
+    ticks: u32,
+    bars_done_at: Option<u32>,
+    has_stats: bool,
+) -> (Picture, bool) {
     let mut p = dup(bg);
     let font = &front.font;
     let head = match (s.word.as_str(), s.victory) {
@@ -3407,11 +3470,28 @@ fn draw_score(front: &Front, s: &ScoreData, bg: &Picture, ticks: u32, bars_done_
         .map(|k| s.rows.iter().map(|r| r.2.values()[k]).max().unwrap_or(0))
         .collect();
     let mut bars_done = true;
+    // The seven columns share 196 to 616, the room left of 196 being the rows' names'. A column is its header's width
+    // and a gap, at least an even share; a long header ("Buildings") takes its width from the short ones so no header
+    // runs into the next.
     let x0 = 196;
-    let col_w = 60;
+    let header: Vec<i32> = cf::Stats::NAMES
+        .iter()
+        .map(|name| front.small.width(name.as_bytes()) as i32 + 10)
+        .collect();
+    let widths = |share: i32| header.iter().map(move |&h| h.max(share));
+    let share = (1..=60).rev().find(|&w| widths(w).sum::<i32>() <= 420).unwrap_or(1);
+    let col_w: Vec<i32> = widths(share).collect();
+    let col_x: Vec<i32> = col_w
+        .iter()
+        .scan(x0, |x, w| {
+            let at = *x;
+            *x += w;
+            Some(at)
+        })
+        .collect();
     let mut y = 70;
     for (k, name) in cf::Stats::NAMES.iter().enumerate() {
-        hud::text(&mut p, &front.small, x0 + k as i32 * col_w, y, name);
+        hud::text(&mut p, &front.small, col_x[k], y, name);
     }
     y += 24;
     for (label, name, stats) in &s.rows {
@@ -3426,11 +3506,11 @@ fn draw_score(front: &Front, s: &ScoreData, bg: &Picture, ticks: u32, bars_done_
         for (k, v) in stats.values().iter().enumerate() {
             let shown = cf::counted(*v, cf::bar_step(maxes[k]), ticks);
             bars_done &= shown == *v;
-            let x = x0 + k as i32 * col_w;
+            let x = col_x[k];
             let len = if maxes[k] == 0 {
                 0
             } else {
-                (shown as u64 * (col_w as u64 - 8) / maxes[k] as u64) as u32
+                (u64::from(shown) * (col_w[k] as u64 - 8) / u64::from(maxes[k])) as u32
             };
             hud::fill(&mut p, rect(x, y + 20, len.max(1), 8), [200, 170, 60]);
             hud::text(&mut p, &front.small, x, y, &shown.to_string());
@@ -3447,6 +3527,9 @@ fn draw_score(front: &Front, s: &ScoreData, bg: &Picture, ticks: u32, bars_done_
         if shown_total == s.total {
             done = true;
             hud::text(&mut p, font, 24, 440, &format!("Rank: {}", s.rank));
+            if has_stats {
+                hud::text(&mut p, &front.small, 24, 464, "Press a key for the game statistics");
+            }
         }
     }
     (p, bars_done && done)
@@ -3492,6 +3575,29 @@ fn run_score(c: &mut Core) {
         return;
     }
     let press = pressed(keys, mouse);
+    if press && sc.finished && sc.stats_page {
+        let next_step = after_score(flow, &s);
+        sc.closing = Some((close_with_sound(music, fades::SCORE_CLOSE_OUT), next_step));
+        return;
+    }
+    if press && sc.finished && flow.stats.is_some() {
+        // Option `game-stats`: the statistics page follows the score screen; the next press closes.
+        if let Some(h) = &flow.stats {
+            let mut p = dup(&sc.background);
+            let (pw, ph) = (p.width, p.height);
+            shade(&mut p, rect(0, 0, pw, ph));
+            let who: Vec<crate::gamestats::Who> = flow
+                .stats_names
+                .iter()
+                .zip(&flow.stats_slots)
+                .map(|(name, &slot)| crate::gamestats::Who { slot, name })
+                .collect();
+            crate::gamestats::draw(&mut p, &front.big, &front.font, &front.small, h, &who);
+            set_image(pictures, &sc.image, p);
+        }
+        sc.stats_page = true;
+        return;
+    }
     if press && sc.finished {
         let next_step = after_score(flow, &s);
         sc.closing = Some((close_with_sound(music, fades::SCORE_CLOSE_OUT), next_step));
@@ -3512,7 +3618,14 @@ fn run_score(c: &mut Core) {
         }
     }
     if sc.drawn != Some(sc.ticks) {
-        let (p, finished) = draw_score(front, &s, &sc.background, sc.ticks, sc.bars_done_at);
+        let (p, finished) = draw_score(
+            front,
+            &s,
+            &sc.background,
+            sc.ticks,
+            sc.bars_done_at,
+            flow.stats.is_some(),
+        );
         if finished && !sc.finished {
             sc.finished = true;
             play_once(front, audio, cf::RANK_SOUND, AppState::Score);

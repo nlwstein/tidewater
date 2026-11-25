@@ -163,12 +163,7 @@ pub fn new_world(install: &mut Install, map_bytes: &[u8], header: &Header) -> Re
 
 /// [`new_world`] without the game data comparison (`twtool replay --force`): the map and the rules are still checked.
 pub fn new_world_unchecked(install: &mut Install, map_bytes: &[u8], header: &Header) -> Result<World> {
-    header.check_map(map_bytes)?;
-    let pud = Pud::parse(map_bytes)?;
-    let start = choose_start(&pud, &header.setup, header.seed, header.lobby.as_ref())?;
-    let (mut world, _) = build_world(install, &pud, &start)?;
-    // The options the game ran with, from the header: never the viewer's own settings.
-    world.rules.extras = header.rules.extras;
+    let mut world = origin_world(install, map_bytes, header)?;
     world.start_up();
     if header.start_cheats != 0 {
         world.start_cheats(Flags(header.start_cheats));
@@ -181,5 +176,18 @@ pub fn new_world_unchecked(install: &mut Install, map_bytes: &[u8], header: &Hea
         }
         .into());
     }
+    Ok(world)
+}
+
+/// The world of a replay as built from the header, before the start-up cycles and the cheat flags: the template a
+/// viewer that wants another player's view starts over from ([`crate::seek::Seeker`]). The map is checked against the
+/// header and the options are the recording's, never the viewer's.
+pub fn origin_world(install: &mut Install, map_bytes: &[u8], header: &Header) -> Result<World> {
+    header.check_map(map_bytes)?;
+    let pud = Pud::parse(map_bytes)?;
+    let start = choose_start(&pud, &header.setup, header.seed, header.lobby.as_ref())?;
+    let (mut world, _) = build_world(install, &pud, &start)?;
+    // The options the game ran with, from the header: never the viewer's own settings.
+    world.rules.extras = header.rules.extras;
     Ok(world)
 }

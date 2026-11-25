@@ -17,21 +17,23 @@ before writing any code, and follow it exactly.
 
 ## Layout
 
-- `crates/formats`: readers for the installation's data (MPQ archives, PUD maps, tilesets, GRP sprites (compressed
+- `crates/formats`: readers for the installation's data (MPQ archives, PUD maps (`pudfile`: the lossless section list a map editor writes back), tilesets, GRP sprites (compressed
   and uncompressed), PCX images, raw interface pictures and cursors (`raw`), fonts (`fnt`), Smacker video (`smk`), string tables, unit and
   upgrade tables, map restrictions; `identity`: the game-data fingerprint the lobby and the replay header share; `mods`: mod folders, `mod.toml` and the ordered override list `Install` reads first; `docs/mods.md`).
 - `crates/twtool`: inspection CLI (`import-check`, `disc-list`, `mpq-*`, `render-map`, `render-grp`, `render-pcx`, `smk-frame`, `smk-audio`, `grp-sheet`, `units`, `upgrades`,
   `strings`, `scripts`, `script-ops`, `fell`, `sim`, `oracle`: compare the simulation with a per-cycle trace of the original game, `snapshot`: the
   whole-map behaviour snapshot `tests/snapshot.rs` checks, `replay`: verify a `.twrep`, `desync-diff`: find the first differing cycle and field, `app-icon`: draw the app icon
   for `packaging/icon/render.sh`, which redraws every platform's icon from `packaging/icon/tidewater.svg`).
+- `crates/editor`: the map editor `tidewater-editor` (egui/eframe): `doc` (the edited map over the file's sections), `terrain` (corner-code
+  painting), `derived` (`SQM `/`REGM`), `catalog`, `history`, `assets`, `app` (the window), `script` (`--actions`); `docs/editor.md`.
 - `crates/import`: game-file import (`source`: what a path is, `validate`: key-file checks, `copy`: allowlisted copy
   and atomic swap into `<data>/game`, `manifest`); used by `tidewater --import` and `twtool import-check`;
   `docs/design/import.md`.
-- `crates/replay`: the `.twrep` replay format (`format`), rebuilding a game from a header (`start`) and running or comparing replays (`run`); `docs/design/multiplayer-determinism.md`.
+- `crates/replay`: the `.twrep` replay format (`format`), rebuilding a game from a header (`start`), running or comparing replays (`run`) and seeking in one (`seek`: copies of the world, another player's vision); `docs/design/multiplayer-determinism.md`.
 - `crates/sim`: the deterministic game simulation (no engine types; placeholders until specs land, see `Rules`).
 - `crates/client`: the game client: a library (`lib.rs`, no engine types, no `unsafe`) holding the core (`core.rs`:
   `Core::advance` runs a frame; `Core::suspend`/`resume` are the phone's background and foreground) and `host.rs` (start-up from the command line, the headless scripted loop, helpers
-  for the shell), and the `tidewater` binary, the SDL 3 shell (`shell/app.rs`: window, input events, mouse lock,
+  for the shell, the frame statistics and `phases.rs`, which splits a frame into phases), and the `tidewater` binary, the SDL 3 shell (`shell/app.rs`: window, input events, mouse lock,
   sound device, `shell/main.rs` its `main`; `shell/sdl.rs` is our thin safe wrapper over `sdl3-sys` and the only `unsafe` code). SDL is built
   from source and linked in, so every build needs CMake and a C compiler, not an SDL install.
   `game.rs` runs the game screen, `args.rs` holds the command line. `scene.rs` builds the map and unit images, `hud.rs`
@@ -51,7 +53,7 @@ before writing any code, and follow it exactly.
   `touchemu.rs` the mouse as fingers (`--touch-emulation`), `touchhelp.rs` the Touch Controls help page and `touch.rs` the core's glue (`Core::touch`; it also opens the soft keyboard for a text box).
   Gamepads (`docs/design/gamepad.md`): `pad.rs` turns a pad into the pointer, buttons and keys (`Core::pad`; panel mode, the minimap jump);
   `controls.rs` is the `controls` option's modes (which of pad and fingers work, and the side bars) and the rule resolving them.
-  `session.rs` is the `Session` trait between the game screen and the sim (`LocalSession`, `ReplaySession`); `net/` is network play (`proto`: messages and identity, `tcp`, `lockstep`: `NetSession`, `lobby`: the command-line host and join, `room`: the menu lobby's host and guest ends with map transfer, `beacon`: the LAN game-list UDP packet; `docs/design/network.md`).
+  `session.rs` is the `Session` trait between the game screen and the sim (`LocalSession`, `ReplaySession`); `replayview.rs` the replay viewer's timeline and keys; `net/` is network play (`proto`: messages and identity, `tcp`, `lockstep`: `NetSession`, `lobby`: the command-line host and join, `room`: the menu lobby's host and guest ends with map transfer, `beacon`: the LAN game-list UDP packet; `docs/design/network.md`).
   `mpmenu.rs` is the multiplayer menus (Multi Player Game to the game list and Direct IP), `mpwidgets.rs` their edit boxes and pop-ups, `lobbyscreen.rs` the game setup lobby; `chat.rs` is the in-game chat line, sent as `Msg::Chat` outside the turns.
   `extras.rs` is the optional improvements' registry, settings and flags (`docs/design/extras.md`); `settings.rs` is the Settings
   screen (SDL-free: its rules and drawing, generated from the registry; opened by F2 or the link on the main menu, `AppState::Settings`, `--goto settings`; in a game by Ctrl+G or the Options dialog's link, as the game menu's `Screen::Settings`); `update.rs` is the desktop self-update
@@ -59,7 +61,7 @@ before writing any code, and follow it exactly.
   The game screen's other parts: `input.rs` (a frame's keys, mouse and touches), `clock.rs` (real and game time, the fixed step), `layers.rs` (the screen's layers as pictures), `mapview.rs` (the map view's geometry and zoom), `view.rs` (drawing the map view), `fog.rs`, `minimap.rs`, `screen.rs` (resource bar, scrolling, pointers), `mouse.rs` (selecting and commanding, the key table), `messages.rs` (message list, notices, status bar), `carry.rs` (workers and tankers carrying goods), `palette.rs` (colour cycling and fades), `screenshot.rs` (Print Screen), `cheats.rs` and `diplomacy.rs` (the chat-line cheat codes and `/diplomacy`).
   Sound and music: `sound.rs` (which file plays for each cue) and `music.rs` (which track plays when), with `jukebox.rs` playing it in the mixer.
   The game menu: `gamemenu.rs` draws it and the dialogs under it, `menu.rs` holds the rules, `prefs.rs` the stored settings behind its dialogs; saved games are `savegame.rs` (collect a game and start from one), `savefile.rs` (the file layout), `saves.rs` (folder and dialog rules) and `savedlg.rs` (the dialogs).
-  Optional improvements' rules sit in their own modules: `overlay.rs` (health bars, clock), `idle.rs`, `groupbar.rs`, `attackmove.rs`, `ping.rs`; `keymap.rs` holds the rebindable keys.
+  Optional improvements' rules sit in their own modules: `overlay.rs` (health bars, clock), `idle.rs`, `groupbar.rs`, `attackmove.rs`, `ping.rs`, `orderlines.rs` (order lines), `income.rs` (the income meter), `quickselect.rs`, `gamestats.rs` (the statistics page after the score screen) and `clearfont.rs` (the Clear font); `keymap.rs` holds the rebindable keys.
   `storage.rs` is the `Storage` trait for everything read or written outside the core (installation, saves,
   settings, screenshots, wall clock) and the desktop's folders.
   The window shows one picture, 640 × 480 or wider in a game with the `widescreen` option, composed from a draw list on the CPU (`compose/`, `widescreen.rs`; `core.rs` places the layers) or drawn on the GPU by the shell (`shell/gpu.rs`, the Vita's default).

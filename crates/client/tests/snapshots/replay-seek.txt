@@ -1,0 +1,156 @@
+# frame and sound fingerprints of the scripted scene `replay-seek` (hashes only)
+sound	2	3bb3724654d4194d	0.7516	Once
+frames	1-2	156ed4086987e325
+frames	3-3	adf7a3896d231341
+frames	4-17	16d857d0ac913691
+frames	18-35	63e88963d2deebc5
+frames	36-36	4a2a83e1df4ae339
+frames	37-57	a66e50fb2b0e841f
+frames	58-60	feaaa33637d4e1b7
+frames	61-72	95553398c6f833bb
+frames	73-77	661d4e6c5d50c2e7
+frames	78-99	e60088eb61bd18c3
+frames	100-106	2850fccd57284da3
+frames	107-111	adf582121c98279c
+frames	112-117	19ae6d997e1f8b4b
+frames	118-120	2d2e07f2259732cb
+frames	121-135	37447cc4b068e41f
+frames	136-142	d60c267246e306a3
+frames	143-154	5658b70bb61c1b71
+frames	155-157	9e9e8d4a69efcbd8
+frames	158-176	e0e24df11aa76a70
+frames	177-177	b4e876c756cb40f9
+frames	178-180	e282b6fd9401d675
+frames	181-199	4b8625d678992891
+frames	200-212	6993dd2533429e85
+frames	213-217	32dc2d739a5ff231
+frames	218-235	23703c96c6440e21
+frames	236-240	1a49e4fe62fd8bd5
+frames	241-245	6c82276bae769dfd
+frames	246-257	f082457c6c5cc036
+frames	258-277	25cb4ea9922f64a6
+frames	278-281	b75571b5a094cca6
+frames	282-299	24939022fe7d2ed9
+frames	300-300	e296be320bc21215
+frames	301-305	65b31f6b7999dee9
+frames	306-317	685bbd00e1c552d6
+frames	318-321	d9d0966f3db58ec0
+frames	322-343	9500bbd0d8a84118
+frames	344-351	f6102489eeb175cc
+frames	352-360	5d3a3e1743971662
+frames	361-365	0bd722415ddc0cf2
+frames	366-387	90f6f45d8090f89e
+frames	388-401	e384702421040afd
+frames	402-405	1ea869639dc16ddd
+frames	406-420	37b0349cd6e87e91
+frames	421-427	095beb42073012e9
+frames	428-449	f4cb285804287af9
+frames	450-456	ae2fed8d3fbeb181
+frames	457-471	881750307de9ba7f
+frames	472-480	4fd94e19d9315f83
+frames	481-490	9e76d51927c6e0bf
+frames	491-493	64a860f3f06d098a
+frames	494-513	59994737722a4eca
+frames	514-526	1fe12a2ef8a871c6
+frames	527-535	ab7a0ce6a9c0ae22
+frames	536-540	9e9d2661f068462e
+frames	541-553	495ad683f42eaece
+frames	554-562	927113b65c082106
+frames	563-571	dcc32d9b99cfe553
+frames	572-593	b13e8966f576d747
+frames	594-596	6f99f04bac2754f7
+frames	597-600	2addc4c8b41278eb
+frames	601-613	dc99c8b44b7add6b
+frames	614-632	fde7131abd455f93
+frames	633-635	fb0646b6c9ad1870
+frames	636-657	3d478c8313fc9a94
+frames	658-660	5cd1ba7e06521ea4
+frames	661-665	729fec22da0ffed0
+frames	666-679	fe2ac60cc648f2bd
+frames	680-701	a65d73eb1c8b7059
+frames	702-720	c7300b98e4a97c05
+shot	722	bar-at-300	dafccd1b8d94f7e1
+frames	721-722	dafccd1b8d94f7e1
+frames	723-723	f4f343c6f682923b
+frames	724-724	ca7917590e83485d
+frames	725-725	5f9b9812e8712e3c
+shot	726	jumping	88dc29631f81c4da
+frames	726-726	88dc29631f81c4da
+frames	727-727	98d4331e94313682
+frames	728-728	cff43d7908d768eb
+frames	729-741	0c2f3d15433662bf
+frames	742-756	232bb451ad40b6a3
+frames	757-761	15ffdaf7b8d971eb
+frames	762-763	b5896abc9f70d0b9
+frames	764-764	7803c81223fcf0c1
+shot	767	jumped-ahead	39ae21b0289ca82a
+frames	765-767	39ae21b0289ca82a
+frames	768-768	6b00e83096cca560
+frames	769-769	4a213c7b97c8edfe
+frames	770-778	e8ff05e11081a137
+shot	779	back-ten-seconds	6a5fd4af37b53977
+frames	779-779	6a5fd4af37b53977
+frames	780-785	bc99d1d2fa897bed
+shot	791	back-a-minute	35714638037cd5ad
+frames	786-791	35714638037cd5ad
+frames	792-792	d2d9fcff942f2cc1
+frames	793-793	196b1ed68df1c690
+frames	794-795	043dba1cb9957694
+frames	796-804	241a68d3379118c9
+frames	805-807	3e35713269aa5f25
+shot	813	jumped-back	87138761a01ede29
+frames	808-813	87138761a01ede29
+frames	814-814	ef53522efb8fd234
+shot	825	vision-everyone	3dc2e753f1a446f9
+frames	815-825	3dc2e753f1a446f9
+frames	826-826	09fb80df032957e5
+frames	827-828	fdb5d60289ecdfdd
+frames	829-839	2212a46ff76faa07
+frames	840-849	4279c47e436299af
+frames	850-850	348ef1c0e73168d3
+frames	851-864	a58b56e5ce8dcd92
+frames	865-871	17ad7f41328f4cda
+frames	872-872	5cb6f56eee480a96
+frames	873-881	437416cf2357417b
+shot	887	vision-other-player	af4d82f866e0171f
+frames	882-887	af4d82f866e0171f
+frames	888-888	e499b07eb37348f3
+frames	889-889	ff6a1f08a63b0870
+frames	890-900	61b3e6ca8f47057b
+frames	901-903	3088a85efd10f13f
+frames	904-924	6008b03dd004c9e4
+frames	925-934	3d294226bcb90700
+shot	949	vision-own-again	11ac6fadab23a520
+frames	935-949	11ac6fadab23a520
+frames	950-950	66d254aec9794457
+frames	951-951	720ad2fc7104a664
+frames	952-952	ed778d50f8834eaf
+frames	953-953	9d6e8b5fce08304a
+frames	954-954	6c137eb3f113dcc1
+frames	955-955	644303fbec341db7
+frames	956-958	9665b82a78d803f5
+shot	1011	the-end	397850bfc86129ef
+frames	959-1011	397850bfc86129ef
+frames	1012-1047	86145ac882af77fd
+frames	1048-1071	0f9bd50fe91f04f9
+shot	1073	the-start	660b77fe55d8b9c5
+frames	1072-1073	660b77fe55d8b9c5
+# mixed sound fingerprints of the scripted scene `replay-seek` (hashes only): 22050 Hz stereo 16-bit, one-second blocks
+blocks	0-0	05d3c37d3d292a6f
+blocks	1-1	7dc85e32bacbedee
+blocks	2-2	0f997db10a53e278
+blocks	3-3	e786e93a24f9bdcf
+blocks	4-4	838a8db979e98a89
+blocks	5-5	c9cded89f5aceeff
+blocks	6-6	6965fadf39342268
+blocks	7-7	5d1c710a544d736d
+blocks	8-8	e9b1b8fc4378479f
+blocks	9-9	2cb1cd974241a10b
+blocks	10-10	d21db7dcb0d4b3d7
+blocks	11-11	54d2b9a5a8224dec
+blocks	12-12	2554ef78a0f25c80
+blocks	13-13	0e0293f22e262f14
+blocks	14-14	4b0f6ca0fd43af2b
+blocks	15-15	d00567f06aa49f39
+blocks	16-16	c9979b40cce055d2
+tail	19477	b4f03c11ff26ab2b

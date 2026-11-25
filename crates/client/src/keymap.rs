@@ -8,7 +8,8 @@
 //!   `group-show-9` (the Alt+digit recall, which also shows the group), `goto-view-1` to `goto-view-3`,
 //!   `remember-view-1` to `remember-view-3`, and the menus and dialogs: `game-menu`, `options`, `help-menu`,
 //!   `keyboard-help`, `sound-dialog`, `speed-dialog`, `preferences`, `tips`, `save-game`, `load-game`, `restart`, `quit`,
-//!   `quit-dialog`, `toggle-music`, `toggle-sounds`. Also `idle-worker` (the key of option `idle-worker`; F6 by default).
+//!   `quit-dialog`, `toggle-music`, `toggle-sounds`. Also `idle-worker` (the key of option `idle-worker`; F6 by default) and `select-screen` and
+//!   `select-map` (option `quick-select`; Ctrl+A and Alt+A by default).
 //! - **Command buttons**: `button-move`, `button-attack`, `button-patrol`, `button-stop`, `button-stand-ground`,
 //!   `button-harvest`, `button-repair`, `button-return-goods`, `button-unload`, `button-attack-ground`,
 //!   `button-demolish`, `button-build-basic` and `button-build-advanced` each give the button with that command its
@@ -347,6 +348,8 @@ pub fn label_of(name: &str) -> String {
         "toggle-music" => "Music on or off",
         "toggle-sounds" => "Sound effects on or off",
         "idle-worker" => "Select the next idle worker",
+        "select-screen" => "Select your fighting units on screen",
+        "select-map" => "Select your fighting units on the map",
         _ => "",
     };
     if !fixed.is_empty() {
@@ -381,6 +384,8 @@ fn row_names() -> Vec<String> {
         "pause",
         "centre-primary",
         "idle-worker",
+        "select-screen",
+        "select-map",
         "game-menu",
         "options",
         "help-menu",
@@ -440,6 +445,8 @@ pub fn rows() -> Vec<Row> {
                     format!("F{}", crate::idle::KEY),
                     format!("F{} (with or without Ctrl, Alt or Shift)", crate::idle::KEY),
                 ),
+                // The original leaves both keys unbound.
+                Some(Bind::Select(n)) => (SELECT_DEFAULTS[n].text(), "no key".to_string()),
                 Some(Bind::Button(_)) => ("own letter".to_string(), "the letter on the button".to_string()),
                 Some(Bind::Slot(_)) | None => ("-".to_string(), "none".to_string()),
             };
@@ -517,6 +524,8 @@ fn line_name(line: &str) -> Option<&str> {
 enum Bind {
     Game(KeyAction),
     Idle,
+    /// A quick-select key (option `quick-select`): 0 on screen, 1 on the map.
+    Select(usize),
     Slot(usize),
     Button(&'static str),
 }
@@ -524,6 +533,11 @@ enum Bind {
 fn bind_by_name(name: &str, actions: &[(String, KeyAction)]) -> Option<Bind> {
     if name == "idle-worker" {
         return Some(Bind::Idle);
+    }
+    match name {
+        "select-screen" => return Some(Bind::Select(0)),
+        "select-map" => return Some(Bind::Select(1)),
+        _ => {}
     }
     if let Some(a) = actions.iter().find(|(n, _)| n == name) {
         return Some(Bind::Game(a.1));
@@ -538,8 +552,31 @@ fn bind_by_name(name: &str, actions: &[(String, KeyAction)]) -> Option<Bind> {
     BUTTONS.iter().find(|&&x| x == b).map(|&x| Bind::Button(x))
 }
 
+const SELECT_NAMES: [&str; 2] = ["select-screen", "select-map"];
+
 /// The idle-worker key's default, F6 (any modifiers).
 const IDLE_DEFAULT: mouse::Key = mouse::Key::F(crate::idle::KEY);
+
+/// The quick-select keys' defaults (option `quick-select`): Ctrl+A for the units on screen, Alt+A for all on the map.
+/// The original's table leaves both unbound.
+const SELECT_DEFAULTS: [Chord; 2] = [
+    Chord {
+        key: mouse::Key::Letter('A'),
+        mods: mouse::KeyMods {
+            shift: false,
+            ctrl: true,
+            alt: false,
+        },
+    },
+    Chord {
+        key: mouse::Key::Letter('A'),
+        mods: mouse::KeyMods {
+            shift: false,
+            ctrl: false,
+            alt: true,
+        },
+    },
+];
 
 /// The keys of one run: the original's, with what the `[keys]` section changed.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -552,6 +589,8 @@ pub struct KeyMap {
     unbound: HashSet<Chord>,
     /// The idle-worker key, when rebound.
     idle: Option<Chord>,
+    /// The quick-select keys, when rebound.
+    select: [Option<Chord>; 2],
     slots: [Option<char>; 9],
     buttons: Vec<(&'static str, char)>,
     /// The lines that were accepted: the action's name and the key the file gives it.
@@ -622,6 +661,9 @@ impl KeyMap {
                     "idle-worker".into(),
                 );
             }
+            for (n, c) in SELECT_DEFAULTS.iter().enumerate() {
+                taken.insert(*c, SELECT_NAMES[n].into());
+            }
             // Ours: the key that opens the Settings screen in a game belongs to no action and cannot be given to one.
             let (key, mods) = crate::gamemenu::SETTINGS_KEY;
             taken.insert(Chord { key, mods }, "settings".into());
@@ -629,6 +671,7 @@ impl KeyMap {
                 match bind {
                     Bind::Game(a) => taken.retain(|_, owner| *owner != action_name(*a)),
                     Bind::Idle => taken.retain(|_, owner| owner != "idle-worker"),
+                    Bind::Select(n) => taken.retain(|_, owner| owner != SELECT_NAMES[*n]),
                     _ => {}
                 }
             }
@@ -662,6 +705,7 @@ impl KeyMap {
                     }
                 }
                 Bind::Idle => map.idle = Some(chord),
+                Bind::Select(n) => map.select[n] = Some(chord),
                 Bind::Slot(n) => map.slots[n] = char_of(chord),
                 Bind::Button(b) => {
                     if let Some(c) = char_of(chord) {
@@ -685,7 +729,7 @@ impl KeyMap {
 
     /// Whether the player has rebound anything.
     pub fn is_default(&self) -> bool {
-        self.game.is_empty() && self.idle.is_none() && !self.has_buttons()
+        self.game.is_empty() && self.idle.is_none() && self.select.iter().all(Option::is_none) && !self.has_buttons()
     }
 
     fn has_buttons(&self) -> bool {
@@ -724,6 +768,13 @@ impl KeyMap {
             None => key == Key::F(crate::idle::KEY),
             Some(c) => crate::game::game_key(key).is_some_and(|k| Chord { key: k, mods } == c),
         }
+    }
+
+    /// Whether a quick-select key is down: `which` 0 for the units on screen, 1 for the map. Without a binding it is
+    /// Ctrl+A or Alt+A exactly.
+    pub fn select_pressed(&self, which: usize, key: Key, mods: mouse::KeyMods) -> bool {
+        let want = self.select[which].unwrap_or(SELECT_DEFAULTS[which]);
+        crate::game::game_key(key).is_some_and(|k| Chord { key: k, mods } == want)
     }
 
     /// The idle-worker key as the button shows it: `F6` or the player's chord.
@@ -782,7 +833,7 @@ fn check_form(bind: Bind, c: Chord) -> Result<(), String> {
                 return Err("a command button takes a bare letter or digit".into());
             }
         }
-        Bind::Game(_) | Bind::Idle => {
+        Bind::Game(_) | Bind::Idle | Bind::Select(_) => {
             if matches!(c.key, mouse::Key::Letter(_)) && !(c.mods.ctrl || c.mods.alt) {
                 return Err("a letter on its own belongs to the command buttons; add ctrl or alt".into());
             }
@@ -1100,7 +1151,10 @@ mod tests {
         let rows = rows();
         let names: HashSet<&str> = rows.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names.len(), rows.len(), "unique");
-        assert_eq!(rows.len(), game_actions().len() + 1 + BUTTONS.len() + 9);
+        assert_eq!(
+            rows.len(),
+            game_actions().len() + 1 + SELECT_NAMES.len() + BUTTONS.len() + 9
+        );
         let actions = game_actions();
         for r in &rows {
             assert!(

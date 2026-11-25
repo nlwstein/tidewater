@@ -3,8 +3,7 @@
 **Bottom line.** Tidewater builds as a Vita app (`.vpk`) from the same shell code as the other platforms, and CI builds
 it on every run. In the Vita3K emulator it plays: the videos, menus and a custom game work with the Vita's buttons
 and sticks, and every frame-test scene gives the same frames and sound as on the desktop. One player has installed and
-played it on a real Vita (GitHub issue #3); the cursor and the scrolling move in
-steps there, which looks like a low frame rate, and a test build is measuring it.
+played it on a real Vita (GitHub issue #3), where a custom game held 60 fps in a measurement (see [Speed](#speed)).
 
 The import is in [import.md](import.md), the touch gestures in [touch.md](touch.md) and the Android version in
 [android.md](android.md).
@@ -14,13 +13,13 @@ The import is in [import.md](import.md), the touch gestures in [touch.md](touch.
 | Area | State |
 |---|---|
 | Build | Works on Linux and macOS (`platform/vita/build.sh`). CI builds the VPK on every run. |
-| Vita3K | Plays. All 33 game scenes of the frame test match the desktop snapshots, frames and sound (`firstrun` differs on purpose, see [Test builds](#test-builds)). Played by hand with the pad: videos, menus, a custom game. |
-| Real Vita | Installs (v0.9.1) and plays, by one player so far. The pointer and the scrolling move in steps; the frame rate is being measured (GitHub issue #3). |
+| Vita3K | Plays. Every game scene of the frame test matches the desktop snapshots, frames and sound (`firstrun` differs on purpose, see [Test builds](#test-builds)). Played by hand with the pad: videos, menus, a custom game. |
+| Real Vita | Installs and plays (v0.9.1 onward); 0.11.0 installed over 0.10.0 keeps the game files and saves. A custom game held 60 fps when measured (see [Speed](#speed)), and a player reports the sticks are smooth at that rate (GitHub issue #3). |
 | Game files | Copied to `ux0:data/Tidewater`; the first-run screen scans that folder. |
 | Saves and settings | `ux0:data/Tidewater`. A first run starts with Widescreen at `auto` (the Vita's 16:9 screen); Settings, General changes it. |
 | Front touch screen | Read as touch, like a phone. Not tried on hardware. |
 | Buttons and sticks | Read as a gamepad (SDL's built-in "PSVita Controller" mapping). Tried in Vita3K: click, right click, panel mode, the minimap jump, the game menu, pause and scrolling work. |
-| Speed | Unmeasured on a Vita. Vita3K on a fast Mac holds 60 fps with 10 to 12 ms of work a frame in a game, which says little about the hardware. Expect 30 fps at best until the compositor gets cheaper. |
+| Speed | 60 fps in a 2-player custom game on a real Vita, measured with frame stats (see [Speed](#speed)). Vita3K's numbers say little about the hardware. |
 | Update check | Off. Install a newer VPK by hand. |
 | GOG installer (`.exe`) | Not possible (see [Limits](#limits)). |
 
@@ -150,7 +149,7 @@ are 2.4 MB.
   0x8010113D (the icon was a 32-bit PNG; fixed in v0.9.1). Memory is not measured on hardware yet.
 - **Controls tuned only in Vita3K.** SDL's Vita backend presents the buttons and sticks as a gamepad, which the
   gamepad support reads like any other; which buttons the Vita lacks is in [gamepad.md](gamepad.md).
-- **Starting a game takes about 3 seconds** on the Vita (see "Speed" below), most of it reading the unit sprites from
+- **Starting a game takes about 3 seconds** on the Vita (see [Speed](#speed)), most of it reading the unit sprites from
   the memory card.
 - **No GOG installer.** `innoextract` is a separate program and the Vita cannot start one. Unpack the installer on a
   computer first.

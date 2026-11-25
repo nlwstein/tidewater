@@ -13,6 +13,7 @@ use crate::compose::Frame;
 use crate::core::Core;
 use crate::frontend::{AppState, Step};
 use crate::input::{Button, Key, KeyEvent, PadAxis, PadButton, PadEvent, Touch, TouchPhase, Wheel, WindowGeom};
+use tidewater_sim::setup::Setup;
 
 /// One step of a scene's input.
 #[derive(Clone, Debug, PartialEq)]
@@ -50,6 +51,8 @@ pub enum Cmd {
     UntilWatchable,
     /// Wait until the creator's Start Game can be pressed (every joiner has the map, and in Classic mode is ready).
     UntilStartable,
+    /// Wait until the creator has said it finished setting the game up (`LOBBY_DONE`).
+    UntilHostDone,
     /// Wait until a message containing this text has shown (the message list or the notice line).
     UntilMessage(&'static str),
     /// From now on the run is a phone's or tablet's (`TouchState::touch_only`), as on iOS and Android.
@@ -81,7 +84,13 @@ pub struct LobbyProgress {
     pub watchers: usize,
     /// The creator's Start Game can be pressed.
     pub startable: bool,
+    /// The creator's chat line reads [`LOBBY_DONE`]: it has finished setting the game up.
+    pub host_done: bool,
 }
+
+/// What a scripted creator says in the lobby once its map and options are set, for the joiners to wait on: changing
+/// either clears the Classic Ready boxes, so a joiner ticking earlier would be undone.
+pub const LOBBY_DONE: &str = "set up";
 
 /// A scripted scene: where the flow starts and the input.
 #[derive(Clone, Debug)]
@@ -295,6 +304,15 @@ pub fn scenes() -> Vec<Scene> {
             extras: &[("map-zoom", "wheel")],
             keys: "",
         },
+        // The clear font (`font`): the menus, an act and a briefing, the game screen and its menu, then the Settings
+        // screen over the game puts the game's own font back and the clear one again, each shown at once.
+        Scene {
+            name: "extras-font",
+            start: vec![Step::MainMenu],
+            cmds: extras_font(),
+            extras: &[("font", "clear")],
+            keys: "",
+        },
         // The multiplayer menus, up to the game list.
         Scene {
             name: "multi",
@@ -320,6 +338,15 @@ pub fn scenes() -> Vec<Scene> {
             extras: &[("health-bars", "hovered"), ("widescreen", "16:9")],
             keys: "",
         },
+        // A game left to run, for a map given on the command line (`tidewater --script playtest MAP`): the map
+        // editor's play test. Without a map it plays the first campaign mission.
+        Scene {
+            name: "playtest",
+            start: vec![play(0)],
+            cmds: playtest(),
+            extras: &[],
+            keys: "",
+        },
         Scene {
             name: "build",
             start: vec![play(0)],
@@ -331,6 +358,26 @@ pub fn scenes() -> Vec<Scene> {
             name: "carry",
             start: vec![play(0)],
             cmds: carry(),
+            extras: &[],
+            keys: "",
+        },
+        // The recording `replay-seek` watches: a mission left to the computer players for 3,000 cycles (`tests/frames.rs`).
+        Scene {
+            name: "replay-record",
+            start: vec![play(2)],
+            cmds: vec![
+                Cmd::Move(400.0, 240.0),
+                Cmd::Until(AppState::Game),
+                Cmd::UntilCycle(3000),
+                Cmd::Shot("recorded"),
+            ],
+            extras: &[],
+            keys: "",
+        },
+        Scene {
+            name: "replay-seek",
+            start: vec![play(0)],
+            cmds: replay_seek(),
             extras: &[],
             keys: "",
         },
@@ -372,12 +419,51 @@ pub fn scenes() -> Vec<Scene> {
             extras: &[("group-bar", "on")],
             keys: "",
         },
+        // The statistics page (`game-stats`): peasants mine and fell trees, a farm goes up and the Town Hall trains
+        // peasants, then the game is won; the score screen, then the page of graphs after it.
+        Scene {
+            name: "extras-stats",
+            start: vec![Step::Play {
+                map: "Maps\\Gold Rush BNE.pud".to_string(),
+                setup: Some(Setup::parse("custom:race=human,opponents=3").expect("a valid setup")),
+            }],
+            cmds: extras_stats(),
+            extras: &[
+                ("game-stats", "on"),
+                ("rally-points", "on"),
+                ("production-queue", "on"),
+                ("idle-worker", "on"),
+            ],
+            keys: "",
+        },
         // Smart attack-move: a right-click on open ground with a fighting unit selected.
         Scene {
             name: "extras-attack",
             start: vec![play(0)],
             cmds: extras_attack(),
             extras: &[("smart-attack-move", "on")],
+            keys: "",
+        },
+        // Order lines: a group with queued moves, a footman with a queued attack-move, a peasant sent to the gold mine, a
+        // Town Hall with a rally point, and the view magnified.
+        Scene {
+            name: "extras-lines",
+            start: vec![play(0)],
+            cmds: extras_lines(),
+            extras: &[
+                ("order-lines", "on"),
+                ("shift-queue", "on"),
+                ("rally-points", "on"),
+                ("map-zoom", "wheel"),
+            ],
+            keys: "",
+        },
+        // Quick select: Ctrl+A and Alt+A pick the fighting units, Ctrl+Shift+digit adds to a control group.
+        Scene {
+            name: "extras-select",
+            start: vec![play(0)],
+            cmds: extras_select(),
+            extras: &[("quick-select", "on")],
             keys: "",
         },
         // Rally points and the production queue: a barracks-type building selected, a rally flag, jobs waiting.
@@ -389,6 +475,20 @@ pub fn scenes() -> Vec<Scene> {
                 ("rally-points", "on"),
                 ("production-queue", "on"),
                 ("selection-limit", "unlimited"),
+            ],
+            keys: "",
+        },
+        // Production progress bars under your own buildings at work, and the income rates in the resource bar.
+        Scene {
+            name: "extras-progress",
+            start: vec![play(4)],
+            cmds: extras_progress(),
+            extras: &[
+                ("progress-income", "both"),
+                ("idle-worker", "on"),
+                ("shift-queue", "on"),
+                ("rally-points", "on"),
+                ("production-queue", "on"),
             ],
             keys: "",
         },
@@ -841,7 +941,7 @@ fn pad_menu() -> Vec<Cmd> {
     v.extend(pad_press(P::South));
     v.extend([Wait(30), Shot("settings")]);
     // The focus opens on the General tab; Right goes along the tabs to the Controller page.
-    for _ in 0..5 {
+    for _ in 0..6 {
         v.extend(pad_press(P::Right));
     }
     v.extend([Wait(5), Shot("controller")]);
@@ -1362,7 +1462,7 @@ fn settings() -> Vec<Cmd> {
     // The tabs.
     v.extend(click(212.0, 76.0));
     v.extend([Wait(2), Shot("interface")]);
-    v.extend(click(320.0, 76.0));
+    v.extend(click(364.0, 76.0));
     v.extend([Wait(2), Shot("sound")]);
     v.extend(click(460.0, 174.0));
     v.extend([Wait(2), Shot("music-list")]);
@@ -1404,7 +1504,7 @@ fn settings() -> Vec<Cmd> {
     // The link opens it again; the music volume is set to 30% and OK applies it.
     v.extend(click(560.0, 462.0));
     v.extend([Until(AppState::Settings), Wait(25), Shot("again"), Wait(2)]);
-    v.extend(click(320.0, 76.0));
+    v.extend(click(364.0, 76.0));
     v.extend([Wait(2), Shot("again-sound")]);
     v.extend(click(460.0, 174.0));
     v.extend([Wait(2), Move(460.0, 250.0), Wait(1)]);
@@ -1436,6 +1536,73 @@ fn extras_zoom() -> Vec<Cmd> {
     v
 }
 
+/// The clear font (`clearfont`) from the main menu into the first human mission, and switched off and on again on the
+/// Settings screen's Interface page during the game.
+fn extras_font() -> Vec<Cmd> {
+    use Cmd::*;
+    use Key as K;
+    let mut v = vec![Move(320.0, 240.0), Until(AppState::MainMenu), Wait(25), Shot("menu")];
+    v.extend(tap(K::Letter('S')));
+    v.extend([Until(AppState::SinglePlayer), Wait(3), Shot("single-player")]);
+    v.extend(click(320.0, 254.0));
+    v.extend([
+        Until(AppState::NewCampaign),
+        Wait(2),
+        Move(320.0, 300.0),
+        Wait(1),
+        Shot("campaigns"),
+    ]);
+    v.extend(click(320.0, 300.0));
+    v.extend([Until(AppState::Act), Wait(20), Shot("act-text")]);
+    v.extend(tap(K::Space));
+    // The briefing's text crawls up from below its panel: the last line shows later.
+    v.extend([
+        Until(AppState::Briefing),
+        Wait(240),
+        Shot("briefing"),
+        Wait(400),
+        Shot("briefing-later"),
+    ]);
+    v.extend(tap(K::Enter));
+    v.extend([Until(AppState::Game), Move(400.0, 240.0), Wait(90), Shot("game")]);
+    v.extend(click(416.0, 318.0));
+    v.extend([Wait(3), Move(600.0, 400.0), Wait(3), Shot("selected")]);
+    v.extend(tap(K::F(10)));
+    v.extend([Wait(3), Shot("game-menu")]);
+    v.extend(tap(K::Escape));
+    // Settings, Interface: the Font row (the ninth, rows 26 apart) and its list; Original, then OK.
+    v.extend(ctrl_tap(K::Letter('G')));
+    v.extend([Wait(3)]);
+    v.extend(click(212.0, 76.0));
+    v.extend([Wait(2), Move(200.0, 320.0), Wait(1), Shot("interface")]);
+    v.extend(click(460.0, 320.0));
+    v.extend([Wait(2), Shot("font-list")]);
+    v.extend(click(460.0, 341.0));
+    v.extend([Wait(2), Shot("font-original")]);
+    v.extend(click(523.0, 424.0));
+    v.extend([Wait(40), Shot("game-original")]);
+    v.extend(tap(K::F(10)));
+    v.extend([Wait(3), Shot("game-menu-original")]);
+    v.extend(tap(K::Escape));
+    // And back to the clear font.
+    v.extend(ctrl_tap(K::Letter('G')));
+    v.extend([Wait(3)]);
+    v.extend(click(212.0, 76.0));
+    v.extend([Wait(2)]);
+    v.extend(click(460.0, 320.0));
+    v.extend([Wait(2)]);
+    v.extend(click(460.0, 361.0));
+    v.extend([Wait(2), Shot("font-clear")]);
+    v.extend(click(523.0, 424.0));
+    v.extend([Wait(40), Shot("game-clear-again")]);
+    // The Options dialog and its small Settings link.
+    v.extend(tap(K::F(5)));
+    v.extend([Wait(3), Shot("options")]);
+    v.extend(tap(K::Escape));
+    v.extend([Wait(3)]);
+    v
+}
+
 /// The Settings screen over a game (`gamemenu::run_settings`): Ctrl+G opens it over the running game, the pages are
 /// looked at, a value is changed and OK applies it at once, and the link in the Options dialog opens it again.
 fn settings_ingame() -> Vec<Cmd> {
@@ -1453,6 +1620,9 @@ fn settings_ingame() -> Vec<Cmd> {
     v.extend([Wait(2), Move(460.0, 195.0), Wait(1), Shot("health-list")]);
     v.extend(click(460.0, 192.0));
     v.extend([Wait(2), Shot("health-always")]);
+    // Overlays: what the game shows of the play, the pointer on its first row for the description.
+    v.extend(click(275.0, 76.0));
+    v.extend([Wait(2), Move(200.0, 114.0), Wait(1), Shot("overlays")]);
     // Gameplay: the game's rules, greyed, and a click on one does nothing.
     v.extend(click(428.0, 76.0));
     v.extend([Wait(2), Shot("gameplay")]);
@@ -1564,6 +1734,22 @@ fn lobby() -> Vec<Cmd> {
     v
 }
 
+/// The screen y of row `row` of the lobby's Extras list. The list opens above its box with its last row fixed, so the
+/// rows move up as options are added to the registry; this is computed from the registry (the row the scenes
+/// clicked at 173 and 293 when the list had eight rows).
+fn extras_row_y(row: usize) -> f32 {
+    let rows = crate::lobbyscreen::SIM_EXTRAS + crate::extras::lobby_specs().count();
+    (173 + 20 * row) as f32 - 20.0 * (rows as f32 - 8.0)
+}
+
+/// The row of the lobby's C+L option `id` in the Extras list.
+fn extras_row_of(id: crate::extras::Id) -> usize {
+    crate::lobbyscreen::SIM_EXTRAS
+        + crate::extras::lobby_specs()
+            .position(|s| s.id == id)
+            .expect("a lobby option")
+}
+
 /// The creator's lobby with the Extras box showing: its list opened, a C+L row cycled, then the Observers list.
 fn lobby_extras() -> Vec<Cmd> {
     use Cmd::*;
@@ -1582,9 +1768,12 @@ fn lobby_extras() -> Vec<Cmd> {
     v.extend([Wait(6), Shot("box")]);
     v.extend(click(480.0, 336.0));
     v.extend([Wait(3), Shot("list")]);
-    // The list opens above its box (it has eight rows): the seventh is the second C+L option. One pick changes it and
+    // The list opens above its box (its rows come from the registry): the pick is smart attack-move, the second C+L option. One pick changes it and
     // the list stays open.
-    v.extend(click(480.0, 293.0));
+    v.extend(click(
+        480.0,
+        extras_row_y(extras_row_of(crate::extras::Id::SmartAttackMove)),
+    ));
     v.extend([Wait(3), Shot("picked")]);
     v.extend(tap(K::Escape));
     v.extend(click(490.0, 246.0));
@@ -1596,6 +1785,17 @@ fn lobby_extras() -> Vec<Cmd> {
 
 /// A farm placed: a peasant selected, the build commands by their keys, the placement image over good and bad ground,
 /// then placed; the chat line edited and cancelled; the load dialog's list moved with the wheel.
+fn playtest() -> Vec<Cmd> {
+    use Cmd::*;
+    vec![
+        Until(AppState::Game),
+        Wait(60),
+        Shot("playtest-start"),
+        Wait(600),
+        Shot("playtest-later"),
+    ]
+}
+
 fn build() -> Vec<Cmd> {
     use Cmd::*;
     use Key as K;
@@ -1699,6 +1899,50 @@ fn carry() -> Vec<Cmd> {
     v
 }
 
+/// The replay viewer (`replayview`), run as `--script replay-seek --replay FILE` on a recording of the `replay-record` scene
+/// (`tests/frames.rs` records it): the timeline over the map view, jumps by a click on it and by the keys, the other
+/// player's vision, everyone's and the start and the end. Run on a live game it only waits.
+fn replay_seek() -> Vec<Cmd> {
+    use Cmd::*;
+    let alt = |k: Key| {
+        [
+            Press(Key::AltLeft),
+            Press(k),
+            Wait(1),
+            Release(k),
+            Release(Key::AltLeft),
+        ]
+    };
+    let mut v = vec![Move(400.0, 240.0), Until(AppState::Game), Wait(5)];
+    v.extend([UntilCycle(300), Shot("bar-at-300")]);
+    // A click in the middle of the track jumps ahead; the jump is played out over some frames, with no drawing of the
+    // cycles in between, and the game goes on from there.
+    v.extend(click(395.0, 453.0));
+    v.extend([Wait(2), Shot("jumping"), Wait(40), Shot("jumped-ahead")]);
+    // Alt+Left goes back ten seconds, Alt+Shift+Left a minute.
+    v.extend(alt(Key::Left));
+    v.extend([Wait(10), Shot("back-ten-seconds")]);
+    v.extend([Press(Key::ShiftLeft)]);
+    v.extend(alt(Key::Left));
+    v.extend([Release(Key::ShiftLeft), Wait(10), Shot("back-a-minute")]);
+    // A click near the left of the track is a jump back before the first copy of the world.
+    v.extend(click(300.0, 453.0));
+    v.extend([Wait(20), Shot("jumped-back")]);
+    // Tab takes the next vision: everyone's (the whole map, no fog), then the computer player's, whose maps the game
+    // builds again from the start; the vision button takes the next, the human player's own again.
+    v.extend(tap(Key::Tab));
+    v.extend([Wait(10), Shot("vision-everyone")]);
+    v.extend(tap(Key::Tab));
+    v.extend([Wait(60), Shot("vision-other-player")]);
+    v.extend(click(560.0, 453.0));
+    v.extend([Wait(60), Shot("vision-own-again")]);
+    v.extend(alt(Key::End));
+    v.extend([Wait(60), Shot("the-end")]);
+    v.extend(alt(Key::Home));
+    v.extend([Wait(60), Shot("the-start")]);
+    v
+}
+
 /// The optional improvements on: bars over every unit, the clock and actions per minute, the idle-worker button and
 /// its key (each press selects a worker and sends a normal select, which the actions count).
 fn extras() -> Vec<Cmd> {
@@ -1757,6 +2001,85 @@ fn extras_groups() -> Vec<Cmd> {
     v
 }
 
+/// The statistics page: about two and a half game minutes of play (gold mined, lumber cut, a farm built, peasants
+/// trained), a win by the cheat, the score screen counted up (its hint line shows) and the page of graphs after it.
+fn extras_stats() -> Vec<Cmd> {
+    use Cmd::*;
+    let mut v = vec![Move(400.0, 240.0), Until(AppState::Game), Wait(5)];
+    // The map is shown, so the orders below reach ground the fog still covers; the idle-worker key selects a peasant and
+    // puts the view on it, which is where the pixels below are read from.
+    v.extend(chat("on screen"));
+    v.extend(tap(Key::F(6)));
+    v.extend([Wait(5), Shot("start")]);
+    // The selected peasant is the builder (group 1). A second one mines, a third fells trees; the Town Hall (group 2)
+    // has its rally point on the mine, so every peasant it trains goes mining.
+    v.extend(set_group(1));
+    v.extend(click(320.0, 315.0));
+    v.extend(right_click(465.0, 255.0));
+    v.extend(click(222.0, 348.0));
+    v.extend(right_click(555.0, 320.0));
+    v.extend(click(265.0, 250.0));
+    v.extend(set_group(2));
+    v.extend(right_click(465.0, 255.0));
+    v.extend(group_build(1, 0, 225.0, 50.0));
+    v.extend([Wait(20), Shot("farm")]);
+    // The farm is up by then: the Town Hall trains a peasant and queues a second.
+    v.extend([UntilCycle(2700)]);
+    v.extend(group_train(2, 2));
+    v.extend([UntilCycle(3600), Shot("late")]);
+    v.extend(chat("unite the clans"));
+    v.extend([UntilOutcome, Wait(5)]);
+    v.extend(tap(Key::Enter));
+    v.extend([Until(AppState::Score), Wait(20)]);
+    v.extend(tap(Key::Space));
+    v.extend([Wait(3), Shot("score")]);
+    v.extend(tap(Key::Space));
+    v.extend([Move(630.0, 475.0), Wait(3), Shot("stats")]);
+    v
+}
+
+/// The control group `d` recalled, a peasant in it builds (see [`peasant_builds`]).
+fn group_build(d: u8, which: u32, x: f32, y: f32) -> Vec<Cmd> {
+    let mut v = tap(Key::Digit(d)).to_vec();
+    v.push(Cmd::Wait(2));
+    v.extend(peasant_builds(which, x, y));
+    v
+}
+
+/// The control group `d` recalled and its first training button pressed `n` times.
+fn group_train(d: u8, n: u32) -> Vec<Cmd> {
+    let mut v = tap(Key::Digit(d)).to_vec();
+    v.push(Cmd::Wait(2));
+    for _ in 0..n {
+        v.extend(click(33.0, 358.0));
+        v.push(Cmd::Wait(1));
+    }
+    v
+}
+
+/// The right button pressed and released a frame later at a screen pixel.
+fn right_click(x: f32, y: f32) -> [Cmd; 4] {
+    [
+        Cmd::Move(x, y),
+        Cmd::Down(Button::Right),
+        Cmd::Wait(1),
+        Cmd::Up(Button::Right),
+    ]
+}
+
+/// A selected peasant builds: the basic build menu, the building's button (row 0 farm, 1
+/// barracks), then the ground.
+fn peasant_builds(which: u32, x: f32, y: f32) -> Vec<Cmd> {
+    let mut v = Vec::new();
+    v.extend(click(31.0, 452.0));
+    v.push(Cmd::Wait(1));
+    v.extend(click(33.0 + 57.0 * which as f32, 358.0));
+    v.push(Cmd::Wait(1));
+    v.extend(click(x, y));
+    v.push(Cmd::Wait(2));
+    v
+}
+
 /// Smart attack-move: a unit selected, a right-click on the ground, and the same with a worker.
 fn extras_attack() -> Vec<Cmd> {
     use Cmd::*;
@@ -1777,6 +2100,91 @@ fn extras_attack() -> Vec<Cmd> {
     v
 }
 
+/// A right-click at a place, with Shift held when `queue`.
+fn right_click_queued(x: f32, y: f32, queue: bool) -> Vec<Cmd> {
+    use Cmd::*;
+    let mut v = vec![Move(x, y), Wait(1)];
+    if queue {
+        v.extend([Press(Key::ShiftLeft), Wait(1)]);
+    }
+    v.extend([Down(Button::Right), Wait(1), Up(Button::Right)]);
+    if queue {
+        v.extend([Release(Key::ShiftLeft), Wait(1)]);
+    }
+    v
+}
+
+/// Order lines (`order-lines`): a footman and a peasant selected with a box and given a move and two queued moves; the
+/// footman alone with an attack-move queued behind its moves; a peasant sent to the gold mine; the Town Hall with a
+/// rally point; and the same magnified.
+fn extras_lines() -> Vec<Cmd> {
+    use Cmd::*;
+    let mut v = vec![Move(400.0, 240.0), Until(AppState::Game), Wait(5), Shot("none")];
+    // The Town Hall with a rally point.
+    v.extend(click(395.0, 435.0));
+    v.extend(right_click_queued(330.0, 330.0, false));
+    v.extend([Wait(3), Shot("rally")]);
+    // A footman and a peasant, boxed: a move and two queued moves.
+    v.extend([
+        Move(260.0, 225.0),
+        Down(Button::Left),
+        Wait(1),
+        Move(540.0, 340.0),
+        Wait(1),
+        Up(Button::Left),
+        Wait(2),
+    ]);
+    v.extend(right_click_queued(300.0, 290.0, false));
+    v.extend(right_click_queued(260.0, 200.0, true));
+    v.extend(right_click_queued(470.0, 170.0, true));
+    v.extend([Wait(2), Shot("group")]);
+    // The footman alone: an attack-move queued behind its moves.
+    v.extend(click(511.0, 248.0));
+    v.extend([Wait(1)]);
+    v.extend(tap(Key::Letter('A')));
+    v.extend([Press(Key::ShiftLeft), Wait(1)]);
+    v.extend(click(585.0, 215.0));
+    v.extend([Release(Key::ShiftLeft), Wait(2), Shot("attack-move")]);
+    // The peasant sent to the gold mine up the slope.
+    v.extend(click(410.0, 316.0));
+    v.extend([Wait(1), Shot("peasant")]);
+    v.extend(right_click_queued(430.0, 145.0, false));
+    v.extend([Wait(2), Shot("harvest")]);
+    // Magnified: the lines follow the view.
+    v.extend([Move(500.0, 330.0), Wheel(1.0), Wait(3), Shot("zoomed")]);
+    v
+}
+
+/// Quick select: the fighting units on screen (Ctrl+A) and on the map (Alt+A), then a group built up with
+/// Ctrl+Shift+digit from a fighter and a worker, and recalled.
+fn extras_select() -> Vec<Cmd> {
+    use Cmd::*;
+    let mut v = vec![Move(400.0, 240.0), Until(AppState::Game), Wait(5), Shot("none")];
+    v.extend(ctrl_tap(Key::Letter('A')));
+    v.extend([Wait(3), Shot("ctrl-a")]);
+    v.extend(click(300.0, 400.0));
+    v.extend([Wait(2), Press(Key::AltLeft), Wait(1)]);
+    v.extend(tap(Key::Letter('A')));
+    v.extend([Release(Key::AltLeft), Wait(3), Shot("alt-a")]);
+    v.extend(click(511.0, 248.0));
+    v.extend([Wait(2)]);
+    v.extend(set_group(1));
+    v.extend(click(416.0, 318.0));
+    v.extend([Wait(2), Press(Key::ControlLeft), Press(Key::ShiftLeft), Wait(1)]);
+    v.extend(tap(Key::Digit(1)));
+    v.extend([
+        Release(Key::ShiftLeft),
+        Release(Key::ControlLeft),
+        Wait(3),
+        Shot("added"),
+    ]);
+    v.extend(click(300.0, 400.0));
+    v.extend([Wait(2)]);
+    v.extend(tap(Key::Digit(1)));
+    v.extend([Wait(3), Shot("recalled")]);
+    v
+}
+
 /// Rally points and the production queue: look around, then select the starting building.
 fn extras_sim() -> Vec<Cmd> {
     use Cmd::*;
@@ -1791,6 +2199,73 @@ fn extras_sim() -> Vec<Cmd> {
         v.push(Wait(2));
     }
     v.extend([Wait(3), Shot("queued")]);
+    v
+}
+
+/// Production progress and income: a Town Hall training peasants, a minute of play, the numbers beside the counters.
+fn extras_progress() -> Vec<Cmd> {
+    use Cmd::*;
+    // A click, then a pause for the command panel to follow the new selection.
+    let pick = |x: f32, y: f32| {
+        let mut c = click(x, y).to_vec();
+        c.push(Wait(3));
+        c
+    };
+    let mut v = vec![Move(400.0, 240.0), Until(AppState::Game), Wait(5), Shot("start")];
+    // Money and quick building (cheats), then the idle peasant builds a Farm and, queued behind it, a Lumber Mill.
+    v.extend(chat("glittering prizes"));
+    v.extend(chat("make it so"));
+    v.extend(tap(Key::F(6)));
+    v.extend([Wait(3)]);
+    v.extend(tap(Key::Letter('B')));
+    v.extend([Wait(3)]);
+    v.extend(pick(33.0, 358.0));
+    v.extend(pick(470.0, 215.0));
+    v.extend(tap(Key::Letter('B')));
+    v.extend([Wait(3)]);
+    v.extend(pick(33.0, 405.0));
+    v.extend([Press(Key::ShiftLeft), Wait(1)]);
+    v.extend(pick(480.0, 290.0));
+    v.extend([Release(Key::ShiftLeft), Wait(30), Shot("sites")]);
+    // Once the Farm stands, the Town Hall trains peasants.
+    v.extend([Wait(330)]);
+    v.extend(pick(305.0, 350.0));
+    v.extend(pick(33.0, 358.0));
+    v.extend(pick(33.0, 358.0));
+    v.extend([Wait(60), Shot("training")]);
+    v.extend([Wait(500), Shot("mill-done")]);
+    // The two new peasants (a box round them) and the builder go to cut wood.
+    v.extend([
+        Move(200.0, 305.0),
+        Down(Button::Left),
+        Wait(1),
+        Move(250.0, 365.0),
+        Wait(1),
+        Up(Button::Left),
+        Wait(3),
+        Shot("box"),
+        Move(232.0, 452.0),
+        Down(Button::Right),
+        Wait(1),
+        Up(Button::Right),
+        Wait(2),
+    ]);
+    v.extend(pick(445.0, 292.0));
+    v.extend([
+        Shot("one"),
+        Move(210.0, 448.0),
+        Down(Button::Right),
+        Wait(1),
+        Up(Button::Right),
+        Wait(2),
+    ]);
+    v.extend([Wait(3200), Shot("income")]);
+    // Then the Lumber Mill researches an upgrade and the Town Hall trains: bars under both, the income under the counters.
+    v.extend(pick(510.0, 330.0));
+    v.extend(pick(33.0, 358.0));
+    v.extend(pick(305.0, 350.0));
+    v.extend(pick(33.0, 358.0));
+    v.extend([Wait(120), Shot("both")]);
     v
 }
 
@@ -2107,6 +2582,11 @@ pub(crate) fn drive(c: &mut Core, window: Option<WindowGeom>) {
             }
             Cmd::UntilStartable => {
                 if !mp.lobby.is_some_and(|l| l.startable) {
+                    break;
+                }
+            }
+            Cmd::UntilHostDone => {
+                if !mp.lobby.is_some_and(|l| l.host_done) {
                     break;
                 }
             }
@@ -2609,9 +3089,12 @@ fn mp_host(way: Way) -> Vec<Cmd> {
     // Extras: rally points (a simulation option) and smart attack-move (C+L) on, for everyone.
     v.extend(click(480.0, 336.0));
     v.extend([Wait(3)]);
-    v.extend(click(480.0, 173.0));
+    v.extend(click(480.0, extras_row_y(0)));
     v.extend([Wait(2)]);
-    v.extend(click(480.0, 293.0));
+    v.extend(click(
+        480.0,
+        extras_row_y(extras_row_of(crate::extras::Id::SmartAttackMove)),
+    ));
     v.extend([Wait(2), Shot("extras-list")]);
     v.extend(tap(K::Escape));
     v.push(Wait(2));
@@ -2623,6 +3106,14 @@ fn mp_host(way: Way) -> Vec<Cmd> {
         v.push(Wait(3));
     }
     v.push(Shot("options"));
+    if way == Way::Classic {
+        // Tell the joiner the map and options are final; it ticks Ready only after.
+        v.extend(click(300.0, 56.0));
+        v.extend([Wait(2), Type(LOBBY_DONE), Wait(2)]);
+        v.extend(tap(K::Enter));
+        v.extend([Wait(2)]);
+        v.extend(tap(K::Escape));
+    }
     if matches!(way, Way::Solo | Way::Mixed) {
         // Row 2 (the third) becomes a Computer: its name box, then the drop-down's second line.
         v.extend(click(100.0, 97.0));
@@ -2723,7 +3214,8 @@ fn mp_join(way: Way, role: Role) -> Vec<Cmd> {
         v.extend([UntilLobby(2, 0), Wait(6), Shot("lobby")]);
     }
     if way == Way::Classic {
-        // The Ready box of the joiner's row (the second).
+        // The Ready box of the joiner's row (the second), once the creator has set the game up (which clears it).
+        v.push(UntilHostDone);
         v.extend(click(19.0, 82.0));
         v.extend([Wait(3), Shot("ready")]);
     }

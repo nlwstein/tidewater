@@ -27,11 +27,13 @@ use crate::clock::FrameClock;
 use crate::core::{self, Core, add_layer, remove_layers};
 use crate::input::{self, Button, Key};
 use crate::layers::{self, Pictures, Role};
+use crate::orderlines;
 use crate::panel::PanelState;
+use crate::replayview;
 use crate::session::{LocalSession, Recorder, ReplaySession, Session};
 use crate::{
-    attackmove, audio, campaign, display, fog, frontend, groupbar, hud, idle, info, mapview, messages, minimap, mouse,
-    overlay, palette, panel, ping, savefile, savegame, scene, screen, sound, view,
+    attackmove, audio, campaign, display, fog, frontend, groupbar, hud, idle, income, info, mapview, messages, minimap,
+    mouse, overlay, palette, panel, ping, quickselect, savefile, savegame, scene, screen, sound, view,
 };
 
 pub struct Loaded(pub Option<scene::Scene>);
@@ -63,6 +65,12 @@ pub struct Sim {
     pub carried: carry::Carried,
     /// The commands the player has given so far, for the clock overlay's actions per minute (`overlay`).
     pub actions: u32,
+    /// The replay viewer's pointer and refresh state (`replayview`); idle in a live game.
+    pub viewer: replayview::Ui,
+    /// The readings for the statistics page (option `game-stats`, `gamestats`); started on the first cycle it is on.
+    pub stats: Option<crate::gamestats::History>,
+    /// What the player gathered over the last game minute (option `progress-income`, `income`); only fed while on.
+    pub income: income::Meter,
 }
 
 impl Sim {
@@ -495,6 +503,9 @@ fn load_game(c: &mut Core, map: &str, setup: Option<tidewater_sim::setup::Setup>
             (None, None) => crate::extras::local_sim_extras(&c.extras),
         };
     }
+    // A replay's viewer can start the game over with another player's view: it keeps the world as built, before the
+    // start-up cycles (`replayview`).
+    let replay_origin = (replay.is_some() && !c.opts.plain_replay).then(|| scene.world.clone());
     start_world(&mut scene.world, resume.as_deref(), wall, c.flow.cheat_used)?;
     // The game data a recording notes in its header (`tidewater_formats::identity`).
     let data_id = if record {
@@ -515,7 +526,11 @@ fn load_game(c: &mut Core, map: &str, setup: Option<tidewater_sim::setup::Setup>
                 "replaying {} ({} cycles) as player {}",
                 r.header.map_name, r.cycles, r.header.local
             );
-            Box::new(ReplaySession::new(*r))
+            let session = ReplaySession::new(*r);
+            Box::new(match replay_origin {
+                Some(origin) => session.with_origin(origin),
+                None => session,
+            })
         }
         None if net.is_some() => {
             let n = net.take().expect("checked above");
@@ -888,6 +903,9 @@ pub(crate) fn setup(c: &mut Core) {
         ui_sounds: Vec::new(),
         carried: carry::Carried::default(),
         actions: 0,
+        viewer: replayview::Ui::default(),
+        stats: None,
+        income: income::Meter::default(),
     };
     commands.queue(move |c| {
         c.sim = Some(sim);
@@ -929,6 +947,7 @@ fn freezes(multiplayer: bool, has_window: bool, focused: bool) -> bool {
 /// Returns whether a network game is waiting for the other players' turns: the cycle did not run, and the frame's step
 /// is given back to the clock (`FrameClock::unspend`) so a short wait is caught up as the original does.
 pub(crate) fn tick(c: &mut Core) -> bool {
+    let income_on = extras(c).income_rates();
     let Core {
         sim: Some(sim),
         selection: Some(sel),
@@ -940,6 +959,8 @@ pub(crate) fn tick(c: &mut Core) -> bool {
         cheats: cheat_queue,
         stored,
         panel_ui: c_panel_ui,
+        game_clock,
+        extras: own_extras,
         ..
     } = c
     else {
@@ -994,6 +1015,10 @@ pub(crate) fn tick(c: &mut Core) -> bool {
     }
     sim.pings.expire(sim.world.tick);
     sim.session.observe_speed(sim.world.speed);
+    // A replay's jump is played out by `seek_frame`; the game's own cycles wait for it.
+    if sim.session.seeking() {
+        return false;
+    }
     let ready = sim.session.ready_commands(sim.world.tick);
     // A network game's wait for other players, and who has gone (`net/lockstep.md`, "Stalls"; `net/leave-and-drop.md`).
     if sim.session.take_deadline_reset() {
@@ -1026,6 +1051,7 @@ pub(crate) fn tick(c: &mut Core) -> bool {
         return sim.session.is_network();
     };
     sim.world.step(&cmds);
+    sim.session.note_cycle(&sim.world);
     if sim.world.victory.over || sim.session.wants_hash(sim.world.tick) {
         let (tick, hash) = (sim.world.tick, sim.world.state_hash());
         if let Err(m) = sim.session.checkpoint(tick, hash) {
@@ -1033,6 +1059,16 @@ pub(crate) fn tick(c: &mut Core) -> bool {
         }
         for text in sim.session.take_notices() {
             sim.notices.push(messages::Text::Own(text));
+        }
+    }
+    // The statistics page's readings (option `game-stats`): read-only, nothing here reaches the world.
+    if own_extras.game_stats() {
+        let ms = game_clock.as_ref().map(|g| g.ms(time.elapsed()));
+        let history = sim.stats.get_or_insert_with(Default::default);
+        if sim.world.victory.over {
+            history.finish(&sim.world, ms);
+        } else {
+            history.record(&sim.world, ms);
         }
     }
     // Carried-goods spec, "When the file is chosen": the marks and take-overs of this cycle.
@@ -1102,7 +1138,133 @@ pub(crate) fn tick(c: &mut Core) -> bool {
     let p = &sim.world.players[human as usize];
     let real = [p.gold, p.lumber, p.oil];
     sim.counter.update(real);
+    if income_on {
+        let minute = (60.0 / cycle_secs(sim.world.rules.enhanced, sim.world.speed)).round() as u32;
+        sim.income.update(sim.world.tick, p.gathered, minute);
+    }
     false
+}
+
+/// The replay viewer's timeline as the bar shows it, in a replay only.
+fn replay_bar(sim: &Sim) -> Option<replayview::Bar> {
+    let info = sim.session.seek_info()?;
+    let tick = info.target.unwrap_or(sim.world.tick).min(info.total);
+    Some(replayview::Bar {
+        tick,
+        total: info.total,
+        now_ms: sim.session.seek_ms_at(tick),
+        total_ms: info.total_ms,
+        vision: replayview::vision_text(info.vision, info.computer),
+        seeking: info.target.is_some(),
+    })
+}
+
+/// A jump to cycle `tick` of the replay (`Session::seek`); `seek_frame` plays it out and `finish_seek` then makes the
+/// screen follow.
+fn request_seek(sim: &mut Sim, tick: u32) {
+    sim.session.seek(&mut sim.world, tick);
+    sim.viewer.refresh = true;
+}
+
+/// Takes another vision in a replay: everyone's, or a player's, whose seat the view then takes.
+fn change_vision(sim: &mut Sim, vision: tidewater_replay::seek::Vision) {
+    sim.session.seek_vision(&mut sim.world, vision);
+    if let tidewater_replay::seek::Vision::Player(p) = vision
+        && p != sim.human
+    {
+        sim.human = p;
+        sim.viewer.recentre = true;
+    }
+    sim.viewer.refresh = true;
+}
+
+/// A replay viewer's key (`replayview::key_act`).
+fn replay_key(sim: &mut Sim, act: replayview::KeyAct) {
+    use replayview::KeyAct;
+    let Some(info) = sim.session.seek_info() else {
+        return;
+    };
+    let at = info.target.unwrap_or(sim.world.tick);
+    let now_ms = sim.session.seek_ms_at(at);
+    match act {
+        KeyAct::Back(ms) => request_seek(sim, sim.session.seek_tick_at(now_ms.saturating_sub(ms))),
+        KeyAct::Ahead(ms) => request_seek(sim, sim.session.seek_tick_at(now_ms + ms)),
+        KeyAct::Start => request_seek(sim, 0),
+        KeyAct::End => request_seek(sim, info.total),
+        KeyAct::NextVision => change_vision(sim, info.next_vision),
+    }
+}
+
+/// One frame of a replay's jump: plays up to `replayview::CYCLES_PER_FRAME` cycles of it (the cycles of the frame's
+/// clock slots wait, `tick`), and when it has arrived makes the screen follow. Nothing in a live game.
+pub(crate) fn seek_frame(c: &mut Core) {
+    let Some(sim) = c.sim.as_mut() else { return };
+    if sim.session.seek_info().is_none() {
+        return;
+    }
+    if sim.session.seeking() {
+        sim.session.seek_step(&mut sim.world, replayview::CYCLES_PER_FRAME);
+    }
+    if !sim.session.seeking() && std::mem::take(&mut sim.viewer.refresh) {
+        finish_seek(c);
+    }
+}
+
+/// The client's own pictures of the world after a jump or a change of vision: what they kept from the cycles they
+/// watched (the shown resources, the carried goods, the pings, the minimap, the selection) is made again from the world
+/// as it is now.
+fn finish_seek(c: &mut Core) {
+    let Core {
+        sim: Some(sim),
+        selection: Some(sel),
+        hud: Some(hud),
+        terrain_art: art,
+        view,
+        stored,
+        ..
+    } = c
+    else {
+        return;
+    };
+    let human = sim.human;
+    if std::mem::take(&mut sim.viewer.recentre) {
+        sel.units.clear();
+        sel.remembered.retain(|_| false);
+        sel.marker = None;
+        // The player's start location, or (a computer player that has none) a building of theirs, or any unit.
+        let w = &sim.world;
+        let at = w.players[human as usize]
+            .start
+            .map(|(x, y)| (x * 32 + 16, y * 32 + 16))
+            .or_else(|| {
+                w.units
+                    .iter()
+                    .filter(|u| u.owner == human && !u.dying)
+                    .max_by_key(|u| u.building)
+                    .map(tidewater_sim::Unit::centre_px)
+            });
+        if let (Some(v), Some((x, y))) = (view.as_mut(), at) {
+            centre_view(v, Vec2::new(x as f32, y as f32));
+        }
+    }
+    let w = &sim.world;
+    let p = &w.players[human as usize];
+    sim.counter.shown = [p.gold, p.lumber, p.oil].map(i64::from);
+    sim.pings = ping::Pings::default();
+    sim.carried = carry::Carried::default();
+    sim.carried.update(w);
+    let present = |id: UnitId| w.unit(id).is_some_and(tidewater_sim::Unit::stays_selected);
+    sel.units.retain(|&id| present(id));
+    sel.remembered.retain(present);
+    // The minimap is drawn again at once, from the world as it is (and for the vision's own fog).
+    if let (Some(art), Some(view)) = (art, view) {
+        let (l, t, r, b) = view.tiles();
+        let at = (l.floor().max(0.0) as i32, t.floor().max(0.0) as i32);
+        let size = ((r - l).round().max(1.0) as i32, (b - t).round().max(1.0) as i32);
+        hud.minimap.countdown.left = 1;
+        hud.minimap
+            .cycle(&mut sim.world, &art.tileset, at, size, stored.0.minimap_terrain);
+    }
 }
 
 /// Ctrl+F1 and Alt+F2 in a network game (`net/lockstep.md`, "Stalls"): leave the game while it waits for a turn, or
@@ -1346,6 +1508,8 @@ fn show_picture(pictures: &mut Pictures, layer: &mut layers::Layer, width: i32, 
 /// view: buildings and ghosts, the unit passes, effects, fog, the ground marker and the selection rectangle.
 pub(crate) fn draw_view(c: &mut Core) {
     let bars = extras(c).health_bars();
+    let order_lines = extras(c).order_lines();
+    let progress_on = extras(c).progress_bars();
     let Core {
         sim: Some(sim),
         art: Some(art),
@@ -1390,6 +1554,8 @@ pub(crate) fn draw_view(c: &mut Core) {
         carried: &sim.carried,
         bars,
         hovered,
+        order_lines,
+        progress: progress_on,
     };
     let (frame, stop) = view::frame(&sim.world, &art.view, &canvas, &local);
     // A flashing unit that is gone or not detected stops flashing at once ("Boxes").
@@ -1894,6 +2060,39 @@ pub(crate) fn panel_input(c: &mut Core) {
     };
     // Screen spec: at a scrolling edge, clicks on the panel do nothing.
     let pressed = buttons.just_pressed(Button::Left) && scr.edge == (0, 0);
+    // The replay viewer's timeline (`replayview`): a press on the track jumps there and dragging moves the jump, a
+    // press on the button takes the next vision.
+    if let (Some(info), Some(l)) = (sim.session.seek_info(), hud.layout) {
+        let bar = replayview::bar_rect(l.viewport);
+        let track = replayview::track_rect(bar);
+        let cursor = hud.cursor(input);
+        if sim.viewer.drag {
+            if buttons.pressed(Button::Left) {
+                if let Some(c) = cursor {
+                    let at = replayview::tick_at(track, c.x, info.total);
+                    if at != info.target.unwrap_or(sim.world.tick) {
+                        request_seek(sim, at);
+                    }
+                }
+                ui.consumed = true;
+                return;
+            }
+            sim.viewer.drag = false;
+        }
+        if pressed
+            && let Some(c) = cursor
+            && bar.contains(c.x, c.y)
+        {
+            if replayview::button_rect(bar).contains(c.x, c.y) {
+                change_vision(sim, info.next_vision);
+            } else if c.x >= track.x as f32 - 4.0 && c.x < (track.x + track.w as i32) as f32 + 4.0 {
+                sim.viewer.drag = true;
+                request_seek(sim, replayview::tick_at(track, c.x, info.total));
+            }
+            ui.consumed = true;
+            return;
+        }
+    }
     // The idle-worker button (`idle`), when the option is on.
     if pressed
         && idle_on
@@ -2225,6 +2424,7 @@ fn centre_view(view: &mut mapview::MapView, c: Vec2) {
 pub(crate) fn mouse_input(c: &mut Core) {
     let smart_attack = extras(c).smart_attack_move();
     let ping_on = extras(c).minimap_ping();
+    let quick = extras(c).quick_select();
     let Core {
         time,
         view,
@@ -2279,6 +2479,14 @@ pub(crate) fn mouse_input(c: &mut Core) {
                     }
                     None => (px(from), px(to)),
                 };
+                // Option `quick-select`: a double-click under Classic rules (Enhanced has its own rule).
+                if quick
+                    && press.double
+                    && mouse::PxRect::between(from, to).small()
+                    && let Some(p) = quickselect::double_click(b, from, &sel.units)
+                {
+                    return p;
+                }
                 mouse::release(b, from, to, press, &sel.units, &mut sel.remembered)
             });
             if let mouse::Pick::Set { units, sound } = pick {
@@ -2378,7 +2586,7 @@ pub(crate) fn mouse_input(c: &mut Core) {
             mouse::Action::Select => {
                 let Some(at) = at else { continue };
                 let now = time.elapsed_secs_f64();
-                let double = enhanced
+                let double = (enhanced || quick)
                     && sel.last_press.is_some_and(|(t, p)| {
                         now - t <= mouse::DOUBLE_MS as f64 / 1000.0
                             && (at - p).abs().max_element() <= mouse::SMALL as f32
@@ -2490,6 +2698,7 @@ fn group_press(
 /// ones that open menus and dialogs, and Ctrl+S, are handled by `gamemenu`.
 pub(crate) fn keys_input(c: &mut Core) {
     let idle_on = c.extras.idle_worker();
+    let quick = extras(c).quick_select();
     let Core {
         time,
         sim: Some(sim),
@@ -2507,6 +2716,20 @@ pub(crate) fn keys_input(c: &mut Core) {
         return;
     };
     let keys = &input.keys;
+    // The replay viewer's keys (`replayview`), unless the chat line has the keyboard.
+    if sim.session.seek_info().is_some() && scr.status.chat.is_none() {
+        let down = |a: Key, b: Key| keys.any_pressed([a, b]);
+        let (shift, ctrl, alt) = (
+            down(Key::ShiftLeft, Key::ShiftRight),
+            down(Key::ControlLeft, Key::ControlRight),
+            down(Key::AltLeft, Key::AltRight),
+        );
+        for &k in keys.get_just_pressed() {
+            if let Some(a) = replayview::key_act(k, shift, ctrl, alt) {
+                replay_key(sim, a);
+            }
+        }
+    }
     if ui.consumed {
         return;
     }
@@ -2532,6 +2755,23 @@ pub(crate) fn keys_input(c: &mut Core) {
             select_idle(sim, sel, Some(&mut *mv));
             continue;
         }
+        // Option `quick-select` (`quickselect`): Ctrl+A and Alt+A select the fighting units; the keys are not the
+        // original's, so a key it uses is never taken here.
+        if quick && !sim.world.paused {
+            let reach = [(0, quickselect::Reach::Screen), (1, quickselect::Reach::Map)]
+                .into_iter()
+                .find(|&(n, _)| stored.0.keys.select_pressed(n, k, m))
+                .map(|(_, r)| r);
+            if let Some(reach) = reach {
+                let units = with_board(&sim.world, human, art.as_ref(), mv.tiles(), |b| {
+                    quickselect::combat(b, &|id| quickselect::is_combat(&sim.world, human, id), reach)
+                });
+                if !units.is_empty() {
+                    sel.set(sim, units, true);
+                }
+                continue;
+            }
+        }
         // The client plays one human player; while the chat line is open, `chat` has taken the typing keys already.
         // The key map (`keymap`) turns a rebound key into the chord of its action first; without a `[keys]` section it
         // is the pressed key.
@@ -2556,6 +2796,29 @@ pub(crate) fn keys_input(c: &mut Core) {
                 sim.pending.push(Command::Speed { player: human, speed });
             }
             mouse::KeyAction::Pause => sim.pending.push(pause_or_resume(&sim.world, &sim.pending, human)),
+            // Option `quick-select`: Ctrl+Shift+digit adds the selection to the group instead of replacing it.
+            mouse::KeyAction::Group(mouse::GroupKey::Set, g)
+                if quick
+                    && m.shift
+                    && m.ctrl
+                    && sim.world.rules.enhanced
+                    && !sim.world.paused
+                    && game_key(k) == Some(mouse::Key::Digit(g)) =>
+            {
+                let group = sim.world.selections[human as usize]
+                    .groups
+                    .get(g as usize)
+                    .cloned()
+                    .unwrap_or_default();
+                let units = quickselect::add_to_group(&group, &sel.units, sim.world.rules.extras.selection_cap());
+                if !units.is_empty() {
+                    sel.set(sim, units, false);
+                    sim.pending.push(Command::SetGroup {
+                        player: human,
+                        group: g,
+                    });
+                }
+            }
             mouse::KeyAction::Group(key, g) => {
                 let mode = matches!(ui.mode, panel::Mode::Target(_) | panel::Mode::Place(_));
                 let now = (time.elapsed_secs_f64() * 1000.0) as u64;
@@ -2964,6 +3227,7 @@ pub(crate) fn draw_hud(c: &mut Core) {
         local: sim.human,
     };
     let clock_line = clock_ms.and_then(|ms| overlay::overlay_text(ex.game_clock(), ms, sim.actions));
+    let replay_bar = replay_bar(sim);
     let group_bar = if ex.group_bar() {
         group_bar_cells(&sim.world, sim.human)
     } else {
@@ -2979,6 +3243,25 @@ pub(crate) fn draw_hud(c: &mut Core) {
             colour: minimap::player_colour(p.slot),
         })
         .collect();
+    // The order lines on the minimap: the same segments as the map view's, one minimap pixel for a tile.
+    let mini_lines: Vec<orderlines::Segment> = if ex.order_lines() {
+        let to_mini = |p: (i32, i32)| {
+            (
+                minimap::to_px(hud.map.0, p.0.div_euclid(TILE_PX)),
+                minimap::to_px(hud.map.0, p.1.div_euclid(TILE_PX)),
+            )
+        };
+        orderlines::segments(&sim.world, &sel.units)
+            .into_iter()
+            .map(|s| orderlines::Segment {
+                kind: s.kind,
+                from: to_mini(s.from),
+                to: to_mini(s.to),
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     let infos: Vec<panel::UnitInfo> = sel.units.iter().filter_map(|&id| state.unit(id)).collect();
     let slots = panel::fill(panel::choose_set(ui.mode, &infos, &state), &state, &infos);
     let buttons: Vec<(u8, u16)> = slots
@@ -3014,8 +3297,14 @@ pub(crate) fn draw_hud(c: &mut Core) {
             .idle_worker()
             .then(|| (idle::idle_workers(&sim.world, sim.human).len(), idle_key.as_str())),
         clock: clock_line.as_deref(),
+        income: ex.income_rates().then(|| hud::IncomeView {
+            rates: sim.income.rates(),
+            below_groups: ex.group_bar(),
+        }),
         group_bar: &group_bar,
         pings: &ping_marks,
+        replay: replay_bar.as_ref(),
+        order_lines: &mini_lines,
     };
     let whole = (hud.art.whole_key(&hud.frame, &layout, &view), hud.image);
     let parts = hud.art.parts(&layout, &view);

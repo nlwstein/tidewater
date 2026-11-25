@@ -144,6 +144,14 @@ impl InfoView<'_> {
     }
 }
 
+/// The income rates row (`income`): the gold, lumber and oil per game minute, `None` while there is too little record,
+/// and whether the control-group bar is on, which the row then sits under.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IncomeView {
+    pub rates: Option<crate::income::Amounts>,
+    pub below_groups: bool,
+}
+
 /// The changing state the interface shows.
 pub struct View<'a> {
     /// The shown gold, lumber and oil (see [`crate::screen::Counter`]).
@@ -167,10 +175,16 @@ pub struct View<'a> {
     pub idle_button: Option<(usize, &'a str)>,
     /// The game clock line over the map view's top right corner, when the option is on (`overlay`).
     pub clock: Option<&'a str>,
+    /// The income rates when the option is on (`income`).
+    pub income: Option<IncomeView>,
     /// The control-group bar's buttons, none when the option is off (`groupbar`).
     pub group_bar: &'a [crate::groupbar::Cell],
     /// The minimap pings whose marker is on (option `minimap-ping`, `ping`).
     pub pings: &'a [PingMark],
+    /// The replay viewer's timeline, in a replay only (`replayview`).
+    pub replay: Option<&'a crate::replayview::Bar>,
+    /// The order lines of the selected units in minimap pixels, none when the option is off (`orderlines`).
+    pub order_lines: &'a [crate::orderlines::Segment],
 }
 
 /// A ping marker on the minimap: the pixel of its tile (0 to 127 each way) and its player's minimap colour.
@@ -489,6 +503,8 @@ pub struct HudArt {
     font: Font,
     /// A smaller font for the hit point text, if the install has one.
     small: Option<Font>,
+    /// The game's own [`HudArt::font`], kept while the clear font (`clearfont`) stands in.
+    game_font: Option<Font>,
     names: StringTable,
     /// The local race is orc: the race pointers' orc versions.
     orc: bool,
@@ -582,11 +598,32 @@ impl HudArt {
             small: SMALL_FONT
                 .iter()
                 .find_map(|n| install.read(n).ok().and_then(|d| Font::parse(&d).ok())),
+            game_font: None,
             names,
             orc: race != 0,
             pal: pal.clone(),
             pieces,
         })
+    }
+
+    /// Draws text in the clear font (`clearfont`, option `font`) or in the game's own; the hit point digits keep the
+    /// game's small font. Returns whether anything changed.
+    pub fn set_clear_font(&mut self, on: bool) -> bool {
+        match (on, self.game_font.take()) {
+            (true, None) => {
+                let clear = crate::clearfont::clear(&self.font);
+                self.game_font = Some(std::mem::replace(&mut self.font, clear));
+                true
+            }
+            (false, Some(game)) => {
+                self.font = game;
+                true
+            }
+            (_, kept) => {
+                self.game_font = kept;
+                false
+            }
+        }
     }
 
     pub fn layout(&self, canvas: (u32, u32)) -> Layout {
@@ -705,6 +742,38 @@ impl HudArt {
         text(pic, &self.font, view.x + view.w as i32 - w - 6, view.y + 4, line);
     }
 
+    /// The replay viewer's timeline (`replayview`): the time, the track with its played part and knob, and the vision
+    /// button, in the buttons' own colours.
+    fn draw_replay_bar(&self, pic: &mut Picture, view: Rect, b: &crate::replayview::Bar) {
+        use crate::replayview::{bar_rect, button_rect, knob_x, time_rect, time_text, track_rect};
+        let bar = bar_rect(view);
+        let time = format!("{} / {}", time_text(b.now_ms), time_text(b.total_ms));
+        let tr = time_rect(bar);
+        fill(pic, tr, [24, 22, 16]);
+        outline(pic, tr, [140, 120, 60]);
+        text_centred(pic, &self.font, tr, &time);
+        // The track: a groove, the part played in gold, and the knob.
+        let track = track_rect(bar);
+        let groove = Rect::new(track.x, track.y + 4, track.w, track.h.saturating_sub(8).max(2));
+        fill(pic, groove, [24, 24, 24]);
+        outline(pic, groove, [140, 120, 60]);
+        let x = knob_x(track, b.tick, b.total);
+        let played = Rect::new(
+            groove.x + 1,
+            groove.y + 1,
+            (x - groove.x - 1).max(0) as u32,
+            groove.h.saturating_sub(2),
+        );
+        fill(pic, played, if b.seeking { [150, 150, 150] } else { [200, 160, 40] });
+        let knob = Rect::new(x - 2, track.y + 1, 5, track.h.saturating_sub(2));
+        fill(pic, knob, [235, 225, 190]);
+        outline(pic, knob, [90, 70, 20]);
+        let br = button_rect(bar);
+        fill(pic, br, [40, 36, 28]);
+        outline(pic, br, [140, 120, 60]);
+        text_centred(pic, &self.font, br, &b.vision);
+    }
+
     /// One item of the resource bar or the status bar: the icon at the item's left edge `x` in `bar`, then the text
     /// [`crate::screen::TEXT_DX`] to the right, vertically centred, in spans of colour codes.
     fn item(&self, pic: &mut Picture, bar: Rect, x: i32, icon: usize, spans: &[(&str, u8)]) {
@@ -714,6 +783,24 @@ impl HudArt {
         let mut pen = x + crate::screen::TEXT_DX;
         for &(s, code) in spans {
             pen += text_in(pic, &self.font, pen, text_top(&self.font, bar), s, colour_code(code)) as i32;
+        }
+    }
+
+    /// The income rates (`income`): one under each of the gold, lumber and oil counters, `+250/min` in the green text
+    /// colour, over the top rows of the map view. `below_groups` moves the row under the control-group bar's.
+    fn draw_income(
+        &self,
+        pic: &mut Picture,
+        view: Rect,
+        bar: Rect,
+        rates: Option<crate::income::Amounts>,
+        below_groups: bool,
+    ) {
+        use crate::screen::Item;
+        let y = view.y + crate::income::row_offset(below_groups);
+        for (n, item) in Item::ALL.iter().take(3).enumerate() {
+            let line = crate::income::rate_line(rates.map(|r| r[n]));
+            text_in(pic, &self.font, bar.x + item.area(false).0, y, &line, colour_code(2));
         }
     }
 
@@ -972,7 +1059,7 @@ impl HudArt {
             // The ping rings reach 4 pixels past their tile's pixel.
             (
                 Rect::new(l.minimap.x - 4, l.minimap.y - 4, l.minimap.w + 8, l.minimap.h + 8),
-                fingerprint(mini, format_args!("{:?}", v.pings)),
+                fingerprint(mini, format_args!("{:?}{:?}", v.pings, v.order_lines)),
             ),
             (
                 l.top,
@@ -990,7 +1077,10 @@ impl HudArt {
             (l.bottom, key(format_args!("{:?}", v.status))),
             (
                 l.viewport,
-                key(format_args!("{:?}{:?}{:?}", v.messages, v.group_bar, v.clock)),
+                key(format_args!(
+                    "{:?}{:?}{:?}{:?}{:?}",
+                    v.messages, v.group_bar, v.clock, v.replay, v.income
+                )),
             ),
             (l.buttons, fingerprint(buttons, format_args!("{:?}", v.buttons))),
             (
@@ -1063,6 +1153,18 @@ impl HudArt {
                 };
                 blit(pic, l.minimap.x, l.minimap.y, &mini);
             }
+            let size = crate::minimap::SIZE as i32;
+            for s in v.order_lines {
+                // A solid one-pixel line in the order's colour, clipped to the minimap.
+                let c = to_rgba(&[s.kind.colour()], &self.pal, false, None);
+                crate::orderlines::line_pixels(s, (0, 0, size, size), false, 0, |x, y| {
+                    fill(
+                        pic,
+                        Rect::new(l.minimap.x + x, l.minimap.y + y, 1, 1),
+                        [c[0], c[1], c[2]],
+                    );
+                });
+            }
             for m in v.pings {
                 // A ring in the sender's colour round a white centre, over the minimap's pixels.
                 let c = to_rgba(&[m.colour], &self.pal, false, None);
@@ -1080,8 +1182,14 @@ impl HudArt {
             self.draw_idle_button(pic, n, key);
         }
         self.draw_group_bar(pic, l.viewport, v.group_bar);
+        if let Some(i) = v.income {
+            self.draw_income(pic, l.viewport, l.top, i.rates, i.below_groups);
+        }
         if let Some(line) = v.clock {
             self.draw_clock(pic, l.viewport, line);
+        }
+        if let Some(bar) = v.replay {
+            self.draw_replay_bar(pic, l.viewport, bar);
         }
 
         // The command panel: frames of the icon sheet (the command icons share the unit icon sheet).

@@ -62,6 +62,8 @@ use crate::scene::Picture;
 pub(crate) enum Page {
     General,
     Interface,
+    /// What the game shows of the play that the original did not: drawn on the map, over the panel, after the game.
+    Overlays,
     Sound,
     Gameplay,
     /// The mods to enable (`tidewater_formats::mods`); shown only when there is a mod to enable.
@@ -72,9 +74,10 @@ pub(crate) enum Page {
 }
 
 impl Page {
-    pub(crate) const ALL: [Page; 8] = [
+    pub(crate) const ALL: [Page; 9] = [
         Page::General,
         Page::Interface,
+        Page::Overlays,
         Page::Sound,
         Page::Gameplay,
         Page::Mods,
@@ -87,6 +90,7 @@ impl Page {
         match self {
             Page::General => "General",
             Page::Interface => "Interface",
+            Page::Overlays => "Overlays",
             Page::Sound => "Sound",
             Page::Gameplay => "Gameplay",
             Page::Mods => "Mods",
@@ -101,7 +105,11 @@ impl Page {
             Page::General => {
                 "The window, the picture, the mouse and start-up. The game files Tidewater runs on are here too."
             }
-            Page::Interface => "Extra help on the game screen. Each one is off until you turn it on.",
+            Page::Interface => "Extra help on the game screen, and the font. Each one is off until you turn it on.",
+            Page::Overlays => {
+                "More to see of the play: what units are doing, how work and income go, the game in figures. Each one \
+                 is off until you turn it on."
+            }
             Page::Sound => {
                 "How loud the unit voices, the sound effects and the music are, as a share of the game's own volume."
             }
@@ -146,9 +154,16 @@ pub(crate) fn extra_page(id: Id) -> Page {
         | Id::SmartAttackMove
         | Id::MinimapPing
         | Id::AutoReplay
-        | Id::MapZoom => Page::Interface,
+        | Id::MapZoom
+        | Id::Font => Page::Interface,
+        Id::OrderLines | Id::ProgressIncome | Id::GameStats => Page::Overlays,
         Id::VolumeVoices | Id::VolumeEffects | Id::VolumeMusic => Page::Sound,
-        Id::RallyPoints | Id::ProductionQueue | Id::SelectionLimit | Id::SpeedLevels | Id::ShiftQueue => Page::Gameplay,
+        Id::RallyPoints
+        | Id::ProductionQueue
+        | Id::SelectionLimit
+        | Id::SpeedLevels
+        | Id::ShiftQueue
+        | Id::QuickSelect => Page::Gameplay,
         Id::TouchDrag
         | Id::TouchSmartTap
         | Id::TouchTwoFinger
@@ -269,9 +284,10 @@ pub(crate) fn shown(item: Item, env: &Env) -> bool {
 }
 
 /// Whether the row is shown but cannot be changed here: during a game the Gameplay page's options are the game's rules
-/// (`Rules::extras`), fixed when it started.
+/// (`Rules::extras`), fixed when it started. (Quick select is the player's own client option and stays editable.)
 pub(crate) fn read_only(item: Item, env: &Env) -> bool {
-    env.in_game && matches!(item, Item::Extra(id) if extra_page(id) == Page::Gameplay)
+    env.in_game
+        && matches!(item, Item::Extra(id) if extra_page(id) == Page::Gameplay && id.spec().scope == crate::extras::Scope::Sim)
 }
 
 /// A button that is not a drop-down.
@@ -302,12 +318,14 @@ impl Action {
 pub(crate) const CHOICE_WORDS: &[(Id, &[&str])] = &[
     (Id::HealthBars, &["Off", "Hovered", "Selected", "Always"]),
     (Id::GameClock, &["Off", "Clock", "Clock and APM"]),
+    (Id::ProgressIncome, &["Off", "Progress bars", "Income rates", "Both"]),
     (Id::Scaling, &["Automatic", "Whole numbers", "Sharp (fills)"]),
     (Id::SelectionLimit, &["9 (original)", "12", "18", "Unlimited"]),
     (Id::SpeedLevels, &["Off", "1 more", "2 more", "3 more"]),
     (Id::AutoReplay, &["Off", "Save from menu", "Always save"]),
     (Id::Widescreen, &["Off", "16:10", "16:9", "Auto"]),
     (Id::MapZoom, &["Off", "Mouse wheel"]),
+    (Id::Font, &["Original", "Clear"]),
     (Id::TouchDrag, &["Pan", "Pan, no glide", "Selection box"]),
     (Id::TouchSmartTap, &["On", "Off"]),
     (Id::TouchTwoFinger, &["Pan", "Box corners", "Off"]),
@@ -695,6 +713,12 @@ const ROW_PITCH: i32 = 30;
 /// The General page has seven rows and the game files' line and buttons under them: its rows are 28 apart so the
 /// buttons clear the description.
 const GENERAL_PITCH: i32 = 28;
+/// A page whose rows and note do not fit above the description at the normal pitch (Interface with nine rows, Gameplay
+/// with seven and its note) packs them 26 apart and 24 tall, the least a tap target may be, so they clear it.
+const CROWDED_PITCH: i32 = 26;
+const CROWDED_H: u32 = 24;
+/// The height of the note under the Mods and Gameplay pages' rows, with the gap above it.
+const NOTE_H: i32 = 6 + 3 * TEXT_LINE;
 const LABEL_X: i32 = 64;
 const DROP_X: i32 = 352;
 const DROP_W: u32 = 224;
@@ -703,6 +727,7 @@ const TEXT_LINE: i32 = 14;
 const ACTION_W: u32 = 224;
 const ACTION_GAP: i32 = 16;
 const DESC: Rect = Rect::new(ROW_X, 344, ROW_W, 4 * TEXT_LINE as u32);
+
 const BUTTON_Y: i32 = 410;
 const BUTTON_W: u32 = 106;
 const BUTTON_H: u32 = 28;
@@ -710,19 +735,41 @@ const OK: Rect = Rect::new(470, BUTTON_Y, BUTTON_W, BUTTON_H);
 const CANCEL: Rect = Rect::new(356, BUTTON_Y, BUTTON_W, BUTTON_H);
 const DEFAULTS: Rect = Rect::new(64, BUTTON_Y, BUTTON_W, BUTTON_H);
 
-/// A tab: [`TAB_W`] wide, narrower when that many do not fit the panel.
+/// The most tabs that share the row equally in the buttons' font; "Controller" just fits a sixth of it.
+const EQUAL_TABS: usize = 6;
+/// The gap between tabs when there are more than [`EQUAL_TABS`].
+const TIGHT_TAB_GAP: i32 = 4;
+
+/// A tab: [`TAB_W`] wide, narrower when that many do not fit the panel. More than [`EQUAL_TABS`] tabs (a computer with
+/// a touch screen, a controller and mods has nine) share the row by the length of their labels, closer together, and
+/// their labels are in the small font ([`tab_font`]).
 fn tab_rect(p: Page, pages: &[Page]) -> Rect {
     let n = pages.len().max(1) as i32;
-    let room = PANEL.w as i32 - 2 * TAB_GAP - (n - 1) * TAB_GAP;
-    let w = (TAB_W as i32).min(room / n);
-    let total = n * w + (n - 1) * TAB_GAP;
-    let i = pages.iter().position(|&x| x == p).unwrap_or(0) as i32;
-    Rect::new(
-        PANEL.x + (PANEL.w as i32 - total) / 2 + i * (w + TAB_GAP),
-        TAB_Y,
-        w as u32,
-        TAB_H,
-    )
+    let i = pages.iter().position(|&x| x == p).unwrap_or(0);
+    if pages.len() <= EQUAL_TABS {
+        let room = PANEL.w as i32 - 2 * TAB_GAP - (n - 1) * TAB_GAP;
+        let w = (TAB_W as i32).min(room / n);
+        let total = n * w + (n - 1) * TAB_GAP;
+        return Rect::new(
+            PANEL.x + (PANEL.w as i32 - total) / 2 + i as i32 * (w + TAB_GAP),
+            TAB_Y,
+            w as u32,
+            TAB_H,
+        );
+    }
+    // Each tab's share is its label's letters and one more; the widths are rounded down, the row centred.
+    let room = PANEL.w as i32 - 2 * TAB_GAP - (n - 1) * TIGHT_TAB_GAP;
+    let weight = |q: &Page| q.label().len() as i32 + 1;
+    let all: i32 = pages.iter().map(weight).sum();
+    let width = |q: &Page| room * weight(q) / all;
+    let total: i32 = pages.iter().map(width).sum::<i32>() + (n - 1) * TIGHT_TAB_GAP;
+    let x = PANEL.x + (PANEL.w as i32 - total) / 2 + pages[..i].iter().map(|q| width(q) + TIGHT_TAB_GAP).sum::<i32>();
+    Rect::new(x, TAB_Y, width(&pages[i]) as u32, TAB_H)
+}
+
+/// The font of the tabs' labels: the buttons' own for up to [`EQUAL_TABS`] tabs, the small font for more.
+fn tab_font<'f>(pages: &[Page], font: &'f Font, small: &'f Font) -> &'f Font {
+    if pages.len() <= EQUAL_TABS { font } else { small }
 }
 
 /// The drop-down box inside a row's tap target.
@@ -781,13 +828,21 @@ fn layout(page: Page, env: &Env) -> Layout {
     let mut targets = Vec::new();
     let mut texts = Vec::new();
     let mut y = ROWS_TOP;
-    let pitch = if page == Page::General {
-        GENERAL_PITCH
+    let rows: Vec<Item> = items_on(page).into_iter().filter(|&i| shown(i, env)).collect();
+    let note = if matches!(page, Page::Mods | Page::Gameplay) {
+        NOTE_H
     } else {
-        ROW_PITCH
+        0
     };
-    for item in items_on(page).into_iter().filter(|&i| shown(i, env)) {
-        targets.push((Target::Row(item), Rect::new(ROW_X, y, ROW_W, ROW_H)));
+    let (pitch, height) = if page == Page::General {
+        (GENERAL_PITCH, ROW_H)
+    } else if ROWS_TOP + rows.len() as i32 * ROW_PITCH + note > DESC.y {
+        (CROWDED_PITCH, CROWDED_H)
+    } else {
+        (ROW_PITCH, ROW_H)
+    };
+    for item in rows {
+        targets.push((Target::Row(item), Rect::new(ROW_X, y, ROW_W, height)));
         y += pitch;
     }
     if page == Page::General {
@@ -1400,6 +1455,7 @@ impl Screen {
             default: false,
         };
         let shown_pages = pages(&self.env);
+        let tab_font = tab_font(&shown_pages, look.font, small);
         for &page in &shown_pages {
             let t = Target::Tab(page);
             let mut s = state(t, true);
@@ -1407,7 +1463,7 @@ impl Screen {
             s.pressed |= page == self.page;
             menuscreen::draw_button(
                 &mut p,
-                look.font,
+                tab_font,
                 look.pal,
                 Some(look.faces),
                 tab_rect(page, &shown_pages),
@@ -1815,9 +1871,11 @@ mod tests {
                 "smart-attack-move",
                 "minimap-ping",
                 "auto-replay",
-                "map-zoom"
+                "map-zoom",
+                "font"
             ]
         );
+        assert_eq!(names(Page::Overlays), ["order-lines", "game-stats", "progress-income"]);
         assert_eq!(names(Page::Sound), ["volume-voices", "volume-effects", "volume-music"]);
         assert_eq!(
             names(Page::Gameplay),
@@ -1826,7 +1884,8 @@ mod tests {
                 "production-queue",
                 "selection-limit",
                 "speed-levels",
-                "shift-queue"
+                "shift-queue",
+                "quick-select"
             ]
         );
         assert_eq!(items_on(Page::General).first(), Some(&Item::Window));
@@ -2079,7 +2138,7 @@ mod tests {
         key(&mut s, Key::Tab);
         assert_eq!(s.focus, Target::Tab(Page::General));
         // Down walks through the tabs, then the rows in order.
-        for _ in 0..5 {
+        for _ in 0..6 {
             key(&mut s, Key::Down);
         }
         assert_eq!(s.focus, Target::Row(Item::Window));
@@ -2362,15 +2421,61 @@ mod tests {
         assert!(s.keys.capturing, "{name} waits for a key");
     }
 
+    /// Every tab's label fits its tab in the install's own fonts (`TIDEWATER_INSTALL`; skipped without one), for every
+    /// set of pages a platform can show: the buttons' font up to six tabs, the small font after.
     #[test]
-    fn the_keys_page_is_a_fifth_tab_that_a_phone_does_not_have() {
+    fn the_tab_labels_fit_their_tabs_in_the_real_fonts() {
+        let Some(root) = std::env::var_os("TIDEWATER_INSTALL") else {
+            eprintln!("skipped: set TIDEWATER_INSTALL to run");
+            return;
+        };
+        let install = tidewater_formats::install::Install::open(&root).expect("the install opens");
+        let front = crate::frontend::Front::load(install).expect("the fonts load");
+        for mask in 0..16u32 {
+            let shown: Vec<Page> = Page::ALL
+                .into_iter()
+                .filter(|p| match p {
+                    Page::Mods => mask & 1 != 0,
+                    Page::Keys => mask & 2 != 0,
+                    Page::Touch => mask & 4 != 0,
+                    Page::Controller => mask & 8 != 0,
+                    _ => true,
+                })
+                .collect();
+            let f = tab_font(&shown, &front.font, &front.small);
+            let n = shown.len();
+            for &p in &shown {
+                let (w, room) = (menuscreen::label_width(f, p.label()), tab_rect(p, &shown).w);
+                assert!(w <= room, "{p:?} is {w} wide in a {room}-pixel tab of {n}");
+            }
+            let last = tab_rect(shown[n - 1], &shown);
+            assert!(tab_rect(shown[0], &shown).x >= PANEL.x && last.x + last.w as i32 <= PANEL.x + PANEL.w as i32);
+        }
+    }
+
+    #[test]
+    fn the_keys_page_is_a_sixth_tab_that_a_phone_does_not_have() {
         assert_eq!(
             pages(&env(false)),
-            [Page::General, Page::Interface, Page::Sound, Page::Gameplay, Page::Keys]
+            [
+                Page::General,
+                Page::Interface,
+                Page::Overlays,
+                Page::Sound,
+                Page::Gameplay,
+                Page::Keys
+            ]
         );
         assert_eq!(
             pages(&env(true)),
-            [Page::General, Page::Interface, Page::Sound, Page::Gameplay, Page::Touch]
+            [
+                Page::General,
+                Page::Interface,
+                Page::Overlays,
+                Page::Sound,
+                Page::Gameplay,
+                Page::Touch
+            ]
         );
         let s = keys_screen();
         assert_eq!(s.page(), Page::Keys);
@@ -2380,7 +2485,7 @@ mod tests {
             .map(|(t, _)| t)
             .filter(|t| matches!(t, Target::Tab(_)))
             .collect();
-        assert_eq!(tabs.len(), 5);
+        assert_eq!(tabs.len(), 6);
         // On a phone PageDown never reaches it.
         let mut p = screen_with(env(true));
         p.page = Page::Gameplay;
@@ -2708,7 +2813,7 @@ mod tests {
         // The Tab order: the tabs, the list, Reset keys, then the buttons.
         let stops = s.stops();
         assert_eq!(
-            &stops[5..],
+            &stops[6..],
             [
                 Target::KeyList,
                 Target::Action(Action::ResetKeys),

@@ -1,4 +1,4 @@
 # mixed sound fingerprints of the scripted scene `settings-ingame` (hashes only): 22050 Hz stereo 16-bit, one-second blocks
 blocks	0-0	05d3c37d3d292a6f
 blocks	1-1	7dc85e32bacbedee
-tail	16905	265a75d9a8cf373c
+tail	18742	9d1f1f5fb73791f7

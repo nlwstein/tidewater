@@ -98,6 +98,30 @@ set. Without that check the only symptom is an opaque out-of-sync report at the 
 --force` and `tidewater --force-replay` play it anyway, with a warning. A version 6 file has no identity; it loads with
 the identity unknown, nothing is compared, and the checkpoints decide as before. New replays always record it.
 
+## The replay viewer
+
+`tidewater --replay` plays a recording with a timeline: jump to any cycle, and take any player's vision or everyone's. It
+is replay-only. A live game has no timeline, the sim is not touched and every other session keeps the defaults of the
+`Session` methods (`seek_info`, `seek`, `seek_step`, `seek_vision`, `note_cycle`), so a game plays to the bit as before.
+The logic is in `crates/replay/src/seek.rs` (no engine types, tested without a window) and the controls in
+`crates/client/src/replayview.rs`.
+
+- **Jumping ahead** plays forward with plain `World::step`, without drawing or sound, up to 250 cycles a frame so the
+  timeline moves (a whole 30,000-cycle game takes about two seconds). Every recorded checkpoint on the way is compared,
+  so a jump can never land on a state the recording would not have; a mismatch stops the replay as in normal playback.
+- **Jumping back** restores the latest copy of the world at or before the target and plays forward from it. The seeker
+  keeps a clone of the world (`World` is `Clone`) every 500 cycles as the replay plays, at most 64 of them; when they are
+  full every second copy is dropped and the spacing doubles, so memory is bounded and a jump back replays at most a few
+  thousand cycles. A target before the first copy plays from the origin: the world as the header builds it, kept
+  beside the copies, run through the start-up cycles again.
+- **Vision.** Everyone's sets `World::observing`, the flag a network observer already uses (display only, not hashed).
+  Another player's sets `vision.local`; the fog maps are the local player's alone and accumulate, so the game is played
+  again from the origin to the cycle the viewer was at, the copies being dropped. The recorded game's local player is not
+  special: a replay from every seat has the same hashes (`a_replay_from_the_other_player_s_seat_has_the_same_hashes`).
+- **Tests** (`crates/replay/tests/roundtrip.rs`): seeks back and forth over a 1,500-cycle two-player game and compares
+  the state hash at each stop with a straight playthrough's; the same in another player's view and in everyone's; and a
+  jump over a changed command stops at the first checkpoint that differs.
+
 ## Finding a desync
 
 `twtool desync-diff A B` (or `A --local SLOT`) runs both replays cycle by cycle, prints the first cycle whose state

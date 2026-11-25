@@ -1,0 +1,19 @@
+# mixed sound fingerprints of the scripted scene `extras-font` (hashes only): 22050 Hz stereo 16-bit, one-second blocks
+blocks	0-0	d7e4a946dadd2b9f
+blocks	1-1	1db6d6ab2df29571
+blocks	2-2	72c682e47b287386
+blocks	3-3	3c22e00052aff9d8
+blocks	4-4	a92f361db3651d87
+blocks	5-5	b13c8d144f8ebd69
+blocks	6-6	03aa54c220c19039
+blocks	7-7	2cd1455f7dd5dc35
+blocks	8-8	a3b339f7a5bef587
+blocks	9-9	6c7e8c59cc0c5875
+blocks	10-10	c4244ef651c9185a
+blocks	11-11	d93ad78d006be6e4
+blocks	12-12	ac325bf248258842
+blocks	13-13	638716fbc9b3f9e1
+blocks	14-14	7e6cc06fe5757043
+blocks	15-15	bdf541d6ed960308
+blocks	16-16	725531a696639ef2
+tail	14700	fe4b658bc2e763db

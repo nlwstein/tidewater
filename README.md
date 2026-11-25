@@ -113,7 +113,9 @@ Downloads are checked against the size the release lists; they are not signed. A
 | **Sound, music, video** | Unit and event sounds, the music jukebox, the intro and story videos (Smacker), and palette effects such as colour cycling and fades. |
 | **Multiplayer** | Early LAN and Direct IP games for two to eight players, with observers (see [Multiplayer](#multiplayer-early)). |
 | **Cheats** | The original cheat codes, typed into the chat line. |
-| **Display** | A 640 x 480 picture drawn in software, with a black border (wider in a game with the `widescreen` option). By default it is shown at the largest whole-number scale that fits, or scaled to fill the screen with crisp pixels when a whole number would leave much of it empty (Settings, Scaling). `--ui-scale N` picks the window's size. |
+| **Replays** | Record a game, play it back with a timeline, jumps and each player's view. See [Replays](#replays). |
+| **Map editor** | A first prototype, `tidewater-editor`. See [Map editor](#map-editor-prototype). |
+| **Display** | A 640 x 480 picture drawn in software (on the GPU on the PS Vita), with a black border (wider in a game with the `widescreen` option). By default it is shown at the largest whole-number scale that fits, or scaled to fill the screen with crisp pixels when a whole number would leave much of it empty (Settings, Scaling). `--ui-scale N` picks the window's size. |
 
 ### Playing a custom game
 
@@ -274,6 +276,22 @@ Fidelity is measured, not assumed. The simulation is deterministic and integer-o
 
 Some screens are our own layout, because the original's dialog definition files are not specified yet: the menus, dialogs, briefing and score screen look different from the original.
 
+## Map editor (prototype)
+
+`tidewater-editor` is an early map editor: open a `.pud` map, see it with your installation's own tiles and unit
+sprites, paint terrain (the transitions between water, coast, ground, forest and rock fix themselves up), place,
+move and delete units, buildings, gold mines, oil patches and start locations for players 1 to 8, set each player's
+race, controller and starting resources and the map's description, undo and redo, save, and **Play in Tidewater**
+to start the game on the map. It reads the art from your installation and bundles none. It is not in the release downloads: build it from source.
+
+```sh
+cargo run --release -p tidewater-editor -- --install <path-to-game> [MAP.pud]
+```
+
+A map saved without changes is the same file byte for byte. Not built yet: walls, unit and upgrade data, and an
+exact copy of the original's region map numbering, so a map whose terrain you changed plays in Tidewater but is not
+yet guaranteed to load in the original game. Details, controls and limits: [docs/editor.md](docs/editor.md).
+
 ## Settings
 
 **Open Settings from the main menu: press F2, or click or tap the "Settings (F2)" link at the bottom right.** Choose a
@@ -286,9 +304,10 @@ original's main-menu buttons are unchanged.
 | Page | What it holds | Takes effect |
 |---|---|---|
 | **General** | Window or full screen (desktop), Scaling, Widescreen, Controls, Mouse lock (desktop), Intro video, Check for updates (desktop release builds), the imported game files with **Import game files again...**, and **Open settings folder** (desktop). | Window, Scaling, Controls and Mouse lock at once; Widescreen from the next game; Intro video and Check for updates the next time Tidewater starts |
-| **Interface** | Health bars, idle worker button, game clock, control group bar, smart attack-move, minimap ping, record replays, magnifying zoom. | At once or from the next game |
+| **Interface** | Health bars, idle worker button, game clock, control group bar, smart attack-move, minimap ping, record replays, magnifying zoom, the clear font. | At once or from the next game |
+| **Overlays** | Order lines, production progress and income rates, the game statistics page. | At once |
 | **Sound** | Unit voices, sound effects and music, 0 to 100 percent in steps of 10. | At once |
-| **Gameplay** | Rally points, production queue, selection limit, extra game speeds, shift-queued orders. These change the game rules: they apply to single-player games you start, and in a multiplayer game the host chooses them in the lobby. | From the next game |
+| **Gameplay** | Rally points, production queue, selection limit, extra game speeds, shift-queued orders, quick select. Except for quick select, these change the game rules: they apply to single-player games you start, and in a multiplayer game the host chooses them in the lobby. | From the next game |
 | **Mods** | Which mods to use and in what order. Shown only when the `mods` folder holds a mod. See [Mods](#mods). | The next start |
 | **Keys** | Every key you can rebind, in a scrolling list, with **Reset keys**. Desktop only (a phone has no keyboard to rebind). | At once |
 | **Touch** | How a drag, a tap, two fingers, the pinch and the holds work, the button size and which side bar is which. Shown where touch is in use. | At once |
@@ -297,7 +316,7 @@ original's main-menu buttons are unchanged.
 **During a game, press Ctrl+G** (F2 is the first remembered view there) **or tap "Settings (Ctrl+G)" in the Options dialog**
 (F10, Options). It opens over the game, which stops while it is open, as for the game menu; in a network game it keeps
 running, so nobody waits for you. Everything works as on the main menu, and your volumes, health bars, clock and the
-like apply at once on OK. The **Gameplay** page is read-only there, because those rules were set when the game started.
+like apply at once on OK. The rule rows of the **Gameplay** page are read-only there, because those rules were set when the game started (quick select, which is only yours, stays editable).
 **Import game files again...** is hidden. OK, Cancel and Esc return to the game.
 
 **Rebinding a key:** open the **Keys** page, choose an action (click it, or move with the arrow keys and press Enter),
@@ -324,10 +343,10 @@ A mod is a folder of loose files that replaces some of the game's own files: pic
 ## Optional improvements
 
 Tidewater adds a few optional improvements that the original game does not have. **With none switched on, the game looks,
-sounds and plays as the original does.** Turn them on in the [Settings screen](#settings) (the Interface, Sound, Gameplay,
+sounds and plays as the original does.** Turn them on in the [Settings screen](#settings) (the Interface, Overlays, Sound, Gameplay,
 Touch and Controller pages, and Scaling, Widescreen and Controls on General). Power users can also use the `[extras]` section of the
 settings file (`settings.txt`), or for one run a flag; `--no-extra-NAME` puts an option back to its default.
-The idle-worker key is F6; keys can be rebound on the Settings screen's Keys page. How the options work, the `[keys]` file format and how to add an option is in [`docs/design/extras.md`](docs/design/extras.md).
+The idle-worker key is F6 (with `quick-select`, Ctrl+A selects your fighting units on screen and Alt+A on the whole map); keys can be rebound on the Settings screen's Keys page. How the options work, the `[keys]` file format and how to add an option is in [`docs/design/extras.md`](docs/design/extras.md).
 
 | Option | Flag | Values | Default | What it does |
 |---|---|---|---|---|
@@ -349,6 +368,7 @@ The idle-worker key is F6; keys can be rebound on the Settings screen's Keys pag
 | `auto-replay` | `--extra-auto-replay VALUE` | off, menu, always | off | Record every game: `menu` keeps the recording so the game menu can save it, `always` also writes each game's replay to the replays folder of the data directory as it is played |
 | `widescreen` | `--extra-widescreen VALUE` | off, 16:10, 16:9, auto | off | A wider game screen, the extra width being map: 16:10, 16:9, or auto to match the window (on touch it hides the side buttons, groups and Shift/Ctrl/Alt among them; menus and videos stay 4:3) (C+L) |
 | `map-zoom` | `--extra-map-zoom VALUE` | off, wheel | off | `wheel`: the mouse wheel over the map view magnifies it up to 4 times around the pointer and back to the normal view, never showing more map than the original does (on touch devices the pinch is `touch-pinch`) (C) |
+| `order-lines` | `--extra-order-lines` | on, off | off | While your own units are selected, thin lines run from each to where its orders take it (green moves, red attacks, yellow work, then each shift-queued order), and from a selected training building to its rally point; also on the minimap |
 | `touch-drag` | `--extra-touch-drag VALUE` | pan, pan-no-glide, box | pan | Touch only. A finger dragged on the map scrolls it (`pan` glides on after a flick, `pan-no-glide` stops where the finger lifts); hold it still a moment first to draw a selection box instead. `box`: a drag draws the box at once, as the mouse does |
 | `touch-smart-tap` | `--extra-touch-smart-tap VALUE` | on, off | on | Touch only. With your units selected, a tap on the ground, an enemy or a resource orders them there, as a right click does; a tap on your own unit or building selects it. `off`: every tap is a left click |
 | `touch-two-finger` | `--extra-touch-two-finger VALUE` | pan, box, off | pan | Touch only. Two fingers dragged together scroll the map (`pan`), are the corners of a selection box (`box`), or do nothing (`off`; a pinch still zooms if it is on) |
@@ -363,8 +383,12 @@ The idle-worker key is F6; keys can be rebound on the Settings screen's Keys pag
 | `pad-swap` | `--extra-pad-swap` | on, off | off | Controller only. The right face button clicks and the bottom one right-clicks, for pads with Nintendo's layout |
 | `pad-hide-touch` | `--extra-pad-hide-touch VALUE` | on, off | on | Controller and touch mode. While a controller is connected the touch screen's side bars hide (taps still work, and the shoulder buttons are Shift and Ctrl) |
 | `controls` | `--extra-controls VALUE` | auto, mouse, touch, pad, pad-touch | auto | Which devices work the game; the keyboard always does. `auto`: every device there is. `mouse`: keyboard and mouse only. `touch`: fingers. `pad`: controller. `pad-touch`: both. A missing device falls back to `auto` |
+| `font` | `--extra-font VALUE` | original, clear | original | The letters of the game's text. `original`: the game's own. `clear`: plain letters without serifs or shading, easier to read on a small screen (the titles keep the game's) |
+| `game-stats` | `--extra-game-stats` | on, off | off | A statistics page after the score screen: line graphs over game time of each player's gold, lumber and oil gathered, army, workers and buildings |
+| `progress-income` | `--extra-progress-income VALUE` | off, progress, income, both | off | Your own information only: `progress` a thin bar under each of your buildings that is training, researching, upgrading or being built; `income` the gold, lumber and oil you gather per game minute, under the resource counters; `both` shows both |
+| `quick-select` | `--extra-quick-select` | on, off | off | Faster selecting: a double-click on one of your units selects all of its type on screen under Classic rules too, Ctrl+A selects your fighting units on screen, Alt+A all of them on the map, and Ctrl+Shift+digit adds the selection to a control group (C+L) |
 
-**C+L** marks an option that gives you an edge (health bars, smart attack-move, widescreen). In a game with other players the host chooses it in the lobby's "Extras" box (from the command line, `--lobby extras=health-bars=always/widescreen=16:9`; the host's own settings stand for the ones not named) and every player, observers included, plays with the host's choice, whatever their own setting. In single-player games and replays you get your own. **S** marks an option that changes the simulation (rally points, the production queue, shift-queued orders,
+**C+L** marks an option that gives you an edge (health bars, smart attack-move, quick select, widescreen). In a game with other players the host chooses it in the lobby's "Extras" box (from the command line, `--lobby extras=health-bars=always/widescreen=16:9`; the host's own settings stand for the ones not named) and every player, observers included, plays with the host's choice, whatever their own setting. In single-player games and replays you get your own. **S** marks an option that changes the simulation (rally points, the production queue, shift-queued orders,
 the selection limit and the extra speed levels): the flag or the setting starts a single-player game with it, and in a
 network game the host turns it on in the lobby's "Extras" box and everyone plays with the host's choice. The game is
 saved and recorded with it.
@@ -412,7 +436,7 @@ Run `tidewater --help` for the same list. The optional positional argument is a 
 | `--demo-select <N>`, `--demo-type <N>`, `--demo-place <N>`, `--demo-site <X,Y>` | Preselect your first N units, narrow that to one unit type, start in building placement, and click a site. |
 | `--record-replay` | Record the game to a `.twrep` replay in the `replays` folder of your user data (see [Replays](#replays)). Off unless given. |
 | `--mod <NAME>` | Turn on the mod in this folder of `<data>/mods` for one run, after the ones Settings enables; repeat for several. See [Mods](#mods). |
-| `--replay <FILE>` | Play a recorded game back, as the recording player saw it. Cannot be combined with `<MAP>`, `--record-replay` or the setup options. `--force-replay` plays it even when it was recorded with other game files. |
+| `--replay <FILE>` | Play a recorded game back, as the recording player saw it. Cannot be combined with `<MAP>`, `--record-replay` or the setup options. `--force-replay` plays it even when it was recorded with other game files, and `--plain-replay` plays it without the timeline and vision keys (a development aid: its frames are the recorded game's own). |
 | `--host [PORT]`, `--join <ADDR>`, `--lobby <SPEC>`, `--observe`, `--name <NAME>` | Network play without the menus. See [Multiplayer](#multiplayer-early). |
 | `--script <NAME>`, `--script-out <DIR>`, `--headless` | Run a scripted scene for the frame snapshot test or the end-to-end network check (the `mp-*` scenes). `--script` and `--script-out` go together; `--headless` uses no window or GPU. |
 
@@ -470,7 +494,9 @@ The default port is 6112: TCP for the game, which the host opens on its firewall
 
 Run with `--record-replay` and the game writes a `.twrep` file to the `replays` folder of your user data (never into the game folder). It holds the map's name and hash, the seed, the setup and the rules, then the commands given each cycle and a state-hash check every 100 cycles. Recording is a flag rather than always on, so nothing is written unless you ask. The `auto-replay` option does the asking for you: `--extra-auto-replay always` (or the `[extras]` setting) writes every game's replay, single-player or network, and `menu` holds the recording in memory and adds a Save Replay button to the in-game menu.
 
-`tidewater --replay FILE` plays it back as the recording player saw it. Your input is ignored except the game menu, pause (Ctrl+P) and speed (`+` and `-`). If the game ever stops matching the recording, playback stops at the first check that fails and says which cycle. `twtool replay FILE` does the same check without a window, and `twtool desync-diff` finds the first cycle and field where two runs differ. A replay is refused on a map that is not the one it was recorded on, and on game files that differ from the ones it was recorded with (another game version or edition): it says which part differs instead of going out of sync later. `tidewater --force-replay` and `twtool replay --force` play it anyway. Games that were loaded from a save, or that used the `--demo-*` options, are not recorded. A network game records on each side with the same flag.
+`tidewater --replay FILE` plays it back as the recording player saw it. Your input is ignored except the game menu, pause (Ctrl+P), speed (`+` and `-`) and the timeline below. If the game ever stops matching the recording, playback stops at the first check that fails and says which cycle. `twtool replay FILE` does the same check without a window, and `twtool desync-diff` finds the first cycle and field where two runs differ. A replay is refused on a map that is not the one it was recorded on, and on game files that differ from the ones it was recorded with (another game version or edition): it says which part differs instead of going out of sync later. `tidewater --force-replay` and `twtool replay --force` play it anyway. Games that were loaded from a save, or that used the `--demo-*` options, are not recorded. A network game records on each side with the same flag.
+
+**The timeline.** A bar over the bottom of the map view shows the time now and the length of the recording, a track with a knob and a vision button. Click or tap the track to jump there, drag to scrub, or use the keys: Alt+Left and Alt+Right jump 10 seconds back and ahead (add Shift for a minute), Alt+Home and Alt+End go to the start and the end. A jump ahead plays the game on at full speed with no drawing (a whole game takes a couple of seconds, and the timeline moves as it goes), and a jump back restores a copy of the game kept every 500 cycles and plays on from it. Every check the recording holds is still compared on the way, so a jump never lands on a state the recording would not have. The vision button (or Tab) takes each player's view in turn, with that player's fog of war, resources and selection, and then everyone's with no fog; another player's view plays the game again from the start to where you were. These keys are free in a game (the arrow, Home and End keys scroll the map unless Alt is held), and none of this exists outside replay playback.
 
 ## Roadmap
 
@@ -481,6 +507,7 @@ What is done, what is early and what is not built. Not built: Battle.net and mod
 | **Lockstep multiplayer** | Local Network and Direct IP games over TCP. The simulation is deterministic so that this is possible. | Early: menus, lobby, LAN game list, map transfer, chat and pause counts, the game going on when the host leaves, observers (our own addition); no Battle.net or modem |
 | **Custom games against the computer** | The Custom Scenario screen: race, opponents, resources, terrain, units and a map list. | Done |
 | **Touch, controllers and handhelds** | Touch input on desktop, iOS and Android; gamepads; a PS Vita app. | Early: tried on an iPad, an Android handheld, the iOS Simulator, the Android emulator, Vita3K and one real Vita; not yet on an Android phone |
+| **Map editor** | Open, paint, place units, save and play a `.pud` map. | Prototype: no walls or unit data yet, see [Map editor](#map-editor-prototype) |
 | **Optional modern improvements** | Quality-of-life additions, all off by default so the default game matches the original. | Done: see [Optional improvements](#optional-improvements) |
 
 ## How it is built
@@ -497,6 +524,7 @@ The code is a Cargo workspace:
 | `crates/sim` | The deterministic game simulation, with no engine types. |
 | `crates/client` | The game client: an engine-neutral core that composes each frame, and the `tidewater` binary, the SDL 3 shell. |
 | `crates/twtool` | The inspection and verification tool. |
+| `crates/editor` | The map editor (`tidewater-editor`, egui), see [docs/editor.md](docs/editor.md). |
 | `crates/ios`, `crates/android` | The phone apps' native libraries; the Xcode and Gradle projects are in `platform/`. The Vita app is the `tidewater` binary built by `platform/vita/build.sh`. |
 
 ## Development

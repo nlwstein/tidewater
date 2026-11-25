@@ -1,0 +1,48 @@
+# frame and sound fingerprints of the scripted scene `extras-lines` (hashes only)
+sound	2	3bb3724654d4194d	0.7516	Once
+frames	1-2	156ed4086987e325
+frames	3-3	2ab4d7048026f340
+shot	8	none	c2e52e287af839f4
+frames	4-8	c2e52e287af839f4
+sound	10	2d9f4c9ba338d182	0.9882	Despawn
+frames	9-9	c40f9a66d1150e5a
+frames	10-10	7bc4df962ecbd463
+frames	11-12	b69480de7368cab2
+shot	15	rally	b911453c0f35dfc2
+frames	13-15	b911453c0f35dfc2
+frames	16-16	7d4bb456f068552d
+sound	18	b18b87133dda1256	0.9882	Despawn
+frames	17-17	0076cf4ba318c8ac
+frames	18-19	119b76e3639f3ee0
+sound	21	6eab1eb9376e8616	0.9882	Despawn
+frames	20-20	abbffeba8177653e
+frames	21-21	f6175501a13b9611
+frames	22-22	ab9dc4383ecaadb5
+sound	24	4371e714ebd2e8c0	0.9882	Despawn
+frames	23-24	b3e751eaa7c5dd3c
+frames	25-25	c47e1012f0adf36c
+sound	28	76e51688a7bca1bd	0.9882	Despawn
+frames	26-29	93fefbd8c2d67b58
+shot	32	group	f6b08425f4662005
+frames	30-32	f6b08425f4662005
+sound	34	15cf26a94f211052	0.9882	Despawn
+frames	33-33	b17bdd21257c1c2e
+frames	34-34	342ddad981948c01
+sound	37	a9f5418fbca9b49b	0.9882	Despawn
+frames	35-36	634ff4e3bec0a0d1
+frames	37-37	6e7707e887acd429
+frames	38-39	59558e5ffd72c96d
+shot	40	attack-move	500a5d3b6b7013b5
+frames	40-40	500a5d3b6b7013b5
+sound	42	52db032368c69602	0.9882	Despawn
+frames	41-41	44eee57baf0020af
+shot	43	peasant	e552c13a7a395955
+frames	42-43	e552c13a7a395955
+sound	45	6eab1eb9376e8616	0.9882	Despawn
+frames	44-44	37bbf1517ca5a353
+frames	45-46	d0efbb2db12cbed9
+shot	48	harvest	861f0bd84b4a76c8
+frames	47-48	861f0bd84b4a76c8
+frames	49-51	868290bdd677df86
+shot	52	zoomed	27466a328636c396
+frames	52-52	27466a328636c396

@@ -370,6 +370,7 @@ impl Core {
         }
         // 3. The flow's change of screen.
         run_transitions(c);
+        crate::clearfont::apply(c);
         // A game starting or ending changes the screen's width.
         let screen = screen_size(c, window);
         if screen != c.screen {
@@ -379,6 +380,10 @@ impl Core {
         phases::add(Phase::Input, input);
         // 4. The game cycles.
         phases::timed(Phase::Cycles, || {
+            // A replay's jump is played out first, a part of it each frame (a live game has none).
+            if game_ticking(c) {
+                game::seek_frame(c);
+            }
             c.time.accumulate();
             while c.time.expend() {
                 // A network game waiting for a turn does not spend the step (a short wait is caught up).

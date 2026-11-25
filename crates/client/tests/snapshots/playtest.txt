@@ -1,0 +1,13 @@
+# frame and sound fingerprints of the scripted scene `playtest` (hashes only)
+sound	2	3bb3724654d4194d	0.7516	Once
+frames	1-2	156ed4086987e325
+frames	3-3	a4417597aa5e5de0
+frames	4-10	b89c5024f0bfa434
+shot	63	playtest-start	27792e25aca3149d
+frames	11-72	27792e25aca3149d
+frames	73-94	b980f3794e21ce7d
+frames	95-420	03a0258e6175c118
+frames	421-456	77c0388c65b1dd0a
+frames	457-540	03c0d84e784def7c
+shot	664	playtest-later	5e3feed1a14ae20b
+frames	541-664	5e3feed1a14ae20b
