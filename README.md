@@ -113,7 +113,9 @@ Downloads are checked against the size the release lists; they are not signed. A
 | **Sound, music, video** | Unit and event sounds, the music jukebox, the intro and story videos (Smacker), and palette effects such as colour cycling and fades. |
 | **Multiplayer** | Early LAN and Direct IP games for two to eight players, with observers (see [Multiplayer](#multiplayer-early)). |
 | **Cheats** | The original cheat codes, typed into the chat line. |
-| **Display** | A 640 x 480 picture drawn in software, with a black border (wider in a game with the `widescreen` option). By default it is shown at the largest whole-number scale that fits, or scaled to fill the screen with crisp pixels when a whole number would leave much of it empty (Settings, Scaling). `--ui-scale N` picks the window's size. |
+| **Replays** | Record a game, play it back with a timeline, jumps and each player's view. See [Replays](#replays). |
+| **Map editor** | A first prototype, `tidewater-editor`. See [Map editor](#map-editor-prototype). |
+| **Display** | A 640 x 480 picture drawn in software (on the GPU on the PS Vita), with a black border (wider in a game with the `widescreen` option). By default it is shown at the largest whole-number scale that fits, or scaled to fill the screen with crisp pixels when a whole number would leave much of it empty (Settings, Scaling). `--ui-scale N` picks the window's size. |
 
 ### Playing a custom game
 
@@ -280,7 +282,7 @@ Some screens are our own layout, because the original's dialog definition files 
 sprites, paint terrain (the transitions between water, coast, ground, forest and rock fix themselves up), place,
 move and delete units, buildings, gold mines, oil patches and start locations for players 1 to 8, set each player's
 race, controller and starting resources and the map's description, undo and redo, save, and **Play in Tidewater**
-to start the game on the map. It reads the art from your installation and bundles none.
+to start the game on the map. It reads the art from your installation and bundles none. It is not in the release downloads: build it from source.
 
 ```sh
 cargo run --release -p tidewater-editor -- --install <path-to-game> [MAP.pud]
@@ -314,7 +316,7 @@ original's main-menu buttons are unchanged.
 **During a game, press Ctrl+G** (F2 is the first remembered view there) **or tap "Settings (Ctrl+G)" in the Options dialog**
 (F10, Options). It opens over the game, which stops while it is open, as for the game menu; in a network game it keeps
 running, so nobody waits for you. Everything works as on the main menu, and your volumes, health bars, clock and the
-like apply at once on OK. The **Gameplay** page is read-only there, because those rules were set when the game started.
+like apply at once on OK. The rule rows of the **Gameplay** page are read-only there, because those rules were set when the game started (quick select, which is only yours, stays editable).
 **Import game files again...** is hidden. OK, Cancel and Esc return to the game.
 
 **Rebinding a key:** open the **Keys** page, choose an action (click it, or move with the arrow keys and press Enter),
@@ -505,6 +507,7 @@ What is done, what is early and what is not built. Not built: Battle.net and mod
 | **Lockstep multiplayer** | Local Network and Direct IP games over TCP. The simulation is deterministic so that this is possible. | Early: menus, lobby, LAN game list, map transfer, chat and pause counts, the game going on when the host leaves, observers (our own addition); no Battle.net or modem |
 | **Custom games against the computer** | The Custom Scenario screen: race, opponents, resources, terrain, units and a map list. | Done |
 | **Touch, controllers and handhelds** | Touch input on desktop, iOS and Android; gamepads; a PS Vita app. | Early: tried on an iPad, an Android handheld, the iOS Simulator, the Android emulator, Vita3K and one real Vita; not yet on an Android phone |
+| **Map editor** | Open, paint, place units, save and play a `.pud` map. | Prototype: no walls or unit data yet, see [Map editor](#map-editor-prototype) |
 | **Optional modern improvements** | Quality-of-life additions, all off by default so the default game matches the original. | Done: see [Optional improvements](#optional-improvements) |
 
 ## How it is built

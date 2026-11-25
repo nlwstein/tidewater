@@ -4,7 +4,7 @@
 sprites, paints terrain with automatic transitions, places and moves units, edits players and the description, and
 saves a map that Tidewater loads and plays. It is a first prototype: there are no walls, no unit or upgrade data
 editing, and the region map it writes after a terrain change is our own rebuild (see [What doesn't work
-yet](#what-doesnt-work-yet)). It bundles no game art: it reads the art from the installation you point it at.
+yet](#what-doesnt-work-yet)). It bundles no game art: it reads the art from the installation you point it at. It is built from source; the releases don't include it.
 
 ## Run it
 

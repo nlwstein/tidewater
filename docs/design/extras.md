@@ -80,7 +80,7 @@ without new screen code. The file and the flags still work and are for power use
   shows about the play: order lines on the map, production progress and income, and the statistics page after a game.
 - **Crowded pages.** A page whose rows (and note, on Mods and Gameplay) do not fit above the description at the normal
   30-pixel pitch packs them 26 pixels apart and 24 tall, so the description stays clear (`settings::CROWDED_PITCH`):
-  Interface with its nine rows, Gameplay with seven and its note. This is the one rule for
+  Interface with its nine rows, Gameplay with its six and its note. This is the one rule for
   a long page; the General page keeps its own 28-pixel pitch for the buttons under its rows.
 - **Rows that are not options.** Window (`fullscreen`), Mouse lock (`mouse_lock`), Intro video (the stored
   `OPENING_FILM` bit, which start-up honours as well as `--no-intro`) and Check for updates (`update_check`) are stored
@@ -100,7 +100,7 @@ without new screen code. The file and the flags still work and are for power use
   Options dialog (F10, Options) has a small "Settings (Ctrl+G)" text link under Previous, 160 x 24 tap target, in the
   small font like the main menu's link; it opens the screen with the game as the place Back returns to. The menu
   stops a single-player game while it is open; a network game keeps running (`core::game_ticking`) with the game's own
-  input off, as the original keeps a network game running under its menus. The Gameplay rows show the rules the game
+  input off, as the original keeps a network game running under its menus. The Gameplay rows that change the rules (every one but quick select, which is a client option and stays editable) show the rules the game
   runs with (`ClientExtras::of_sim` from `Rules::extras`), greyed and unchangeable, under the note "Fixed for this
   game: they were set when it started."; Defaults leaves them, OK never writes them. "Import game files again..." is
   hidden; every other row works as on the main menu.
@@ -375,9 +375,9 @@ idle-worker=ctrl+i
 
 ### The Keys page
 
-The sixth page of the Settings screen (`settings.rs`, hidden on touch-only platforms, `Env::touch`) lists every
-action the section can name (`keymap::rows`: 19 game keys and dialogs, 6 views, 30 control-group keys, the idle worker,
-13 command buttons and the 9 panel places, 78 rows) in the Select scenario dialog's list and scroll bar look, 8 rows
+The seventh page of the Settings screen (after Mods) (`settings.rs`, hidden on touch-only platforms, `Env::touch`) lists every
+action the section can name (`keymap::rows`: 19 game keys and dialogs, 6 views, 30 control-group keys, the idle worker, the 2
+quick-select keys, 13 command buttons and the 9 panel places, 80 rows) in the Select scenario dialog's list and scroll bar look, 8 rows
 of 24 pixels, scrolled by the wheel, the bar or the arrow keys. A row shows the key the file gives it in gold, else the
 original's in grey (`own letter` for a command button, `-` for a panel place).
 
@@ -420,8 +420,8 @@ A game never reads sim options from the local settings unless it is a new local 
 A replay uses the recording's; a loaded game keeps the ones it was saved with.
 
 **Versions.** Sim options are part of the file formats and the protocol, so changing them bumps all three: the saved game
-(`savefile::VERSION`, 24), the replay (`tidewater_replay::format::VERSION`, 6) and the network protocol
-(`net::proto::PROTOCOL`, currently 8). The C+L choice rides in the same lobby messages and also bumped the protocol, but not the saved game or the replay (below). With every extra off the option data is empty or skipped, so nothing else in a file or the
+(`savefile::VERSION`, 24), the replay (`tidewater_replay::format::VERSION`, 7) and the network protocol
+(`net::proto::PROTOCOL`, currently 9). The C+L choice rides in the same lobby messages and also bumped the protocol, but not the saved game or the replay (below). With every extra off the option data is empty or skipped, so nothing else in a file or the
 hash differs.
 
 ## Multiplayer (C+L)
@@ -440,12 +440,12 @@ for the C+L options that set wins over the local settings; the C options stay ea
   default, as `(name, value)` pairs (`ClientExtras::lobby_values`). Names, not positions, so a table with other rows
   never shifts the meaning; a name this program does not know, a C option's name or a value out of range is ignored when
   read (`ClientExtras::from_lobby_values`). The config goes to every machine in the Welcome (command line) and the Go
-  (menu lobby), observers included. This bumped `PROTOCOL` to 7.
+  (menu lobby), observers included. This bumped the protocol.
 - **Who uses it.** `NetSession::lobby_client_extras` returns the host's values (`Params::client_extras`), so
   `game::extras` gives every player the same health bars, smart attack-move and widescreen.
 - **Replays.** A `.twrep` does not record them, and a replay hands over the defaults (off). They change what one
   player sees, not the game, and a recording is watched by one person, so there is no fairness to keep; leaving them out
-  keeps the replay version at 6. (The header still records the S options, which are the game.)
+  leaves the replay version alone. (The header still records the S options, which are the game.)
 - **Tests.** `extras.rs` (`the_lobby_carries_only_the_c_plus_l_values_that_differ_and_reads_back_what_it_knows`, and
   `a_non_local_session_sets_the_c_plus_l_options_and_leaves_the_c_ones`), `net/lockstep.rs` (every player and the observer
   end up with the host's values whatever their own), `net/room.rs` (the choice reaches the joiner's view and both configs),
@@ -474,6 +474,6 @@ for the C+L options that set wins over the local settings; the C options stay ea
 ## Checks that keep the defaults honest
 
 - The frame snapshot (`crates/client/tests/frames.rs`) runs its original scenes with every extra off and is never
-  re-blessed for an extra (the main menu's frames changed once, for the Settings link, which is not an extra); the scenes `extras`, `extras-bars`, `extras-groups`, `extras-attack`, `extras-stats`, `extras-lines`, `extras-keys`, `extras-progress`, `extras-select`, `extras-autocast` and `extras-font` turn options on and have their own entries; the scene `settings-screen` shows the Settings screen and `settings-ingame` the Settings screen over a game (its Overlays page too).
+  re-blessed for an extra (the main menu's frames changed once, for the Settings link, which is not an extra); the scenes `extras`, `extras-bars`, `extras-groups`, `extras-attack`, `extras-stats`, `extras-lines`, `extras-keys`, `extras-progress`, `extras-select`, `extras-sim`, `extras-zoom` and `extras-font` turn options on and have their own entries; the scene `settings-screen` shows the Settings screen and `settings-ingame` the Settings screen over a game (its Overlays page too).
 - `Trims::default()` leaves the mixed sound identical; the audio snapshot of the original scenes shows it.
 - The oracle traces and the whole-map snapshot run on the sim, which an empty `Extras` does not change.

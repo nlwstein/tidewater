@@ -65,7 +65,7 @@ publishes from `main`.
 | `SHA256SUMS` | `sha256sum` of every file above (`publish` sums `tidewater-*`, which covers the APK and the IPA). |
 
 The asset names are what the update check looks for (`update.rs`), so keep them. The check picks the Windows, macOS and AppImage files by their endings (`-windows-x64-setup.exe`, `-macos.dmg`, `-linux-x86_64.AppImage`; the AppImage only when the program runs from one, which the AppImage runtime shows by setting `$APPIMAGE`); the phones only open the release page, so the `-ios.ipa` name is never matched. Only the program is packaged, never game
-data.
+data. The map editor (`tidewater-editor`) is not packaged yet; it is built from source ([editor.md](editor.md)).
 
 To try the packaging on your own machine: `packaging/macos/build-dmg.sh 0.0.0-test target/release/tidewater out.dmg`, or
 `packaging/linux/build-tarball.sh 0.0.0-test target/release/tidewater out.tar.gz`, or (Linux x86_64 only) `packaging/linux/appimage.sh 0.0.0-test target/release/tidewater out.AppImage`. On a system without FUSE, run the result with `APPIMAGE_EXTRACT_AND_RUN=1`.

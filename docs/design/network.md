@@ -15,7 +15,7 @@ Main menu, **Multi Player Game**: choose Enhanced or Classic, enter a name, then
   listens. **Battle.net** is drawn greyed out and cannot be chosen; there is no Modem row.
 - **Create Game** opens the game setup lobby: the scenario, the eight rows (yourself, other players as they join,
   computers, closed rows), each player's race and chat box, and Classic mode's Ready boxes. **Start Game** is grey until
-  at least two participants (the creator plus joiners or Computer rows; Available rows are ignored) are in, every joiner has the map and, in Classic mode, everyone is ready.
+  at least two participants (the creator plus joiners or Computer rows; Available rows are ignored) are in, every joiner has the map and, in Classic mode, everyone is ready. In Classic mode a changed map or option clears the Ready boxes, so a joiner ticks Ready once the creator has finished setting up.
 - **A joiner** picks a game (or types an address), is shown the host's map and rules in the lobby and takes the
   host's choices; it changes only its own race, Ready box and chat line.
 - Code: `mpmenu.rs` (the menus), `mpwidgets.rs` (edit boxes and pop-ups), `lobbyscreen.rs` (the lobby), `net/room.rs`
@@ -108,7 +108,7 @@ the end; `Hello` is first so a program of another protocol version can still rea
 | `Resend`, `ResendSync` | to the new host | Another player's packet or digest the new host lacks |
 | `Lost` | new host to all | A player that did not come back: dropped at a packet number, its digests no longer checked |
 
-The protocol number is **8** (`net::proto::PROTOCOL`); it changes whenever a message or `Command` variant does. A
+The protocol number is **9** (`net::proto::PROTOCOL`); it changes whenever a message or `Command` variant does. A
 joiner of another protocol is refused with a message naming both versions: the host reads only the first varint of the
 `Hello` to know that it cannot read the rest.
 
