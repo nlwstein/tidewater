@@ -3,8 +3,7 @@
 **Bottom line.** Tidewater builds as a Vita app (`.vpk`) from the same shell code as the other platforms, and CI builds
 it on every run. In the Vita3K emulator it plays: the videos, menus and a custom game work with the Vita's buttons
 and sticks, and every frame-test scene gives the same frames and sound as on the desktop. One player has installed and
-played it on a real Vita (GitHub issue #3), where a custom game held 60 fps in a measurement (see [Speed](#speed));
-the sticks are still being tuned.
+played it on a real Vita (GitHub issue #3), where a custom game held 60 fps in a measurement (see [Speed](#speed)).
 
 The import is in [import.md](import.md), the touch gestures in [touch.md](touch.md) and the Android version in
 [android.md](android.md).
@@ -15,7 +14,7 @@ The import is in [import.md](import.md), the touch gestures in [touch.md](touch.
 |---|---|
 | Build | Works on Linux and macOS (`platform/vita/build.sh`). CI builds the VPK on every run. |
 | Vita3K | Plays. Every game scene of the frame test matches the desktop snapshots, frames and sound (`firstrun` differs on purpose, see [Test builds](#test-builds)). Played by hand with the pad: videos, menus, a custom game. |
-| Real Vita | Installs (v0.9.1) and plays, by one player so far. A custom game held 60 fps when measured (see [Speed](#speed)); the sticks are still being tuned (GitHub issue #3). |
+| Real Vita | Installs and plays (v0.9.1 onward); 0.11.0 installed over 0.10.0 keeps the game files and saves. A custom game held 60 fps when measured (see [Speed](#speed)), and a player reports the sticks are smooth at that rate (GitHub issue #3). |
 | Game files | Copied to `ux0:data/Tidewater`; the first-run screen scans that folder. |
 | Saves and settings | `ux0:data/Tidewater`. A first run starts with Widescreen at `auto` (the Vita's 16:9 screen); Settings, General changes it. |
 | Front touch screen | Read as touch, like a phone. Not tried on hardware. |
