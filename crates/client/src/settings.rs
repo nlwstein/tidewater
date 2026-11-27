@@ -113,7 +113,9 @@ impl Page {
             Page::Sound => {
                 "How loud the unit voices, the sound effects and the music are, as a share of the game's own volume."
             }
-            Page::Gameplay => "Rule changes for the games you start. Point at a row to read what it does.",
+            Page::Gameplay => {
+                "Rule changes for the games you start, and quick select. Point at a row to read what it does."
+            }
             Page::Mods => {
                 "Mods change the game's files: pictures, sounds, maps and data. Choose which to use; each row below \
                  overrides the ones above it."
@@ -588,15 +590,16 @@ pub(crate) fn commit(values: &Values, stored: &mut Prefs, live: &mut ClientExtra
 // Descriptions
 
 /// The note on the Gameplay page during a game.
-pub(crate) const GAMEPLAY_NOTE_IN_GAME: &str = "Fixed for this game: they were set when it started.";
+pub(crate) const GAMEPLAY_NOTE_IN_GAME: &str =
+    "Fixed for this game, except quick select: the rules were set when it started.";
 
 /// The note on the Mods page.
 const MODS_NOTE: &str = "Mods live in the mods folder next to the game files (see docs/mods.md). They apply from the next \
                         start, and a replay or network game needs the same ones.";
 
 /// The note on the Gameplay page.
-const GAMEPLAY_NOTE: &str = "These options change the game rules. They apply to single-player games you start; in a \
-                             multiplayer game the host chooses them in the lobby.";
+const GAMEPLAY_NOTE: &str = "Except for quick select, these options change the game rules. They apply to single-player \
+                             games you start; in a multiplayer game the host chooses them in the lobby.";
 
 /// The description of a row, shown under the rows.
 pub(crate) fn describe(item: Item) -> String {
@@ -714,7 +717,7 @@ const ROW_PITCH: i32 = 30;
 /// buttons clear the description.
 const GENERAL_PITCH: i32 = 28;
 /// A page whose rows and note do not fit above the description at the normal pitch (Interface with nine rows, Gameplay
-/// with seven and its note) packs them 26 apart and 24 tall, the least a tap target may be, so they clear it.
+/// with six and its note) packs them 26 apart and 24 tall, the least a tap target may be, so they clear it.
 const CROWDED_PITCH: i32 = 26;
 const CROWDED_H: u32 = 24;
 /// The height of the note under the Mods and Gameplay pages' rows, with the gap above it.

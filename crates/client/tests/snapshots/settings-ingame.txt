@@ -22,16 +22,16 @@ frames	75-75	8d785a8705550d63
 frames	76-77	43bce5b464989362
 shot	79	overlays	93453ab6c9f15578
 frames	78-79	93453ab6c9f15578
-frames	80-80	8afebabb21842636
-shot	83	gameplay	8903611cec2f06ae
-frames	81-83	8903611cec2f06ae
-frames	84-84	5ac94b270b0d77c9
-shot	87	gameplay-click	27ff9d65fee9626f
-frames	85-87	27ff9d65fee9626f
-frames	88-88	2d7b089f66e84433
-shot	94	keys	62aa3e099dcb80e5
-frames	89-94	62aa3e099dcb80e5
-frames	95-95	e58f03d6e97f9967
+frames	80-80	ab6b7d8a2c6c5c86
+shot	83	gameplay	a9c0cbcf9484bfe8
+frames	81-83	a9c0cbcf9484bfe8
+frames	84-84	164dd841e1ba8baf
+shot	87	gameplay-click	9db1af83d3ebb3ed
+frames	85-87	9db1af83d3ebb3ed
+frames	88-88	3b2490fff9019445
+shot	94	keys	627a1a643e3a1feb
+frames	89-94	627a1a643e3a1feb
+frames	95-95	18adf701fe4d75ed
 frames	96-96	c130c5ad080cc87e
 frames	97-132	22204420bbc12765
 shot	136	applied	4eeee8ac3538594d
